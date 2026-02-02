@@ -1,0 +1,24 @@
+[package]
+name = "cratos-replay"
+description = "Replay engine for audit logging and execution history for Cratos AI assistant"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+tokio.workspace = true
+sqlx.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+mockall.workspace = true
+tokio-test.workspace = true
