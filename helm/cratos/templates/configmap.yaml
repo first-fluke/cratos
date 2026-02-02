@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cratos.fullname" . }}-config
+  labels:
+    {{- include "cratos.labels" . | nindent 4 }}
+data:
+  RUST_LOG: {{ .Values.config.logLevel | quote }}
+  SERVER_HOST: {{ .Values.config.server.host | quote }}
+  SERVER_PORT: {{ .Values.config.server.port | quote }}
+  LLM_DEFAULT_PROVIDER: {{ .Values.config.llm.defaultProvider | quote }}
+  TELEGRAM_ENABLED: {{ .Values.config.channels.telegram.enabled | quote }}
+  SLACK_ENABLED: {{ .Values.config.channels.slack.enabled | quote }}
+  APPROVAL_DEFAULT_MODE: {{ .Values.config.approval.defaultMode | quote }}
+  REPLAY_RETENTION_DAYS: {{ .Values.config.replay.retentionDays | quote }}
+  REPLAY_MAX_EVENTS_PER_EXECUTION: {{ .Values.config.replay.maxEventsPerExecution | quote }}

@@ -1,0 +1,160 @@
+# Default values for cratos
+# This is a YAML-formatted file.
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/cratos/cratos
+  pullPolicy: IfNotPresent
+  tag: ""  # Overrides the chart appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+  hosts:
+    - host: cratos.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: cratos
+          topologyKey: kubernetes.io/hostname
+
+# Application configuration
+config:
+  logLevel: "cratos=info,tower_http=info"
+  server:
+    host: "0.0.0.0"
+    port: 8080
+  llm:
+    defaultProvider: "anthropic"
+  channels:
+    telegram:
+      enabled: true
+    slack:
+      enabled: false
+  approval:
+    defaultMode: "auto"
+  replay:
+    retentionDays: 30
+    maxEventsPerExecution: 1000
+
+# Secrets - should be provided via external secret management
+secrets:
+  # Database URL
+  databaseUrl: ""
+  # Redis URL
+  redisUrl: ""
+  # LLM API Keys
+  openaiApiKey: ""
+  anthropicApiKey: ""
+  # Channel tokens
+  telegramBotToken: ""
+  slackBotToken: ""
+  slackSigningSecret: ""
+  slackAppToken: ""
+
+# External secrets (if using external-secrets operator)
+externalSecrets:
+  enabled: false
+  secretStoreRef:
+    name: ""
+    kind: ClusterSecretStore
+
+# PostgreSQL subchart configuration
+postgresql:
+  enabled: true
+  auth:
+    username: cratos
+    password: ""  # Set via --set or external secret
+    database: cratos
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+
+# Redis subchart configuration
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Metrics / Monitoring
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
