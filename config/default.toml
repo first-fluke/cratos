@@ -1,0 +1,51 @@
+# Cratos Default Configuration
+# Copy to config/local.toml and customize for your environment
+
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[database]
+# When using docker-compose, use port 54329
+url = "postgres://cratos:cratos@localhost:54329/cratos"
+max_connections = 10
+
+[redis]
+# When using docker-compose, use port 63791
+url = "redis://localhost:63791"
+
+[llm]
+default_provider = "openai"
+
+[llm.openai]
+# API key loaded from OPENAI_API_KEY environment variable
+default_model = "gpt-4o"
+
+[llm.anthropic]
+# API key loaded from ANTHROPIC_API_KEY environment variable
+default_model = "claude-3-5-sonnet-20241022"
+
+[llm.routing]
+# Model selection by task type (for cost optimization)
+classification = "gpt-4o-mini"
+planning = "gpt-4o"
+code_generation = "claude-3-5-sonnet-20241022"
+summarization = "gpt-4o-mini"
+
+[approval]
+# Approval mode: always | risky_only | never
+default_mode = "risky_only"
+
+[replay]
+# Event log retention in days
+retention_days = 30
+# Maximum events per execution
+max_events_per_execution = 1000
+
+[channels.telegram]
+enabled = true
+# Token loaded from TELEGRAM_BOT_TOKEN environment variable
+
+[channels.slack]
+enabled = false
+# Tokens loaded from SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET environment variables
