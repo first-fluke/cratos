@@ -1,0 +1,27 @@
+[package]
+name = "cratos-tools"
+description = "Tool registry and execution engine for Cratos AI assistant"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+cratos-llm.workspace = true
+
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+
+[dev-dependencies]
+mockall.workspace = true
+tokio-test.workspace = true
