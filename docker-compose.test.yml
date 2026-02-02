@@ -1,0 +1,83 @@
+version: '3.8'
+
+# Docker Compose for E2E testing
+# Usage: docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit
+
+services:
+  cratos-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    command: cargo test --workspace
+    environment:
+      - DATABASE_URL=postgres://cratos:cratos@postgres-test:5432/cratos_test
+      - REDIS_URL=redis://redis-test:6379
+      - RUST_LOG=cratos=debug
+      - RUST_BACKTRACE=1
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - cratos-test-network
+
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=cratos
+      - POSTGRES_PASSWORD=cratos
+      - POSTGRES_DB=cratos_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cratos -d cratos_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    networks:
+      - cratos-test-network
+
+  redis-test:
+    image: redis:7-alpine
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    networks:
+      - cratos-test-network
+
+  # E2E test runner
+  e2e-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgres://cratos:cratos@postgres-test:5432/cratos_test
+      - REDIS_URL=redis://redis-test:6379
+      - CRATOS_SERVER__HOST=0.0.0.0
+      - CRATOS_SERVER__PORT=8080
+      - RUST_LOG=cratos=info
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - cratos-test-network
+    profiles:
+      - e2e
+
+networks:
+  cratos-test-network:
+    driver: bridge
