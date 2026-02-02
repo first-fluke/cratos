@@ -1,0 +1,516 @@
+//! Anthropic - Claude API provider
+//!
+//! This module implements the Anthropic Claude provider using reqwest.
+
+use crate::error::{Error, Result};
+use crate::router::{
+    CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage, ToolCall,
+    ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
+};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use tracing::{debug, instrument};
+
+/// Anthropic API version
+const API_VERSION: &str = "2023-06-01";
+
+/// Available Anthropic models
+pub const MODELS: &[&str] = &[
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku-20241022",
+    "claude-3-opus-20240229",
+    "claude-3-sonnet-20240229",
+    "claude-3-haiku-20240307",
+];
+
+/// Default Anthropic model
+pub const DEFAULT_MODEL: &str = "claude-3-5-sonnet-20241022";
+
+/// Default API base URL
+const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
+
+// ============================================================================
+// API Types
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+struct AnthropicRequest {
+    model: String,
+    max_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<String>,
+    messages: Vec<AnthropicMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<AnthropicTool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<AnthropicToolChoice>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicMessage {
+    role: String,
+    content: AnthropicContent,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum AnthropicContent {
+    Text(String),
+    Blocks(Vec<ContentBlock>),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum ContentBlock {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicTool {
+    name: String,
+    description: String,
+    input_schema: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type")]
+enum AnthropicToolChoice {
+    #[serde(rename = "auto")]
+    Auto,
+    #[serde(rename = "any")]
+    Any,
+    #[serde(rename = "tool")]
+    Tool { name: String },
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct AnthropicResponse {
+    id: String,
+    model: String,
+    content: Vec<ResponseContentBlock>,
+    stop_reason: Option<String>,
+    usage: AnthropicUsage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum ResponseContentBlock {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicUsage {
+    input_tokens: u32,
+    output_tokens: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicError {
+    error: AnthropicErrorDetail,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicErrorDetail {
+    r#type: String,
+    message: String,
+}
+
+// ============================================================================
+// Provider Implementation
+// ============================================================================
+
+/// Anthropic provider configuration
+#[derive(Debug, Clone)]
+pub struct AnthropicConfig {
+    /// API key
+    pub api_key: String,
+    /// Base URL
+    pub base_url: String,
+    /// Default model
+    pub default_model: String,
+    /// Default max tokens
+    pub default_max_tokens: u32,
+    /// Request timeout
+    pub timeout: Duration,
+}
+
+impl AnthropicConfig {
+    /// Create a new configuration with an API key
+    #[must_use]
+    pub fn new(api_key: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+            base_url: DEFAULT_BASE_URL.to_string(),
+            default_model: DEFAULT_MODEL.to_string(),
+            default_max_tokens: 4096,
+            timeout: Duration::from_secs(60),
+        }
+    }
+
+    /// Create configuration from environment variables
+    pub fn from_env() -> Result<Self> {
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .map_err(|_| Error::NotConfigured("ANTHROPIC_API_KEY not set".to_string()))?;
+
+        let base_url =
+            std::env::var("ANTHROPIC_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
+        let default_model =
+            std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+
+        Ok(Self {
+            api_key,
+            base_url,
+            default_model,
+            default_max_tokens: 4096,
+            timeout: Duration::from_secs(60),
+        })
+    }
+
+    /// Set the base URL
+    #[must_use]
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = url.into();
+        self
+    }
+
+    /// Set the default model
+    #[must_use]
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.default_model = model.into();
+        self
+    }
+
+    /// Set the default max tokens
+    #[must_use]
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.default_max_tokens = max_tokens;
+        self
+    }
+
+    /// Set the timeout
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+}
+
+/// Anthropic Claude provider
+pub struct AnthropicProvider {
+    client: Client,
+    config: AnthropicConfig,
+}
+
+impl AnthropicProvider {
+    /// Create a new Anthropic provider
+    pub fn new(config: AnthropicConfig) -> Result<Self> {
+        let client = Client::builder()
+            .timeout(config.timeout)
+            .build()
+            .map_err(|e| Error::Network(e.to_string()))?;
+
+        Ok(Self { client, config })
+    }
+
+    /// Create from environment variables
+    pub fn from_env() -> Result<Self> {
+        let config = AnthropicConfig::from_env()?;
+        Self::new(config)
+    }
+
+    /// Convert our message to Anthropic format, returning system message separately
+    fn convert_messages(messages: &[Message]) -> (Option<String>, Vec<AnthropicMessage>) {
+        let mut system_message = None;
+        let mut anthropic_messages = Vec::new();
+
+        for msg in messages {
+            match msg.role {
+                MessageRole::System => {
+                    // Anthropic uses a separate system field
+                    system_message = Some(msg.content.clone());
+                }
+                MessageRole::User => {
+                    anthropic_messages.push(AnthropicMessage {
+                        role: "user".to_string(),
+                        content: AnthropicContent::Text(msg.content.clone()),
+                    });
+                }
+                MessageRole::Assistant => {
+                    anthropic_messages.push(AnthropicMessage {
+                        role: "assistant".to_string(),
+                        content: AnthropicContent::Text(msg.content.clone()),
+                    });
+                }
+                MessageRole::Tool => {
+                    if let Some(tool_call_id) = &msg.tool_call_id {
+                        anthropic_messages.push(AnthropicMessage {
+                            role: "user".to_string(),
+                            content: AnthropicContent::Blocks(vec![ContentBlock::ToolResult {
+                                tool_use_id: tool_call_id.clone(),
+                                content: msg.content.clone(),
+                                is_error: None,
+                            }]),
+                        });
+                    }
+                }
+            }
+        }
+
+        (system_message, anthropic_messages)
+    }
+
+    /// Convert tool definition to Anthropic format
+    fn convert_tool(tool: &ToolDefinition) -> AnthropicTool {
+        AnthropicTool {
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+            input_schema: tool.parameters.clone(),
+        }
+    }
+
+    /// Convert tool choice to Anthropic format
+    fn convert_tool_choice(choice: &ToolChoice) -> Option<AnthropicToolChoice> {
+        match choice {
+            ToolChoice::Auto => Some(AnthropicToolChoice::Auto),
+            ToolChoice::None => None, // Anthropic doesn't have a "none" option, we just don't send tools
+            ToolChoice::Required => Some(AnthropicToolChoice::Any),
+            ToolChoice::Tool(name) => Some(AnthropicToolChoice::Tool { name: name.clone() }),
+        }
+    }
+
+    /// Send request to Anthropic API
+    async fn send_request(&self, request: AnthropicRequest) -> Result<AnthropicResponse> {
+        let url = format!("{}/v1/messages", self.config.base_url);
+
+        debug!("Sending request to Anthropic: {}", url);
+
+        let response = self
+            .client
+            .post(&url)
+            .header("x-api-key", &self.config.api_key)
+            .header("anthropic-version", API_VERSION)
+            .header("content-type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
+
+        if !status.is_success() {
+            // Try to parse error response
+            if let Ok(error) = serde_json::from_str::<AnthropicError>(&body) {
+                if status.as_u16() == 429 {
+                    return Err(Error::RateLimit);
+                }
+                return Err(Error::Api(format!(
+                    "{}: {}",
+                    error.error.r#type, error.error.message
+                )));
+            }
+            return Err(Error::Api(format!("HTTP {}: {}", status, body)));
+        }
+
+        serde_json::from_str(&body).map_err(|e| Error::InvalidResponse(e.to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl LlmProvider for AnthropicProvider {
+    fn name(&self) -> &str {
+        "anthropic"
+    }
+
+    fn supports_tools(&self) -> bool {
+        true
+    }
+
+    fn available_models(&self) -> Vec<String> {
+        MODELS.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    fn default_model(&self) -> &str {
+        &self.config.default_model
+    }
+
+    #[instrument(skip(self, request), fields(model = %request.model))]
+    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse> {
+        let model = if request.model.is_empty() {
+            &self.config.default_model
+        } else {
+            &request.model
+        };
+
+        let (system, messages) = Self::convert_messages(&request.messages);
+
+        let anthropic_request = AnthropicRequest {
+            model: model.to_string(),
+            max_tokens: request.max_tokens.unwrap_or(self.config.default_max_tokens),
+            system,
+            messages,
+            temperature: request.temperature,
+            tools: None,
+            tool_choice: None,
+        };
+
+        let response = self.send_request(anthropic_request).await?;
+
+        // Extract text content
+        let content = response
+            .content
+            .iter()
+            .filter_map(|block| match block {
+                ResponseContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+
+        let usage = TokenUsage {
+            prompt_tokens: response.usage.input_tokens,
+            completion_tokens: response.usage.output_tokens,
+            total_tokens: response.usage.input_tokens + response.usage.output_tokens,
+        };
+
+        Ok(CompletionResponse {
+            content,
+            usage: Some(usage),
+            finish_reason: response.stop_reason,
+            model: response.model,
+        })
+    }
+
+    #[instrument(skip(self, request), fields(model = %request.request.model, tools = request.tools.len()))]
+    async fn complete_with_tools(
+        &self,
+        request: ToolCompletionRequest,
+    ) -> Result<ToolCompletionResponse> {
+        let model = if request.request.model.is_empty() {
+            &self.config.default_model
+        } else {
+            &request.request.model
+        };
+
+        let (system, messages) = Self::convert_messages(&request.request.messages);
+
+        let tools: Vec<AnthropicTool> = request.tools.iter().map(Self::convert_tool).collect();
+
+        let anthropic_request = AnthropicRequest {
+            model: model.to_string(),
+            max_tokens: request
+                .request
+                .max_tokens
+                .unwrap_or(self.config.default_max_tokens),
+            system,
+            messages,
+            temperature: request.request.temperature,
+            tools: Some(tools),
+            tool_choice: Self::convert_tool_choice(&request.tool_choice),
+        };
+
+        let response = self.send_request(anthropic_request).await?;
+
+        // Extract text content and tool calls
+        let mut content = None;
+        let mut tool_calls = Vec::new();
+
+        for block in &response.content {
+            match block {
+                ResponseContentBlock::Text { text } => {
+                    content = Some(text.clone());
+                }
+                ResponseContentBlock::ToolUse { id, name, input } => {
+                    tool_calls.push(ToolCall {
+                        id: id.clone(),
+                        name: name.clone(),
+                        arguments: serde_json::to_string(input)
+                            .unwrap_or_else(|_| "{}".to_string()),
+                    });
+                }
+            }
+        }
+
+        let usage = TokenUsage {
+            prompt_tokens: response.usage.input_tokens,
+            completion_tokens: response.usage.output_tokens,
+            total_tokens: response.usage.input_tokens + response.usage.output_tokens,
+        };
+
+        Ok(ToolCompletionResponse {
+            content,
+            tool_calls,
+            usage: Some(usage),
+            finish_reason: response.stop_reason,
+            model: response.model,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_builder() {
+        let config = AnthropicConfig::new("test-key")
+            .with_model("claude-3-haiku-20240307")
+            .with_max_tokens(2048)
+            .with_timeout(Duration::from_secs(30));
+
+        assert_eq!(config.api_key, "test-key");
+        assert_eq!(config.default_model, "claude-3-haiku-20240307");
+        assert_eq!(config.default_max_tokens, 2048);
+        assert_eq!(config.timeout, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_available_models() {
+        assert!(MODELS.contains(&"claude-3-5-sonnet-20241022"));
+        assert!(MODELS.contains(&"claude-3-opus-20240229"));
+    }
+
+    #[test]
+    fn test_message_conversion() {
+        let messages = vec![
+            Message::system("You are helpful"),
+            Message::user("Hello"),
+            Message::assistant("Hi there!"),
+        ];
+
+        let (system, converted) = AnthropicProvider::convert_messages(&messages);
+
+        assert_eq!(system, Some("You are helpful".to_string()));
+        assert_eq!(converted.len(), 2);
+        assert_eq!(converted[0].role, "user");
+        assert_eq!(converted[1].role, "assistant");
+    }
+}
