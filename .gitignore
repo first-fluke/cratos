@@ -15,6 +15,9 @@ Cargo.lock
 .env.local
 .env.*.local
 
+# Config overrides
+config/local.toml
+
 # Logs
 *.log
 logs/
@@ -22,6 +25,10 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test artifacts
+*.profraw
+coverage/
 
 # Claude Code local settings
 .claude/settings.local.json
