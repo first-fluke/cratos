@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "npx",
+      "args": ["-y", "@anthropics/mcp-serena"],
+      "env": {
+        "SERENA_PROJECT_ROOT": "${CLAUDE_PLUGIN_ROOT}"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@anthropics/mcp-context7"]
+    }
+  }
+}

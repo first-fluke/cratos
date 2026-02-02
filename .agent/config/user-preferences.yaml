@@ -1,0 +1,36 @@
+# Cratos 프로젝트 설정
+language: ko
+date_format: ISO
+timezone: Asia/Seoul
+
+# CLI 매핑
+# default_cli: gemini
+# agent_cli_mapping:
+#   rust: gemini
+#   channel: gemini
+#   llm: gemini
+#   replay: gemini
+#   qa: gemini
+#   debug: gemini
+#   pm: gemini
+
+# 프로젝트 설정
+project:
+  name: cratos
+  tech_stack: rust
+  channels:
+    - telegram
+    - slack
+
+# 검증 설정
+verification:
+  cargo_test: true
+  cargo_clippy: true
+  cargo_fmt: true
+  coverage_threshold: 70
+
+# 병렬 실행 설정
+orchestration:
+  max_parallel: 3
+  max_retries: 2
+  poll_interval: 30s

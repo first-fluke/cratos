@@ -1,0 +1,20 @@
+{
+  "name": "cratos-dev",
+  "description": "Cratos AI Assistant 개발 플러그인 - Rust 기반 AI 에이전트 시스템",
+  "version": "1.0.0",
+  "author": {
+    "name": "gahyun"
+  },
+  "keywords": [
+    "rust",
+    "ai-assistant",
+    "telegram",
+    "slack",
+    "replay",
+    "agent-orchestration",
+    "llm",
+    "tool-doctor"
+  ],
+  "repository": "https://github.com/gahyun-git/cratos",
+  "license": "MIT"
+}

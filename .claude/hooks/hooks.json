@@ -1,0 +1,18 @@
+{
+  "hooks": [
+    {
+      "event": "PreToolUse",
+      "tools": ["Bash"],
+      "prompt": "If the command modifies files outside the project directory or runs destructive git commands (push --force, reset --hard), warn the user and ask for confirmation."
+    },
+    {
+      "event": "PostToolUse",
+      "tools": ["Write", "Edit"],
+      "prompt": "After modifying Rust files, remind to run 'cargo check' and 'cargo clippy' to verify the changes."
+    },
+    {
+      "event": "Stop",
+      "prompt": "Before finishing, verify that all changes follow Cratos coding conventions: no unsafe code, proper error handling, tracing instrumentation."
+    }
+  ]
+}

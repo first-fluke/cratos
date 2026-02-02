@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "npx",
+      "args": ["-y", "@anthropics/mcp-serena"],
+      "env": {
+        "SERENA_PROJECT_ROOT": "${workspaceFolder}"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@anthropics/mcp-context7"]
+    }
+  },
+  "memoryConfig": {
+    "provider": "serena",
+    "basePath": ".serena/memories",
+    "tools": {
+      "read": "read_memory",
+      "write": "write_memory",
+      "edit": "edit_memory"
+    }
+  }
+}
