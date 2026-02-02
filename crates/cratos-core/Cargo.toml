@@ -1,0 +1,28 @@
+[package]
+name = "cratos-core"
+description = "Core orchestration engine for Cratos AI assistant"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+cratos-llm.workspace = true
+cratos-tools.workspace = true
+cratos-replay.workspace = true
+
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+redis.workspace = true
+
+[dev-dependencies]
+mockall.workspace = true
+tokio-test.workspace = true
