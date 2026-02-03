@@ -22,6 +22,7 @@ pub mod orchestrator;
 pub mod permissions;
 pub mod planner;
 pub mod security;
+pub mod shutdown;
 pub mod utils;
 
 pub use approval::{ApprovalManager, ApprovalRequest, ApprovalStatus, SharedApprovalManager};
@@ -58,4 +59,10 @@ pub use agents::{
     CliConfig, CliError, CliProvider, CliProviderConfig, CliRegistry, CliResult, ExecutionContext,
     OrchestratorConfig as AgentOrchestratorConfig, OrchestratorError, OrchestratorResult,
     ParsedAgentTask, TaskStatus,
+};
+
+// Re-export shutdown module types
+pub use shutdown::{
+    shutdown_signal_with_controller, wait_for_shutdown_signal, ShutdownController, ShutdownPhase,
+    TaskGuard,
 };

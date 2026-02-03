@@ -12,7 +12,8 @@ use axum::{routing::get, Extension, Json, Router};
 use config::{Config, Environment, File};
 use cratos_channels::{TelegramAdapter, TelegramConfig};
 use cratos_core::{
-    metrics_global, Orchestrator, OrchestratorConfig, PlannerConfig, RedisStore, SessionStore,
+    metrics_global, shutdown_signal_with_controller, Orchestrator, OrchestratorConfig,
+    PlannerConfig, RedisStore, SessionStore, ShutdownController,
 };
 use cratos_llm::{
     AnthropicConfig, AnthropicProvider, EmbeddingProvider, FastEmbedProvider, LlmProvider,
@@ -562,6 +563,10 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Initialize shutdown controller for graceful shutdown
+    let shutdown_controller = ShutdownController::new();
+    info!("Shutdown controller initialized (timeout: 30s)");
+
     // Initialize orchestrator
     let orchestrator_config = OrchestratorConfig::new()
         .with_max_iterations(10)
@@ -585,10 +590,18 @@ async fn main() -> Result<()> {
             Ok(telegram_config) => {
                 let telegram_adapter = Arc::new(TelegramAdapter::new(telegram_config));
                 let telegram_orchestrator = orchestrator.clone();
+                let telegram_shutdown = shutdown_controller.token();
 
                 let handle = tokio::spawn(async move {
-                    if let Err(e) = telegram_adapter.run(telegram_orchestrator).await {
-                        error!("Telegram adapter error: {}", e);
+                    tokio::select! {
+                        result = telegram_adapter.run(telegram_orchestrator) => {
+                            if let Err(e) = result {
+                                error!("Telegram adapter error: {}", e);
+                            }
+                        }
+                        _ = telegram_shutdown.cancelled() => {
+                            info!("Telegram adapter shutting down...");
+                        }
                     }
                 });
 
@@ -628,45 +641,24 @@ async fn main() -> Result<()> {
         .context("Failed to bind to address")?;
 
     // Run server with graceful shutdown
+    let server_shutdown = shutdown_controller.clone();
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal_with_controller(server_shutdown))
         .await
         .context("HTTP server error")?;
 
-    // Wait for channel adapters to finish
+    // Wait for channel adapters to finish (with timeout)
+    info!("Waiting for channel adapters to finish...");
+    let adapter_timeout = tokio::time::Duration::from_secs(5);
     for handle in channel_handles {
-        let _ = handle.await;
+        match tokio::time::timeout(adapter_timeout, handle).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => warn!("Channel adapter task error: {}", e),
+            Err(_) => warn!("Channel adapter shutdown timeout, aborting"),
+        }
     }
 
     info!("Cratos shutdown complete");
     Ok(())
 }
 
-/// Shutdown signal handler
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("Failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {
-            info!("Received Ctrl+C, shutting down");
-        }
-        _ = terminate => {
-            info!("Received terminate signal, shutting down");
-        }
-    }
-}
