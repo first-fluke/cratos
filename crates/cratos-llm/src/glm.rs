@@ -259,20 +259,22 @@ pub struct GlmProvider {
 
 impl GlmProvider {
     /// Create a new GLM provider
-    #[must_use]
-    pub fn new(config: GlmConfig) -> Self {
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new(config: GlmConfig) -> Result<Self> {
         let client = Client::builder()
             .timeout(config.timeout)
             .build()
-            .expect("Failed to create HTTP client");
+            .map_err(|e| Error::Provider(format!("Failed to create HTTP client: {e}")))?;
 
-        Self { client, config }
+        Ok(Self { client, config })
     }
 
     /// Create from environment variables
     pub fn from_env() -> Result<Self> {
         let config = GlmConfig::from_env()?;
-        Ok(Self::new(config))
+        Self::new(config)
     }
 
     /// Convert our message to GLM format

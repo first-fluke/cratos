@@ -284,23 +284,25 @@ pub struct WhatsAppBusinessAdapter {
 
 impl WhatsAppBusinessAdapter {
     /// Create a new WhatsApp Business adapter
-    #[must_use]
-    pub fn new(config: WhatsAppBusinessConfig) -> Self {
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new(config: WhatsAppBusinessConfig) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
-            .expect("Failed to create HTTP client");
+            .map_err(|e| Error::Network(format!("Failed to create HTTP client: {e}")))?;
 
         info!("WhatsApp Business API adapter initialized");
         info!("Phone Number ID: {}", config.phone_number_id);
 
-        Self { config, client }
+        Ok(Self { config, client })
     }
 
     /// Create from environment
     pub fn from_env() -> Result<Self> {
         let config = WhatsAppBusinessConfig::from_env()?;
-        Ok(Self::new(config))
+        Self::new(config)
     }
 
     /// Verify webhook (for initial webhook setup)

@@ -187,8 +187,11 @@ impl WhatsAppAdapter {
     /// # Warning
     ///
     /// This displays a warning about the risks of using unofficial APIs.
-    #[must_use]
-    pub fn new(config: WhatsAppConfig) -> Self {
+    /// Create a new WhatsApp adapter
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new(config: WhatsAppConfig) -> Result<Self> {
         // Display warning about risks
         warn!("========================================");
         warn!("   WHATSAPP (BAILEYS) - IMPORTANT WARNING");
@@ -203,19 +206,19 @@ impl WhatsAppAdapter {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(config.timeout_secs))
             .build()
-            .expect("Failed to create HTTP client");
+            .map_err(|e| Error::Network(format!("Failed to create HTTP client: {e}")))?;
 
-        Self {
+        Ok(Self {
             config,
             client,
             connected: AtomicBool::new(false),
-        }
+        })
     }
 
     /// Create from environment
     pub fn from_env() -> Result<Self> {
         let config = WhatsAppConfig::from_env()?;
-        Ok(Self::new(config))
+        Self::new(config)
     }
 
     /// Check if a phone number is allowed

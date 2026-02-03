@@ -264,20 +264,22 @@ pub struct NovitaProvider {
 
 impl NovitaProvider {
     /// Create a new Novita provider
-    #[must_use]
-    pub fn new(config: NovitaConfig) -> Self {
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new(config: NovitaConfig) -> Result<Self> {
         let client = Client::builder()
             .timeout(config.timeout)
             .build()
-            .expect("Failed to create HTTP client");
+            .map_err(|e| Error::Provider(format!("Failed to create HTTP client: {e}")))?;
 
-        Self { client, config }
+        Ok(Self { client, config })
     }
 
     /// Create from environment variables
     pub fn from_env() -> Result<Self> {
         let config = NovitaConfig::from_env()?;
-        Ok(Self::new(config))
+        Self::new(config)
     }
 
     /// Convert our message to Novita format
