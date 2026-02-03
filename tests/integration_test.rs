@@ -117,6 +117,7 @@ fn test_tool_registry_with_builtins() {
         "git_commit",
         "git_branch",
         "git_diff",
+        "git_push",
         "github_api",
     ];
 

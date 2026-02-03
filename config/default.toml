@@ -1,16 +1,34 @@
 # Cratos Default Configuration
 # Copy to config/local.toml and customize for your environment
+#
+# ============================================================================
+# SECURITY WARNING
+# ============================================================================
+# This is a DEVELOPMENT configuration with default credentials.
+# DO NOT use these values in production!
+#
+# For production deployments:
+# 1. Create config/production.toml with secure credentials
+# 2. Set CRATOS_ENV=production
+# 3. Use environment variables for sensitive data (API keys, passwords)
+# 4. Ensure database and Redis use authentication
+# 5. Bind server to 127.0.0.1 or use a reverse proxy
+# ============================================================================
 
 [server]
+# SECURITY: In production, consider binding to 127.0.0.1 and using a reverse proxy
 host = "127.0.0.1"
 port = 8080
 
-[database]
-# When using docker-compose, use port 54329
-url = "postgres://cratos:cratos@localhost:54329/cratos"
-max_connections = 10
+# Data directory for SQLite database and other local storage
+# Default: ~/.cratos (or platform-specific data directory)
+# data_dir = "~/.cratos"
+
+# Note: PostgreSQL is no longer required. Cratos uses embedded SQLite.
+# The database file will be created at: {data_dir}/cratos.db
 
 [redis]
+# SECURITY: Enable Redis AUTH in production
 # When using docker-compose, use port 63791
 url = "redis://localhost:63791"
 
@@ -25,12 +43,85 @@ default_model = "gpt-4o"
 # API key loaded from ANTHROPIC_API_KEY environment variable
 default_model = "claude-3-5-sonnet-20241022"
 
+[llm.gemini]
+# API key loaded from GOOGLE_API_KEY environment variable
+default_model = "gemini-1.5-flash"
+
+[llm.ollama]
+# Local Ollama instance
+base_url = "http://localhost:11434"
+default_model = "llama3.2"
+
+[llm.glm]
+# ZhipuAI GLM API - API key from BIGMODEL_API_KEY env var
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+default_model = "glm-4-9b"
+
+[llm.qwen]
+# Alibaba Qwen/DashScope API - API key from DASHSCOPE_API_KEY env var
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+default_model = "qwen-turbo"
+
+[llm.openrouter]
+# OpenRouter multi-provider gateway - API key from OPENROUTER_API_KEY env var
+# Provides access to 100+ models including free tier
+base_url = "https://openrouter.ai/api/v1"
+default_model = "qwen/qwen3-32b:free"
+
+[llm.novita]
+# Novita AI free tier - API key from NOVITA_API_KEY env var (free signup)
+# Free models: Llama 3.2 1B/3B, Qwen2.5-7B, GLM-4-9B, GLM-Z1-9B
+base_url = "https://api.novita.ai/v3/openai"
+default_model = "qwen/qwen2.5-7b-instruct"
+
 [llm.routing]
 # Model selection by task type (for cost optimization)
 classification = "gpt-4o-mini"
 planning = "gpt-4o"
 code_generation = "claude-3-5-sonnet-20241022"
 summarization = "gpt-4o-mini"
+
+# ============================================================================
+# Security Configuration
+# ============================================================================
+
+[security]
+# Sandbox policy: strict | moderate | disabled
+# - strict: All tool executions sandboxed
+# - moderate: Only dangerous tools sandboxed (default)
+# - disabled: No sandboxing (development only)
+sandbox_policy = "moderate"
+
+# Credential storage backend: auto | keychain | secret_service | encrypted_file
+# - auto: Detect best backend for platform (recommended)
+# - keychain: macOS Keychain
+# - secret_service: Linux Secret Service (GNOME Keyring)
+# - encrypted_file: AES-256 encrypted file (fallback)
+credential_backend = "auto"
+
+# Enable prompt injection detection
+enable_injection_protection = true
+
+[security.sandbox]
+# Default network mode for sandboxed containers: none | bridge | host
+# - none: No network access (most secure, default)
+# - bridge: Isolated network
+# - host: Host network (not recommended)
+default_network = "none"
+
+# Resource limits for sandboxed containers
+max_memory_mb = 512
+max_cpu_percent = 50
+max_pids = 100
+timeout_seconds = 60
+
+[security.injection]
+# Minimum threat level to block: info | low | medium | high | critical
+block_threshold = "medium"
+
+# Maximum input/output lengths (characters)
+max_input_length = 100000
+max_output_length = 1000000
 
 [approval]
 # Approval mode: always | risky_only | never

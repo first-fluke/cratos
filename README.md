@@ -4,11 +4,38 @@ Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트가 이해�
 
 ## 주요 기능
 
-- **멀티 LLM 지원**: OpenAI, Anthropic, Gemini, Ollama
+- **Docker 불필요**: 내장 SQLite로 설치 즉시 실행 (`~/.cratos/cratos.db`)
+- **자동 스킬 생성**: 사용 패턴을 학습하여 자동으로 워크플로우 스킬 생성
+- **멀티 LLM 지원**: OpenAI, Anthropic, Gemini, Ollama, GLM, Qwen, OpenRouter, Novita
 - **스마트 라우팅**: 작업 유형별 자동 모델 선택으로 비용 70% 절감
+- **무료 모델 지원**: OpenRouter, Novita를 통한 무료 LLM 사용 (Llama, Qwen, GLM)
 - **리플레이 엔진**: 모든 실행 기록을 이벤트로 저장, 타임라인 조회 및 재실행
 - **도구 시스템**: 파일, HTTP, Git, GitHub, 명령 실행 등 11개 빌트인 도구
 - **채널 어댑터**: Telegram, Slack 지원
+- **보안 강화**: Docker 샌드박스, 자격증명 암호화, 프롬프트 인젝션 방어
+
+## 최소 시스템 요구사항
+
+| 항목 | 최소 사양 | 권장 사양 |
+|------|----------|----------|
+| **OS** | macOS 10.15+, Windows 10+, Ubuntu 20.04+ | 최신 버전 |
+| **CPU** | 2코어 | 4코어 이상 |
+| **RAM** | 4GB (실행) / 8GB (빌드) | 8GB 이상 |
+| **디스크** | 5GB | 10GB 이상 |
+| **Rust** | 1.75+ (빌드 시) | 최신 stable |
+| **Docker** | 선택사항 (샌드박스용) | 최신 버전 |
+
+> **참고**: PostgreSQL, Docker 없이 실행 가능합니다. 데이터는 `~/.cratos/cratos.db` (SQLite)에 저장됩니다.
+
+### Ollama 로컬 LLM 사용 시 (추가)
+
+| 모델 | RAM | VRAM (GPU) |
+|------|-----|------------|
+| Llama 3.2 3B | 4GB | 4GB |
+| Llama 3.2 7B | 8GB | 8GB |
+| Llama 3.1 70B | 48GB | 48GB |
+
+> **참고**: 외부 LLM API(OpenAI, Anthropic 등) 사용 시 GPU 불필요
 
 ## 빠른 시작
 
@@ -22,32 +49,29 @@ cp .env.example .env
 vim .env
 ```
 
-### 2. Docker로 실행
+### 2. 실행 (Docker 불필요!)
 
 ```bash
-# 전체 스택 실행 (PostgreSQL, Redis, Cratos)
-docker-compose up -d
+# 빌드 및 실행
+cargo build --release
+cargo run --release
 
-# 로그 확인
-docker-compose logs -f cratos
+# 또는 한 번에
+cargo run
 
 # 헬스체크
 curl http://localhost:9742/health
 ```
 
-### 3. 로컬 개발
+데이터는 자동으로 `~/.cratos/cratos.db`에 저장됩니다.
+
+### 3. Docker로 실행 (선택)
 
 ```bash
-# 의존성 설치
-cargo build
+# Redis만 실행 (세션 저장용, 선택사항)
+docker-compose up -d redis
 
-# PostgreSQL & Redis 실행
-docker-compose up -d postgres redis
-
-# 마이그레이션 실행
-sqlx migrate run
-
-# 서버 실행
+# Cratos 실행
 cargo run
 ```
 
@@ -56,51 +80,65 @@ cargo run
 ```
 cratos/
 ├── crates/
-│   ├── cratos-core/      # 오케스트레이션 엔진
+│   ├── cratos-core/      # 오케스트레이션 엔진, 보안, 자격증명
 │   ├── cratos-channels/  # 채널 어댑터 (Telegram, Slack)
-│   ├── cratos-tools/     # 도구 레지스트리 및 빌트인
-│   ├── cratos-llm/       # LLM 프로바이더 추상화
-│   └── cratos-replay/    # 이벤트 로깅 및 리플레이
+│   ├── cratos-tools/     # 도구 레지스트리, 샌드박스
+│   ├── cratos-llm/       # LLM 프로바이더 (8개)
+│   ├── cratos-replay/    # 이벤트 로깅 및 리플레이 (SQLite)
+│   └── cratos-skills/    # 자동 스킬 생성 시스템
 ├── config/               # 설정 파일
-├── migrations/           # 데이터베이스 마이그레이션
 └── src/main.rs           # 애플리케이션 진입점
+
+~/.cratos/                # 데이터 디렉토리 (자동 생성)
+├── cratos.db             # SQLite 메인 DB (이벤트, 실행 기록)
+└── skills.db             # SQLite 스킬 DB (스킬, 패턴)
 ```
 
 ## 설정
 
 ### 환경 변수
 
-| 변수 | 설명 |
-|------|------|
-| `DATABASE_URL` | PostgreSQL 연결 URL |
-| `REDIS_URL` | Redis 연결 URL |
-| `OPENAI_API_KEY` | OpenAI API 키 |
-| `ANTHROPIC_API_KEY` | Anthropic API 키 |
-| `TELEGRAM_BOT_TOKEN` | Telegram 봇 토큰 |
-| `SLACK_BOT_TOKEN` | Slack 봇 토큰 |
-| `SLACK_SIGNING_SECRET` | Slack 서명 시크릿 |
+| 변수 | 설명 | 필수 |
+|------|------|------|
+| `REDIS_URL` | Redis 연결 URL (세션용, 없으면 메모리 사용) | |
+| `TELEGRAM_BOT_TOKEN` | Telegram 봇 토큰 | △ |
+| `SLACK_BOT_TOKEN` | Slack 봇 토큰 | △ |
+| **LLM API 키 (하나 이상)** | | |
+| `OPENAI_API_KEY` | OpenAI API 키 | |
+| `ANTHROPIC_API_KEY` | Anthropic API 키 | |
+| `GOOGLE_API_KEY` | Google Gemini API 키 | |
+| `BIGMODEL_API_KEY` | ZhipuAI GLM API 키 | |
+| `DASHSCOPE_API_KEY` | Alibaba Qwen API 키 | |
+| `OPENROUTER_API_KEY` | OpenRouter API 키 | |
+| `NOVITA_API_KEY` | Novita AI API 키 (무료) | |
+
+> **참고**: `DATABASE_URL`은 더 이상 필요 없습니다. 내장 SQLite를 사용합니다.
 
 ### 설정 파일
 
 `config/default.toml`에서 기본 설정을 확인하고, `config/local.toml`을 생성하여 로컬 환경에 맞게 커스터마이즈할 수 있습니다.
 
-## 지원 도구
+## LLM 프로바이더
 
-| 도구 | 설명 | 위험도 |
-|------|------|--------|
-| `file_read` | 파일 읽기 | Low |
-| `file_write` | 파일 쓰기 | Medium |
-| `file_list` | 디렉토리 목록 | Low |
-| `http_get` | HTTP GET 요청 | Low |
-| `http_post` | HTTP POST 요청 | Medium |
-| `exec` | 명령 실행 | High |
-| `git_status` | Git 상태 조회 | Low |
-| `git_commit` | Git 커밋 생성 | Medium |
-| `git_branch` | Git 브랜치 관리 | Medium |
-| `git_diff` | Git diff 조회 | Low |
-| `github_api` | GitHub API 연동 | Medium |
+### 유료 프로바이더
 
-## 모델 라우팅
+| 프로바이더 | 모델 | 특징 |
+|-----------|------|------|
+| **OpenAI** | GPT-4o, GPT-4o-mini | 범용, 도구 호출 우수 |
+| **Anthropic** | Claude 3.5 Sonnet/Haiku | 코드 생성 우수 |
+| **Gemini** | Gemini 1.5 Pro/Flash | 긴 컨텍스트 |
+| **GLM** | GLM-4-9B, GLM-Z1-9B | 중국어 특화 |
+| **Qwen** | Qwen-Turbo/Plus/Max | 다국어, 코딩 |
+
+### 무료 프로바이더
+
+| 프로바이더 | 모델 | 제한 |
+|-----------|------|------|
+| **OpenRouter** | Qwen3-32B, Llama 3.2, Gemma 2 | 1000회/일 |
+| **Novita** | Qwen2.5-7B, GLM-4-9B, Llama 3.2 | 무료 가입 |
+| **Ollama** | 모든 로컬 모델 | 무제한 (하드웨어 의존) |
+
+### 모델 라우팅
 
 작업 유형에 따라 자동으로 적절한 모델을 선택합니다:
 
@@ -112,6 +150,49 @@ cratos/
 | CodeGeneration | Standard | GPT-4o, Claude Sonnet |
 | Planning | Premium | GPT-4-turbo, Claude Opus |
 
+## 보안 기능
+
+### Docker 샌드박스
+
+위험한 도구는 Docker 컨테이너에서 격리 실행됩니다:
+
+```toml
+[security.sandbox]
+default_network = "none"  # 네트워크 차단
+max_memory_mb = 512       # 메모리 제한
+max_cpu_percent = 50      # CPU 제한
+```
+
+### 자격증명 암호화
+
+API 키를 OS 키체인에 안전하게 저장합니다:
+- macOS: Keychain
+- Linux: Secret Service (GNOME Keyring)
+- Windows: Credential Manager
+
+### 프롬프트 인젝션 방어
+
+악성 프롬프트를 자동 탐지하고 차단합니다:
+- 20+ 위험 패턴 탐지
+- 입력/출력 검증
+- 민감 정보 노출 방지
+
+## 지원 도구
+
+| 도구 | 설명 | 위험도 |
+|------|------|--------|
+| `file_read` | 파일 읽기 | Low |
+| `file_write` | 파일 쓰기 | Medium |
+| `file_list` | 디렉토리 목록 | Low |
+| `http_get` | HTTP GET 요청 | Low |
+| `http_post` | HTTP POST 요청 | Medium |
+| `exec` | 명령 실행 (샌드박스) | High |
+| `git_status` | Git 상태 조회 | Low |
+| `git_commit` | Git 커밋 생성 | Medium |
+| `git_branch` | Git 브랜치 관리 | Medium |
+| `git_diff` | Git diff 조회 | Low |
+| `github_api` | GitHub API 연동 | Medium |
+
 ## 테스트
 
 ```bash
@@ -120,7 +201,18 @@ cargo test --workspace
 
 # 통합 테스트만 실행
 cargo test --test integration_test
+
+# 특정 크레이트 테스트
+cargo test -p cratos-llm
+cargo test -p cratos-tools
+cargo test -p cratos-core
 ```
+
+## 문서
+
+- [설치 가이드](./docs/SETUP_GUIDE.md) - 처음 설치하는 분
+- [사용 가이드](./docs/USER_GUIDE.md) - 기능 사용법
+- [PRD](./PRD.md) - 상세 요구사항
 
 ## 라이선스
 
