@@ -15,8 +15,14 @@ pub enum ChannelType {
     Telegram,
     /// Slack
     Slack,
-    /// Discord (future)
+    /// Discord
     Discord,
+    /// WhatsApp (Baileys or Business API)
+    WhatsApp,
+    /// Voice (local audio)
+    Voice,
+    /// CLI (command line)
+    Cli,
     /// API (direct HTTP)
     Api,
 }
@@ -29,6 +35,9 @@ impl ChannelType {
             Self::Telegram => "telegram",
             Self::Slack => "slack",
             Self::Discord => "discord",
+            Self::WhatsApp => "whatsapp",
+            Self::Voice => "voice",
+            Self::Cli => "cli",
             Self::Api => "api",
         }
     }
