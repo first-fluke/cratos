@@ -15,7 +15,9 @@ pub mod viewer;
 
 pub use error::{Error, Result};
 pub use event::{Event, EventType, Execution, ExecutionStatus, TimelineEntry};
-pub use store::{EventRecorder, EventStore, EventStoreTrait, ExecutionQuery};
+pub use store::{
+    default_data_dir, default_db_path, EventRecorder, EventStore, EventStoreTrait, ExecutionQuery,
+};
 pub use viewer::{
     ExecutionDetail, ExecutionStats, ExecutionSummary, ExecutionViewer, ReplayOptions,
 };

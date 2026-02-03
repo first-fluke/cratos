@@ -1,19 +1,20 @@
-//! Store - Event persistence using PostgreSQL
+//! Store - Event persistence using SQLite
 //!
 //! This module provides the storage layer for executions and events.
-//! It uses sqlx for async PostgreSQL access.
+//! It uses sqlx for async SQLite access (embedded, no Docker required).
 
 use crate::error::{Error, Result};
 use crate::event::{Event, EventType, Execution, ExecutionStatus};
 use chrono::{DateTime, Utc};
-use sqlx::postgres::PgPool;
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::Row;
-use tracing::{debug, instrument};
+use std::path::Path;
+use tracing::{debug, info, instrument};
 use uuid::Uuid;
 
 /// Trait for event storage backends
 ///
-/// This trait allows different storage implementations (PostgreSQL, in-memory, etc.)
+/// This trait allows different storage implementations (SQLite, in-memory, etc.)
 /// to be used interchangeably.
 #[async_trait::async_trait]
 pub trait EventStoreTrait: Send + Sync {
@@ -27,22 +28,161 @@ pub trait EventStoreTrait: Send + Sync {
     fn name(&self) -> &str;
 }
 
-/// Event store for persisting executions and events to PostgreSQL
+/// Event store for persisting executions and events to SQLite
 #[derive(Clone)]
 pub struct EventStore {
-    pool: PgPool,
+    pool: SqlitePool,
 }
 
 impl EventStore {
     /// Create a new event store with the given connection pool
     #[must_use]
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
+    }
+
+    /// Create a new event store from a database path
+    ///
+    /// This will create the database file if it doesn't exist and run migrations.
+    pub async fn from_path(db_path: &Path) -> Result<Self> {
+        // Ensure parent directory exists
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Error::Database(format!("failed to create directory: {e}")))?;
+        }
+
+        let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect(&db_url)
+            .await
+            .map_err(|e| Error::Database(e.to_string()))?;
+
+        let store = Self { pool };
+        store.run_migrations().await?;
+
+        info!("SQLite event store initialized at {}", db_path.display());
+        Ok(store)
+    }
+
+    /// Create a new in-memory event store (for testing)
+    pub async fn in_memory() -> Result<Self> {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .map_err(|e| Error::Database(e.to_string()))?;
+
+        let store = Self { pool };
+        store.run_migrations().await?;
+
+        debug!("In-memory SQLite event store initialized");
+        Ok(store)
+    }
+
+    /// Run database migrations
+    async fn run_migrations(&self) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS executions (
+                id TEXT PRIMARY KEY,
+                channel_type TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                thread_id TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                input_text TEXT NOT NULL,
+                output_text TEXT,
+                metadata TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS events (
+                id TEXT PRIMARY KEY,
+                execution_id TEXT NOT NULL,
+                sequence_num INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                payload TEXT NOT NULL DEFAULT '{}',
+                timestamp TEXT NOT NULL,
+                duration_ms INTEGER,
+                parent_event_id TEXT,
+                metadata TEXT NOT NULL DEFAULT '{}',
+                FOREIGN KEY (execution_id) REFERENCES executions(id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        // Create indexes
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_executions_channel
+            ON executions(channel_type, channel_id)
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_executions_user
+            ON executions(user_id)
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_executions_created
+            ON executions(created_at DESC)
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_events_execution
+            ON events(execution_id, sequence_num)
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_events_type
+            ON events(execution_id, event_type)
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        debug!("Database migrations completed");
+        Ok(())
     }
 
     /// Get a reference to the underlying connection pool
     #[must_use]
-    pub fn pool(&self) -> &PgPool {
+    pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }
 
@@ -60,25 +200,25 @@ impl EventStore {
                 status, started_at, completed_at,
                 input_text, output_text, metadata, created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5,
-                $6, $7, $8,
-                $9, $10, $11, $12, $13
+                ?1, ?2, ?3, ?4, ?5,
+                ?6, ?7, ?8,
+                ?9, ?10, ?11, ?12, ?13
             )
             "#,
         )
-        .bind(execution.id)
+        .bind(execution.id.to_string())
         .bind(&execution.channel_type)
         .bind(&execution.channel_id)
         .bind(&execution.user_id)
         .bind(&execution.thread_id)
         .bind(execution.status.as_str())
-        .bind(execution.started_at)
-        .bind(execution.completed_at)
+        .bind(execution.started_at.to_rfc3339())
+        .bind(execution.completed_at.map(|t| t.to_rfc3339()))
         .bind(&execution.input_text)
         .bind(&execution.output_text)
-        .bind(&execution.metadata)
-        .bind(execution.created_at)
-        .bind(execution.updated_at)
+        .bind(execution.metadata.to_string())
+        .bind(execution.created_at.to_rfc3339())
+        .bind(execution.updated_at.to_rfc3339())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
@@ -96,10 +236,10 @@ impl EventStore {
                    status, started_at, completed_at,
                    input_text, output_text, metadata, created_at, updated_at
             FROM executions
-            WHERE id = $1
+            WHERE id = ?1
             "#,
         )
-        .bind(id)
+        .bind(id.to_string())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?
@@ -117,7 +257,7 @@ impl EventStore {
         output_text: Option<&str>,
     ) -> Result<()> {
         let completed_at = if status.is_terminal() {
-            Some(Utc::now())
+            Some(Utc::now().to_rfc3339())
         } else {
             None
         };
@@ -125,15 +265,16 @@ impl EventStore {
         sqlx::query(
             r#"
             UPDATE executions
-            SET status = $2, output_text = COALESCE($3, output_text),
-                completed_at = COALESCE($4, completed_at), updated_at = NOW()
-            WHERE id = $1
+            SET status = ?2, output_text = COALESCE(?3, output_text),
+                completed_at = COALESCE(?4, completed_at), updated_at = ?5
+            WHERE id = ?1
             "#,
         )
-        .bind(id)
+        .bind(id.to_string())
         .bind(status.as_str())
         .bind(output_text)
         .bind(completed_at)
+        .bind(Utc::now().to_rfc3339())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
@@ -157,9 +298,9 @@ impl EventStore {
                    status, started_at, completed_at,
                    input_text, output_text, metadata, created_at, updated_at
             FROM executions
-            WHERE channel_type = $1 AND channel_id = $2
+            WHERE channel_type = ?1 AND channel_id = ?2
             ORDER BY created_at DESC
-            LIMIT $3 OFFSET $4
+            LIMIT ?3 OFFSET ?4
             "#,
         )
         .bind(channel_type)
@@ -187,9 +328,9 @@ impl EventStore {
                    status, started_at, completed_at,
                    input_text, output_text, metadata, created_at, updated_at
             FROM executions
-            WHERE user_id = $1
+            WHERE user_id = ?1
             ORDER BY created_at DESC
-            LIMIT $2 OFFSET $3
+            LIMIT ?2 OFFSET ?3
             "#,
         )
         .bind(user_id)
@@ -212,7 +353,7 @@ impl EventStore {
                    input_text, output_text, metadata, created_at, updated_at
             FROM executions
             ORDER BY created_at DESC
-            LIMIT $1
+            LIMIT ?1
             "#,
         )
         .bind(limit)
@@ -236,19 +377,19 @@ impl EventStore {
                 id, execution_id, sequence_num, event_type,
                 payload, timestamp, duration_ms, parent_event_id, metadata
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
             )
             "#,
         )
-        .bind(event.id)
-        .bind(event.execution_id)
+        .bind(event.id.to_string())
+        .bind(event.execution_id.to_string())
         .bind(event.sequence_num)
         .bind(event.event_type.as_str())
-        .bind(&event.payload)
-        .bind(event.timestamp)
+        .bind(event.payload.to_string())
+        .bind(event.timestamp.to_rfc3339())
         .bind(event.duration_ms)
-        .bind(event.parent_event_id)
-        .bind(&event.metadata)
+        .bind(event.parent_event_id.map(|id| id.to_string()))
+        .bind(event.metadata.to_string())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
@@ -268,10 +409,10 @@ impl EventStore {
             SELECT id, execution_id, sequence_num, event_type,
                    payload, timestamp, duration_ms, parent_event_id, metadata
             FROM events
-            WHERE id = $1
+            WHERE id = ?1
             "#,
         )
-        .bind(id)
+        .bind(id.to_string())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?
@@ -288,11 +429,11 @@ impl EventStore {
             SELECT id, execution_id, sequence_num, event_type,
                    payload, timestamp, duration_ms, parent_event_id, metadata
             FROM events
-            WHERE execution_id = $1
+            WHERE execution_id = ?1
             ORDER BY sequence_num ASC
             "#,
         )
-        .bind(execution_id)
+        .bind(execution_id.to_string())
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
@@ -312,11 +453,11 @@ impl EventStore {
             SELECT id, execution_id, sequence_num, event_type,
                    payload, timestamp, duration_ms, parent_event_id, metadata
             FROM events
-            WHERE execution_id = $1 AND event_type = $2
+            WHERE execution_id = ?1 AND event_type = ?2
             ORDER BY sequence_num ASC
             "#,
         )
-        .bind(execution_id)
+        .bind(execution_id.to_string())
         .bind(event_type.as_str())
         .fetch_all(&self.pool)
         .await
@@ -333,11 +474,11 @@ impl EventStore {
             SELECT id, execution_id, sequence_num, event_type,
                    payload, timestamp, duration_ms, parent_event_id, metadata
             FROM events
-            WHERE parent_event_id = $1
+            WHERE parent_event_id = ?1
             ORDER BY sequence_num ASC
             "#,
         )
-        .bind(parent_event_id)
+        .bind(parent_event_id.to_string())
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
@@ -352,10 +493,10 @@ impl EventStore {
             r#"
             SELECT COALESCE(MAX(sequence_num), 0) + 1 as next_num
             FROM events
-            WHERE execution_id = $1
+            WHERE execution_id = ?1
             "#,
         )
-        .bind(execution_id)
+        .bind(execution_id.to_string())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
@@ -370,10 +511,10 @@ impl EventStore {
             r#"
             SELECT COUNT(*) as count
             FROM events
-            WHERE execution_id = $1
+            WHERE execution_id = ?1
             "#,
         )
-        .bind(execution_id)
+        .bind(execution_id.to_string())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
@@ -381,49 +522,131 @@ impl EventStore {
         Ok(row.get::<i64, _>("count"))
     }
 
+    /// Delete old executions (for cleanup/retention)
+    #[instrument(skip(self))]
+    pub async fn delete_old_executions(&self, before: DateTime<Utc>) -> Result<u64> {
+        // First delete events for old executions
+        sqlx::query(
+            r#"
+            DELETE FROM events
+            WHERE execution_id IN (
+                SELECT id FROM executions WHERE created_at < ?1
+            )
+            "#,
+        )
+        .bind(before.to_rfc3339())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        // Then delete the executions
+        let result = sqlx::query(
+            r#"
+            DELETE FROM executions WHERE created_at < ?1
+            "#,
+        )
+        .bind(before.to_rfc3339())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        Ok(result.rows_affected())
+    }
+
     // =========================================================================
     // Helper methods
     // =========================================================================
 
-    fn row_to_execution(row: sqlx::postgres::PgRow) -> Result<Execution> {
+    fn row_to_execution(row: SqliteRow) -> Result<Execution> {
+        let id_str: String = row.get("id");
         let status_str: String = row.get("status");
+        let started_at_str: String = row.get("started_at");
+        let completed_at_str: Option<String> = row.get("completed_at");
+        let metadata_str: String = row.get("metadata");
+        let created_at_str: String = row.get("created_at");
+        let updated_at_str: String = row.get("updated_at");
+
+        let id = Uuid::parse_str(&id_str)
+            .map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))?;
         let status: ExecutionStatus = status_str
             .parse()
             .map_err(|e: String| Error::Serialization(e))?;
+        let started_at = DateTime::parse_from_rfc3339(&started_at_str)
+            .map_err(|e| Error::Serialization(format!("invalid timestamp: {e}")))?
+            .with_timezone(&Utc);
+        let completed_at = completed_at_str
+            .map(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .map_err(|e| Error::Serialization(format!("invalid timestamp: {e}")))
+            })
+            .transpose()?;
+        let metadata: serde_json::Value = serde_json::from_str(&metadata_str)
+            .map_err(|e| Error::Serialization(format!("invalid json: {e}")))?;
+        let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+            .map_err(|e| Error::Serialization(format!("invalid timestamp: {e}")))?
+            .with_timezone(&Utc);
+        let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
+            .map_err(|e| Error::Serialization(format!("invalid timestamp: {e}")))?
+            .with_timezone(&Utc);
 
         Ok(Execution {
-            id: row.get("id"),
+            id,
             channel_type: row.get("channel_type"),
             channel_id: row.get("channel_id"),
             user_id: row.get("user_id"),
             thread_id: row.get("thread_id"),
             status,
-            started_at: row.get("started_at"),
-            completed_at: row.get("completed_at"),
+            started_at,
+            completed_at,
             input_text: row.get("input_text"),
             output_text: row.get("output_text"),
-            metadata: row.get("metadata"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
+            metadata,
+            created_at,
+            updated_at,
         })
     }
 
-    fn row_to_event(row: sqlx::postgres::PgRow) -> Result<Event> {
+    fn row_to_event(row: SqliteRow) -> Result<Event> {
+        let id_str: String = row.get("id");
+        let execution_id_str: String = row.get("execution_id");
         let event_type_str: String = row.get("event_type");
+        let payload_str: String = row.get("payload");
+        let timestamp_str: String = row.get("timestamp");
+        let parent_event_id_str: Option<String> = row.get("parent_event_id");
+        let metadata_str: String = row.get("metadata");
+
+        let id = Uuid::parse_str(&id_str)
+            .map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))?;
+        let execution_id = Uuid::parse_str(&execution_id_str)
+            .map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))?;
         let event_type: EventType = event_type_str
             .parse()
             .map_err(|e: String| Error::Serialization(e))?;
+        let payload: serde_json::Value = serde_json::from_str(&payload_str)
+            .map_err(|e| Error::Serialization(format!("invalid json: {e}")))?;
+        let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
+            .map_err(|e| Error::Serialization(format!("invalid timestamp: {e}")))?
+            .with_timezone(&Utc);
+        let parent_event_id = parent_event_id_str
+            .map(|s| {
+                Uuid::parse_str(&s)
+                    .map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))
+            })
+            .transpose()?;
+        let metadata: serde_json::Value = serde_json::from_str(&metadata_str)
+            .map_err(|e| Error::Serialization(format!("invalid json: {e}")))?;
 
         Ok(Event {
-            id: row.get("id"),
-            execution_id: row.get("execution_id"),
+            id,
+            execution_id,
             sequence_num: row.get("sequence_num"),
             event_type,
-            payload: row.get("payload"),
-            timestamp: row.get("timestamp"),
+            payload,
+            timestamp,
             duration_ms: row.get("duration_ms"),
-            parent_event_id: row.get("parent_event_id"),
-            metadata: row.get("metadata"),
+            parent_event_id,
+            metadata,
         })
     }
 }
@@ -439,7 +662,7 @@ impl EventStoreTrait for EventStore {
     }
 
     fn name(&self) -> &str {
-        "postgresql"
+        "sqlite"
     }
 }
 
@@ -724,6 +947,19 @@ impl ExecutionQuery {
     }
 }
 
+/// Get the default data directory for Cratos
+pub fn default_data_dir() -> std::path::PathBuf {
+    dirs::data_local_dir()
+        .or_else(dirs::home_dir)
+        .map(|p| p.join(".cratos"))
+        .unwrap_or_else(|| std::path::PathBuf::from(".cratos"))
+}
+
+/// Get the default database path
+pub fn default_db_path() -> std::path::PathBuf {
+    default_data_dir().join("cratos.db")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -742,5 +978,56 @@ mod tests {
         assert_eq!(query.status, Some(ExecutionStatus::Completed));
         assert_eq!(query.limit, 10);
         assert_eq!(query.offset, 0);
+    }
+
+    #[test]
+    fn test_default_data_dir() {
+        let dir = default_data_dir();
+        assert!(dir.to_string_lossy().contains("cratos"));
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_store() {
+        let store = EventStore::in_memory().await.unwrap();
+        assert_eq!(store.name(), "sqlite");
+
+        // Create an execution
+        let execution = Execution::new("telegram", "12345", "user1", "Hello, world!");
+        store.create_execution(&execution).await.unwrap();
+
+        // Retrieve it
+        let retrieved = store.get_execution(execution.id).await.unwrap();
+        assert_eq!(retrieved.id, execution.id);
+        assert_eq!(retrieved.input_text, "Hello, world!");
+    }
+
+    #[tokio::test]
+    async fn test_event_recording() {
+        let store = EventStore::in_memory().await.unwrap();
+
+        // Create an execution
+        let execution = Execution::new("telegram", "12345", "user1", "Hello");
+        store.create_execution(&execution).await.unwrap();
+
+        // Create a recorder
+        let recorder = EventRecorder::new(store.clone(), execution.id);
+
+        // Record some events
+        recorder.record_user_input("Hello").await.unwrap();
+        recorder
+            .record_llm_request("openai", "gpt-4", 1, &[])
+            .await
+            .unwrap();
+        recorder
+            .record_llm_response("openai", "gpt-4", "Hi!", false, None, 100)
+            .await
+            .unwrap();
+
+        // Verify
+        let events = store.get_execution_events(execution.id).await.unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].event_type, EventType::UserInput);
+        assert_eq!(events[1].event_type, EventType::LlmRequest);
+        assert_eq!(events[2].event_type, EventType::LlmResponse);
     }
 }
