@@ -119,6 +119,7 @@ fn test_tool_registry_with_builtins() {
         "git_diff",
         "git_push",
         "github_api",
+        "browser",
     ];
 
     for tool_name in expected_tools {
