@@ -8,10 +8,29 @@ use crate::message::{
     ChannelAdapter, ChannelType, MessageButton, NormalizedMessage, OutgoingMessage,
 };
 use cratos_core::{Orchestrator, OrchestratorInput};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use slack_morphism::prelude::*;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
+
+/// Maximum allowed timestamp age in seconds (5 minutes)
+const MAX_TIMESTAMP_AGE_SECS: u64 = 300;
+
+/// Constant-time comparison to prevent timing attacks
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+
+    let mut result = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
+}
 
 /// Slack bot configuration
 #[derive(Debug, Clone)]
@@ -174,6 +193,82 @@ impl SlackAdapter {
         } else {
             false
         }
+    }
+
+    /// Verify a Slack request signature (HMAC-SHA256)
+    ///
+    /// This implements Slack's request signing verification as described at:
+    /// https://api.slack.com/authentication/verifying-requests-from-slack
+    ///
+    /// # Arguments
+    /// * `timestamp` - The X-Slack-Request-Timestamp header value
+    /// * `body` - The raw request body
+    /// * `signature` - The X-Slack-Signature header value (v0=...)
+    ///
+    /// # Returns
+    /// * `Ok(())` if the signature is valid
+    /// * `Err(...)` if verification fails
+    pub fn verify_signature(&self, timestamp: &str, body: &str, signature: &str) -> Result<()> {
+        // Check timestamp to prevent replay attacks
+        let ts: u64 = timestamp
+            .parse()
+            .map_err(|_| Error::Slack("Invalid timestamp".to_string()))?;
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| Error::Slack("System time error".to_string()))?
+            .as_secs();
+
+        if now.abs_diff(ts) > MAX_TIMESTAMP_AGE_SECS {
+            warn!(
+                timestamp = %ts,
+                now = %now,
+                "Slack request timestamp too old (possible replay attack)"
+            );
+            return Err(Error::Slack(
+                "Request timestamp is too old or in the future".to_string(),
+            ));
+        }
+
+        // Compute expected signature
+        let sig_basestring = format!("v0:{}:{}", timestamp, body);
+
+        type HmacSha256 = Hmac<Sha256>;
+        let mut mac = HmacSha256::new_from_slice(self.config.signing_secret.as_bytes())
+            .map_err(|_| Error::Slack("Invalid signing secret".to_string()))?;
+        mac.update(sig_basestring.as_bytes());
+        let expected = mac.finalize().into_bytes();
+        let expected_hex = format!("v0={}", hex::encode(expected));
+
+        // Constant-time comparison to prevent timing attacks
+        if !constant_time_eq(signature.as_bytes(), expected_hex.as_bytes()) {
+            warn!("Slack signature verification failed");
+            return Err(Error::Slack("Invalid request signature".to_string()));
+        }
+
+        debug!("Slack signature verified successfully");
+        Ok(())
+    }
+
+    /// Verify webhook request with all headers
+    pub fn verify_webhook_request(
+        &self,
+        headers: &[(String, String)],
+        body: &str,
+    ) -> Result<()> {
+        let timestamp = headers
+            .iter()
+            .find(|(k, _)| k.to_lowercase() == "x-slack-request-timestamp")
+            .map(|(_, v)| v.as_str())
+            .ok_or_else(|| Error::Slack("Missing X-Slack-Request-Timestamp header".to_string()))?;
+
+        let signature = headers
+            .iter()
+            .find(|(k, _)| k.to_lowercase() == "x-slack-signature")
+            .map(|(_, v)| v.as_str())
+            .ok_or_else(|| Error::Slack("Missing X-Slack-Signature header".to_string()))?;
+
+        self.verify_signature(timestamp, body, signature)
     }
 
     /// Fetch bot user info and cache the bot user ID
@@ -503,5 +598,58 @@ mod tests {
         // DM channels in Slack start with 'D'
         assert!("D1234567890".starts_with('D'));
         assert!(!"C1234567890".starts_with('D'));
+    }
+
+    #[test]
+    fn test_constant_time_eq() {
+        assert!(constant_time_eq(b"hello", b"hello"));
+        assert!(!constant_time_eq(b"hello", b"world"));
+        assert!(!constant_time_eq(b"hello", b"hell"));
+        assert!(!constant_time_eq(b"a", b"ab"));
+    }
+
+    #[test]
+    fn test_signature_verification() {
+        // Test with known values
+        let config = SlackConfig::new("xoxb-test", "xapp-test", "8f742231b10e8888abcd99yyyzzz85a5");
+        let adapter = SlackAdapter::new(config);
+
+        // Use current timestamp to avoid replay protection rejection
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let timestamp = now.to_string();
+        let body = "token=xyzz0WbapA4vBCDEFasx0q6G&team_id=T1DC2JH3J&team_domain=testteamnow&channel_id=G8PSS9T3V&channel_name=foobar&user_id=U2CERLKJA&user_name=roadrunner&command=%2Fwebhook-collect&text=&response_url=https%3A%2F%2Fhooks.slack.com%2Fcommands%2FT1DC2JH3J%2F397700885554%2F96rGlfmibIGlgcZRskXaIFfN&trigger_id=398738663015.47445629121.803a0bc887a14d10d2c447fce8b6703c";
+
+        // Compute expected signature manually
+        let sig_basestring = format!("v0:{}:{}", timestamp, body);
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+
+        type HmacSha256 = Hmac<Sha256>;
+        let mut mac =
+            HmacSha256::new_from_slice(b"8f742231b10e8888abcd99yyyzzz85a5").unwrap();
+        mac.update(sig_basestring.as_bytes());
+        let expected = mac.finalize().into_bytes();
+        let signature = format!("v0={}", hex::encode(expected));
+
+        // Should verify successfully with correct signature
+        assert!(adapter.verify_signature(&timestamp, body, &signature).is_ok());
+
+        // Should fail with incorrect signature
+        assert!(adapter
+            .verify_signature(&timestamp, body, "v0=invalid")
+            .is_err());
+    }
+
+    #[test]
+    fn test_signature_replay_protection() {
+        let config = SlackConfig::new("xoxb-test", "xapp-test", "secret");
+        let adapter = SlackAdapter::new(config);
+
+        // Very old timestamp should be rejected
+        let result = adapter.verify_signature("1000000000", "body", "v0=sig");
+        assert!(result.is_err());
     }
 }

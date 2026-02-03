@@ -23,6 +23,11 @@ anyhow.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
 
+# Security - Slack request signature verification
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
 [dev-dependencies]
 mockall.workspace = true
 tokio-test.workspace = true
