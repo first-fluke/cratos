@@ -9,19 +9,33 @@
 //! @frontend UI 만들어줘
 //! @backend API @frontend UI 병렬 실행
 //! ```
+//!
+//! ## Safety Features
+//!
+//! - **CancellationToken**: User can cancel running tasks at any time
+//! - **Token Budget**: Limits total tokens per session to prevent runaway costs
+//! - **Timeout**: Each task has a configurable timeout
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 /// Pre-compiled regex for @mention parsing (e.g., "@backend do something")
 static MENTION_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"@(\w+)\s+").expect("MENTION_REGEX is a compile-time constant"));
+
+/// Default token budget per session (100K tokens)
+const DEFAULT_TOKEN_BUDGET: u64 = 100_000;
+
+/// Default max recursion depth for agent calls
+const DEFAULT_MAX_DEPTH: u32 = 3;
 
 use super::cli_registry::{CliError, CliRegistry};
 use super::config::AgentConfig;
@@ -48,6 +62,23 @@ pub enum OrchestratorError {
     /// Configuration error
     #[error("Configuration error: {0}")]
     Configuration(String),
+
+    /// Task was cancelled by user
+    #[error("Task cancelled by user")]
+    Cancelled,
+
+    /// Token budget exceeded
+    #[error("Token budget exceeded: used {used} of {budget} tokens")]
+    BudgetExceeded {
+        /// Tokens used so far
+        used: u64,
+        /// Token budget limit
+        budget: u64,
+    },
+
+    /// Max recursion depth exceeded
+    #[error("Max recursion depth exceeded: {0}")]
+    MaxDepthExceeded(u32),
 }
 
 /// Orchestrator result type
@@ -68,6 +99,12 @@ pub struct OrchestratorConfig {
     /// Max parallel agents
     #[serde(default = "default_max_parallel")]
     pub max_parallel: usize,
+    /// Token budget per session (0 = unlimited)
+    #[serde(default = "default_token_budget")]
+    pub token_budget: u64,
+    /// Max recursion depth for agent-to-agent calls
+    #[serde(default = "default_max_depth")]
+    pub max_depth: u32,
 }
 
 fn default_agent() -> String {
@@ -89,6 +126,14 @@ fn default_max_parallel() -> usize {
     5
 }
 
+fn default_token_budget() -> u64 {
+    DEFAULT_TOKEN_BUDGET
+}
+
+fn default_max_depth() -> u32 {
+    DEFAULT_MAX_DEPTH
+}
+
 impl Default for OrchestratorConfig {
     fn default() -> Self {
         Self {
@@ -96,6 +141,8 @@ impl Default for OrchestratorConfig {
             semantic_routing: true,
             workspace_base: default_workspace(),
             max_parallel: default_max_parallel(),
+            token_budget: default_token_budget(),
+            max_depth: default_max_depth(),
         }
     }
 }
@@ -137,6 +184,8 @@ pub enum TaskStatus {
     Completed(AgentResponse),
     /// Failed with error
     Failed(String),
+    /// Cancelled by user
+    Cancelled,
 }
 
 /// Session context for agent execution
@@ -170,6 +219,8 @@ impl Default for ExecutionContext {
 /// - Semantic keyword routing
 /// - CLI provider mapping
 /// - Parallel execution support
+/// - Cancellation support
+/// - Token budget tracking
 pub struct AgentOrchestrator {
     /// Registered agents
     agents: HashMap<String, AgentConfig>,
@@ -179,6 +230,12 @@ pub struct AgentOrchestrator {
     config: OrchestratorConfig,
     /// Active tasks
     active_tasks: RwLock<HashMap<String, TaskStatus>>,
+    /// Cancellation token for stopping all tasks
+    cancel_token: CancellationToken,
+    /// Total tokens used in this session
+    tokens_used: AtomicU64,
+    /// Current recursion depth
+    current_depth: AtomicU64,
 }
 
 impl AgentOrchestrator {
@@ -194,6 +251,9 @@ impl AgentOrchestrator {
             cli_registry: Arc::new(CliRegistry::with_defaults()),
             config,
             active_tasks: RwLock::new(HashMap::new()),
+            cancel_token: CancellationToken::new(),
+            tokens_used: AtomicU64::new(0),
+            current_depth: AtomicU64::new(0),
         }
     }
 
@@ -202,6 +262,80 @@ impl AgentOrchestrator {
         let mut orchestrator = Self::new(config);
         orchestrator.cli_registry = Arc::new(cli_registry);
         orchestrator
+    }
+
+    /// Get a child cancellation token for this orchestrator
+    pub fn cancel_token(&self) -> CancellationToken {
+        self.cancel_token.child_token()
+    }
+
+    /// Cancel all running tasks
+    pub fn cancel(&self) {
+        info!("Cancelling all orchestrator tasks");
+        self.cancel_token.cancel();
+    }
+
+    /// Check if cancellation was requested
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_token.is_cancelled()
+    }
+
+    /// Reset the orchestrator for a new session
+    pub fn reset(&self) {
+        self.tokens_used.store(0, Ordering::SeqCst);
+        self.current_depth.store(0, Ordering::SeqCst);
+    }
+
+    /// Get current token usage
+    pub fn tokens_used(&self) -> u64 {
+        self.tokens_used.load(Ordering::SeqCst)
+    }
+
+    /// Get remaining token budget
+    pub fn tokens_remaining(&self) -> u64 {
+        if self.config.token_budget == 0 {
+            return u64::MAX; // Unlimited
+        }
+        self.config
+            .token_budget
+            .saturating_sub(self.tokens_used.load(Ordering::SeqCst))
+    }
+
+    /// Add tokens to usage counter, returns error if budget exceeded
+    fn track_tokens(&self, tokens: u64) -> OrchestratorResult<()> {
+        if self.config.token_budget == 0 {
+            return Ok(()); // Unlimited
+        }
+
+        let new_total = self.tokens_used.fetch_add(tokens, Ordering::SeqCst) + tokens;
+        if new_total > self.config.token_budget {
+            warn!(
+                used = new_total,
+                budget = self.config.token_budget,
+                "Token budget exceeded"
+            );
+            return Err(OrchestratorError::BudgetExceeded {
+                used: new_total,
+                budget: self.config.token_budget,
+            });
+        }
+        debug!(tokens = tokens, total = new_total, "Tokens tracked");
+        Ok(())
+    }
+
+    /// Check and increment recursion depth
+    fn enter_depth(&self) -> OrchestratorResult<()> {
+        let depth = self.current_depth.fetch_add(1, Ordering::SeqCst) + 1;
+        if depth > self.config.max_depth as u64 {
+            self.current_depth.fetch_sub(1, Ordering::SeqCst);
+            return Err(OrchestratorError::MaxDepthExceeded(self.config.max_depth));
+        }
+        Ok(())
+    }
+
+    /// Decrement recursion depth
+    fn exit_depth(&self) {
+        self.current_depth.fetch_sub(1, Ordering::SeqCst);
     }
 
     /// Register an agent
@@ -232,7 +366,32 @@ impl AgentOrchestrator {
     /// ```ignore
     /// let response = orchestrator.handle("@backend API 구현해줘", &context).await?;
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `Cancelled` if the task was cancelled by user.
+    /// Returns `BudgetExceeded` if the token budget was exceeded.
     pub async fn handle(
+        &self,
+        input: &str,
+        context: &ExecutionContext,
+    ) -> OrchestratorResult<Vec<AgentResponse>> {
+        // Check cancellation before starting
+        if self.is_cancelled() {
+            return Err(OrchestratorError::Cancelled);
+        }
+
+        // Check recursion depth
+        self.enter_depth()?;
+
+        let result = self.handle_inner(input, context).await;
+
+        self.exit_depth();
+        result
+    }
+
+    /// Inner handle implementation
+    async fn handle_inner(
         &self,
         input: &str,
         context: &ExecutionContext,
@@ -370,6 +529,13 @@ impl AgentOrchestrator {
         task: &ParsedAgentTask,
         context: &ExecutionContext,
     ) -> OrchestratorResult<AgentResponse> {
+        // Check cancellation before starting
+        if self.is_cancelled() {
+            let mut tasks = self.active_tasks.write().await;
+            tasks.insert(task.agent_id.clone(), TaskStatus::Cancelled);
+            return Err(OrchestratorError::Cancelled);
+        }
+
         let start = std::time::Instant::now();
 
         let agent = self
@@ -405,18 +571,40 @@ impl AgentOrchestrator {
                 .join(&task.agent_id)
         });
 
-        // Execute via CLI provider
-        let result = provider
-            .execute(&task.prompt, &agent.persona.prompt, Some(&workspace))
-            .await;
+        // Execute via CLI provider with cancellation support
+        let cancel_token = self.cancel_token.child_token();
+        let execution = provider.execute(&task.prompt, &agent.persona.prompt, Some(&workspace));
+
+        let result = tokio::select! {
+            result = execution => result,
+            _ = cancel_token.cancelled() => {
+                warn!(agent_id = %task.agent_id, "Task cancelled by user");
+                let mut tasks = self.active_tasks.write().await;
+                tasks.insert(task.agent_id.clone(), TaskStatus::Cancelled);
+                return Err(OrchestratorError::Cancelled);
+            }
+        };
 
         let duration_ms = start.elapsed().as_millis() as u64;
 
         let response = match result {
             Ok(content) => {
+                // Estimate tokens used (rough estimate: 4 chars per token)
+                let estimated_tokens = (content.len() / 4) as u64;
+                if let Err(e) = self.track_tokens(estimated_tokens) {
+                    warn!(agent_id = %task.agent_id, "Token budget exceeded");
+                    let mut tasks = self.active_tasks.write().await;
+                    tasks.insert(
+                        task.agent_id.clone(),
+                        TaskStatus::Failed(e.to_string()),
+                    );
+                    return Err(e);
+                }
+
                 info!(
                     agent_id = %task.agent_id,
                     duration_ms = duration_ms,
+                    tokens = estimated_tokens,
                     "Agent task completed"
                 );
                 AgentResponse {
@@ -468,6 +656,11 @@ impl AgentOrchestrator {
         tasks: Vec<ParsedAgentTask>,
         context: &ExecutionContext,
     ) -> OrchestratorResult<Vec<AgentResponse>> {
+        // Check cancellation before starting
+        if self.is_cancelled() {
+            return Err(OrchestratorError::Cancelled);
+        }
+
         let max_parallel = self.config.max_parallel.min(tasks.len());
 
         info!(
@@ -485,14 +678,27 @@ impl AgentOrchestrator {
             })
             .collect();
 
-        // Execute all (limited concurrency could be added here)
-        let results = futures::future::join_all(futures).await;
+        // Execute all with cancellation support
+        let cancel_token = self.cancel_token.child_token();
+        let all_futures = futures::future::join_all(futures);
 
-        // Collect results
+        let results = tokio::select! {
+            results = all_futures => results,
+            _ = cancel_token.cancelled() => {
+                warn!("Parallel execution cancelled by user");
+                return Err(OrchestratorError::Cancelled);
+            }
+        };
+
+        // Collect results (skip cancelled tasks)
         let mut responses = Vec::new();
         for result in results {
             match result {
                 Ok(response) => responses.push(response),
+                Err(OrchestratorError::Cancelled) => {
+                    // Skip cancelled tasks
+                    continue;
+                }
                 Err(e) => {
                     warn!(error = %e, "Parallel task failed");
                     // Continue with other tasks
@@ -590,5 +796,98 @@ mod tests {
         assert!(agents.contains(&"qa"));
         assert!(agents.contains(&"pm"));
         assert!(agents.contains(&"researcher"));
+    }
+
+    #[test]
+    fn test_cancellation() {
+        let orchestrator = AgentOrchestrator::default();
+
+        assert!(!orchestrator.is_cancelled());
+
+        orchestrator.cancel();
+
+        assert!(orchestrator.is_cancelled());
+    }
+
+    #[test]
+    fn test_token_tracking() {
+        let config = OrchestratorConfig {
+            token_budget: 1000,
+            ..Default::default()
+        };
+        let orchestrator = AgentOrchestrator::new(config);
+
+        assert_eq!(orchestrator.tokens_used(), 0);
+        assert_eq!(orchestrator.tokens_remaining(), 1000);
+
+        // Track some tokens
+        orchestrator.track_tokens(500).unwrap();
+        assert_eq!(orchestrator.tokens_used(), 500);
+        assert_eq!(orchestrator.tokens_remaining(), 500);
+
+        // Try to exceed budget
+        let result = orchestrator.track_tokens(600);
+        assert!(result.is_err());
+
+        if let Err(OrchestratorError::BudgetExceeded { used, budget }) = result {
+            assert_eq!(used, 1100);
+            assert_eq!(budget, 1000);
+        }
+    }
+
+    #[test]
+    fn test_unlimited_budget() {
+        let config = OrchestratorConfig {
+            token_budget: 0, // Unlimited
+            ..Default::default()
+        };
+        let orchestrator = AgentOrchestrator::new(config);
+
+        assert_eq!(orchestrator.tokens_remaining(), u64::MAX);
+
+        // Should allow any amount of tokens
+        orchestrator.track_tokens(1_000_000).unwrap();
+        orchestrator.track_tokens(1_000_000).unwrap();
+    }
+
+    #[test]
+    fn test_recursion_depth() {
+        let config = OrchestratorConfig {
+            max_depth: 2,
+            ..Default::default()
+        };
+        let orchestrator = AgentOrchestrator::new(config);
+
+        // First two levels should work
+        orchestrator.enter_depth().unwrap();
+        orchestrator.enter_depth().unwrap();
+
+        // Third level should fail
+        let result = orchestrator.enter_depth();
+        assert!(result.is_err());
+        if let Err(OrchestratorError::MaxDepthExceeded(depth)) = result {
+            assert_eq!(depth, 2);
+        }
+
+        // Exit depth
+        orchestrator.exit_depth();
+        orchestrator.exit_depth();
+
+        // Should work again
+        orchestrator.enter_depth().unwrap();
+    }
+
+    #[test]
+    fn test_reset() {
+        let orchestrator = AgentOrchestrator::default();
+
+        orchestrator.track_tokens(5000).ok();
+        orchestrator.enter_depth().ok();
+
+        assert!(orchestrator.tokens_used() > 0);
+
+        orchestrator.reset();
+
+        assert_eq!(orchestrator.tokens_used(), 0);
     }
 }
