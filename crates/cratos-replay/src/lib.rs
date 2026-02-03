@@ -2,14 +2,17 @@
 //!
 //! This crate provides the replay/audit system for Cratos:
 //! - Event: Event types and schemas
-//! - Store: Event persistence (PostgreSQL)
+//! - Store: Event persistence (SQLite)
 //! - Viewer: Event query and replay API
+//! - Search: Semantic search over execution history (feature: search)
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 pub mod error;
 pub mod event;
+#[cfg(feature = "search")]
+pub mod search;
 pub mod store;
 pub mod viewer;
 
@@ -20,4 +23,11 @@ pub use store::{
 };
 pub use viewer::{
     ExecutionDetail, ExecutionStats, ExecutionSummary, ExecutionViewer, ReplayOptions,
+};
+
+// Re-export search types when feature is enabled
+#[cfg(feature = "search")]
+pub use search::{
+    create_execution_index, ExecutionSearcher, ExecutionSearchResult, SearchEmbedder,
+    SearcherConfig,
 };
