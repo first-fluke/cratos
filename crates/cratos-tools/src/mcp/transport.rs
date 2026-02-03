@@ -153,7 +153,7 @@ impl McpConnection {
 
                         match serde_json::from_str::<McpResponse>(&line) {
                             Ok(response) => {
-                                let mut pending = pending.lock().unwrap();
+                                let mut pending = pending.lock().unwrap_or_else(|e| e.into_inner());
                                 if let Some(sender) = pending.remove(&response.id) {
                                     let _ = sender.send(response);
                                 }
@@ -185,7 +185,7 @@ impl McpConnection {
         // Register pending request
         let (tx, rx) = oneshot::channel();
         {
-            let mut pending = self.pending.lock().unwrap();
+            let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
             pending.insert(request.id, tx);
         }
 
@@ -197,7 +197,7 @@ impl McpConnection {
         debug!(server = %self.name, request = %json, "Sending to MCP server");
 
         {
-            let mut stdin = stdin.lock().unwrap();
+            let mut stdin = stdin.lock().unwrap_or_else(|e| e.into_inner());
             writeln!(stdin, "{}", json).map_err(|e| {
                 McpError::Transport(format!("Failed to write to stdin: {}", e))
             })?;
@@ -233,7 +233,7 @@ impl McpConnection {
     /// Stop the connection
     pub fn stop(&mut self) -> McpResult<()> {
         if let Some(process) = self.process.take() {
-            let mut process = process.lock().unwrap();
+            let mut process = process.lock().unwrap_or_else(|e| e.into_inner());
             let _ = process.kill();
             info!(server = %self.name, "MCP server process stopped");
         }

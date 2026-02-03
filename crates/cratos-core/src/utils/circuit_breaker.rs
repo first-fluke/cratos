@@ -133,7 +133,7 @@ impl CircuitBreaker {
     /// Get the current state
     #[must_use]
     pub fn state(&self) -> CircuitState {
-        *self.state.read().unwrap()
+        *self.state.read().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Get current failure count
@@ -238,7 +238,7 @@ impl CircuitBreaker {
 
     /// Transition to open state
     fn open(&self) {
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
         if *state != CircuitState::Open {
             info!(
                 name = %self.name,
@@ -252,7 +252,7 @@ impl CircuitBreaker {
 
     /// Transition to half-open state
     fn half_open(&self) {
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
         if *state == CircuitState::Open {
             info!(name = %self.name, "Circuit breaker entering half-open state");
             *state = CircuitState::HalfOpen;
@@ -263,7 +263,7 @@ impl CircuitBreaker {
 
     /// Transition to closed state
     fn close(&self) {
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
         if *state != CircuitState::Closed {
             info!(name = %self.name, "Circuit breaker closed");
             *state = CircuitState::Closed;

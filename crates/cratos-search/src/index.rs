@@ -242,7 +242,7 @@ impl VectorIndex {
             .map_err(|e| Error::Index(format!("Failed to save index: {}", e)))?;
 
         // Save ID mapping
-        let id_to_key = self.id_to_key.read().unwrap();
+        let id_to_key = self.id_to_key.read().unwrap_or_else(|e| e.into_inner());
         let mapping = IdMapping {
             mappings: id_to_key.iter().map(|(k, v)| (k.clone(), *v)).collect(),
             next_key: self.next_key.load(Ordering::SeqCst),
@@ -274,7 +274,7 @@ impl VectorIndex {
 
         // Check if ID already exists
         {
-            let id_to_key = self.id_to_key.read().unwrap();
+            let id_to_key = self.id_to_key.read().unwrap_or_else(|e| e.into_inner());
             if id_to_key.contains_key(id) {
                 return Err(Error::AlreadyExists(id.to_string()));
             }
@@ -290,8 +290,8 @@ impl VectorIndex {
 
         // Update mappings
         {
-            let mut id_to_key = self.id_to_key.write().unwrap();
-            let mut key_to_id = self.key_to_id.write().unwrap();
+            let mut id_to_key = self.id_to_key.write().unwrap_or_else(|e| e.into_inner());
+            let mut key_to_id = self.key_to_id.write().unwrap_or_else(|e| e.into_inner());
             id_to_key.insert(id.to_string(), key);
             key_to_id.insert(key, id.to_string());
         }
@@ -316,7 +316,7 @@ impl VectorIndex {
     #[instrument(skip(self), fields(id = %id))]
     pub fn remove(&self, id: &str) -> Result<()> {
         let key = {
-            let id_to_key = self.id_to_key.read().unwrap();
+            let id_to_key = self.id_to_key.read().unwrap_or_else(|e| e.into_inner());
             *id_to_key
                 .get(id)
                 .ok_or_else(|| Error::NotFound(id.to_string()))?
@@ -329,8 +329,8 @@ impl VectorIndex {
 
         // Update mappings
         {
-            let mut id_to_key = self.id_to_key.write().unwrap();
-            let mut key_to_id = self.key_to_id.write().unwrap();
+            let mut id_to_key = self.id_to_key.write().unwrap_or_else(|e| e.into_inner());
+            let mut key_to_id = self.key_to_id.write().unwrap_or_else(|e| e.into_inner());
             id_to_key.remove(id);
             key_to_id.remove(&key);
         }
@@ -355,7 +355,7 @@ impl VectorIndex {
             .search(query, top_k)
             .map_err(|e| Error::Search(format!("Search failed: {}", e)))?;
 
-        let key_to_id = self.key_to_id.read().unwrap();
+        let key_to_id = self.key_to_id.read().unwrap_or_else(|e| e.into_inner());
         let search_results: Vec<SearchResult> = results
             .keys
             .iter()
@@ -383,13 +383,13 @@ impl VectorIndex {
 
     /// Check if an ID exists in the index
     pub fn contains(&self, id: &str) -> bool {
-        let id_to_key = self.id_to_key.read().unwrap();
+        let id_to_key = self.id_to_key.read().unwrap_or_else(|e| e.into_inner());
         id_to_key.contains_key(id)
     }
 
     /// Get the number of vectors in the index
     pub fn len(&self) -> usize {
-        let id_to_key = self.id_to_key.read().unwrap();
+        let id_to_key = self.id_to_key.read().unwrap_or_else(|e| e.into_inner());
         id_to_key.len()
     }
 
@@ -405,7 +405,7 @@ impl VectorIndex {
 
     /// Get all IDs in the index
     pub fn ids(&self) -> Vec<String> {
-        let id_to_key = self.id_to_key.read().unwrap();
+        let id_to_key = self.id_to_key.read().unwrap_or_else(|e| e.into_inner());
         id_to_key.keys().cloned().collect()
     }
 
@@ -413,7 +413,7 @@ impl VectorIndex {
     pub fn clear(&self) -> Result<()> {
         // Clear usearch index by removing all keys
         let keys: Vec<u64> = {
-            let key_to_id = self.key_to_id.read().unwrap();
+            let key_to_id = self.key_to_id.read().unwrap_or_else(|e| e.into_inner());
             key_to_id.keys().cloned().collect()
         };
 
@@ -425,8 +425,8 @@ impl VectorIndex {
 
         // Clear mappings
         {
-            let mut id_to_key = self.id_to_key.write().unwrap();
-            let mut key_to_id = self.key_to_id.write().unwrap();
+            let mut id_to_key = self.id_to_key.write().unwrap_or_else(|e| e.into_inner());
+            let mut key_to_id = self.key_to_id.write().unwrap_or_else(|e| e.into_inner());
             id_to_key.clear();
             key_to_id.clear();
         }

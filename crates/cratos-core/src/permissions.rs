@@ -355,11 +355,21 @@ impl TimeRestrictions {
             return false;
         }
 
-        // Parse work hours
+        // Parse work hours with safe defaults (9:00 and 18:00)
+        // SAFETY: These hour/minute values are always valid
+        const DEFAULT_START: NaiveTime = match NaiveTime::from_hms_opt(9, 0, 0) {
+            Some(t) => t,
+            None => unreachable!(),
+        };
+        const DEFAULT_END: NaiveTime = match NaiveTime::from_hms_opt(18, 0, 0) {
+            Some(t) => t,
+            None => unreachable!(),
+        };
+
         let start = NaiveTime::parse_from_str(&self.work_start, "%H:%M")
-            .unwrap_or_else(|_| NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+            .unwrap_or(DEFAULT_START);
         let end = NaiveTime::parse_from_str(&self.work_end, "%H:%M")
-            .unwrap_or_else(|_| NaiveTime::from_hms_opt(18, 0, 0).unwrap());
+            .unwrap_or(DEFAULT_END);
 
         current_time >= start && current_time <= end
     }

@@ -210,37 +210,37 @@ impl MetricsRegistry {
 
     /// Get or create a counter
     pub fn counter(&self, name: &str) -> Counter {
-        let counters = self.counters.read().unwrap();
+        let counters = self.counters.read().unwrap_or_else(|e| e.into_inner());
         if let Some(counter) = counters.get(name) {
             return counter.clone();
         }
         drop(counters);
 
-        let mut counters = self.counters.write().unwrap();
+        let mut counters = self.counters.write().unwrap_or_else(|e| e.into_inner());
         counters.entry(name.to_string()).or_default().clone()
     }
 
     /// Get or create a gauge
     pub fn gauge(&self, name: &str) -> Gauge {
-        let gauges = self.gauges.read().unwrap();
+        let gauges = self.gauges.read().unwrap_or_else(|e| e.into_inner());
         if let Some(gauge) = gauges.get(name) {
             return gauge.clone();
         }
         drop(gauges);
 
-        let mut gauges = self.gauges.write().unwrap();
+        let mut gauges = self.gauges.write().unwrap_or_else(|e| e.into_inner());
         gauges.entry(name.to_string()).or_default().clone()
     }
 
     /// Get or create a histogram
     pub fn histogram(&self, name: &str) -> Histogram {
-        let histograms = self.histograms.read().unwrap();
+        let histograms = self.histograms.read().unwrap_or_else(|e| e.into_inner());
         if let Some(histogram) = histograms.get(name) {
             return histogram.clone();
         }
         drop(histograms);
 
-        let mut histograms = self.histograms.write().unwrap();
+        let mut histograms = self.histograms.write().unwrap_or_else(|e| e.into_inner());
         histograms.entry(name.to_string()).or_default().clone()
     }
 
@@ -250,7 +250,7 @@ impl MetricsRegistry {
         let mut output = String::new();
 
         // Export counters
-        let counters = self.counters.read().unwrap();
+        let counters = self.counters.read().unwrap_or_else(|e| e.into_inner());
         for (name, counter) in counters.iter() {
             output.push_str(&format!(
                 "# TYPE {} counter\n{} {}\n",
@@ -261,7 +261,7 @@ impl MetricsRegistry {
         }
 
         // Export gauges
-        let gauges = self.gauges.read().unwrap();
+        let gauges = self.gauges.read().unwrap_or_else(|e| e.into_inner());
         for (name, gauge) in gauges.iter() {
             output.push_str(&format!(
                 "# TYPE {} gauge\n{} {}\n",
@@ -272,7 +272,7 @@ impl MetricsRegistry {
         }
 
         // Export histograms
-        let histograms = self.histograms.read().unwrap();
+        let histograms = self.histograms.read().unwrap_or_else(|e| e.into_inner());
         for (name, histogram) in histograms.iter() {
             output.push_str(&format!("# TYPE {} histogram\n", name));
             for (bound, count) in histogram.buckets() {

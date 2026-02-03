@@ -13,9 +13,14 @@
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tiktoken_rs::{cl100k_base, CoreBPE};
 use tracing::{debug, info, instrument};
+
+/// Global tokenizer instance (initialized once, thread-safe)
+static TOKENIZER: LazyLock<CoreBPE> = LazyLock::new(|| {
+    cl100k_base().expect("cl100k_base tokenizer is a compile-time constant and should never fail")
+});
 
 // ============================================================================
 // Token Counting
@@ -25,9 +30,10 @@ use tracing::{debug, info, instrument};
 ///
 /// Uses tiktoken's cl100k_base encoding (GPT-4, Claude 3, etc.)
 /// for accurate token estimation across modern LLMs.
-pub struct TokenCounter {
-    bpe: CoreBPE,
-}
+///
+/// This is a zero-cost wrapper around the global tokenizer instance.
+#[derive(Clone, Copy)]
+pub struct TokenCounter;
 
 impl TokenCounter {
     /// Create a new token counter
@@ -37,16 +43,14 @@ impl TokenCounter {
     /// - Anthropic Claude 3.x (approximate)
     /// - Most modern LLMs
     #[must_use]
-    pub fn new() -> Self {
-        Self {
-            bpe: cl100k_base().expect("Failed to load cl100k_base tokenizer"),
-        }
+    pub const fn new() -> Self {
+        Self
     }
 
     /// Count tokens in a string
     #[must_use]
     pub fn count_tokens(&self, text: &str) -> usize {
-        self.bpe.encode_with_special_tokens(text).len()
+        TOKENIZER.encode_with_special_tokens(text).len()
     }
 
     /// Count tokens in a message (includes role overhead)

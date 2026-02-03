@@ -14,10 +14,15 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
+
+/// Pre-compiled regex for @mention parsing (e.g., "@backend do something")
+static MENTION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"@(\w+)\s+").expect("MENTION_REGEX is a compile-time constant")
+});
 
 use super::cli_registry::{CliError, CliRegistry};
 use super::config::AgentConfig;
@@ -175,8 +180,6 @@ pub struct AgentOrchestrator {
     config: OrchestratorConfig,
     /// Active tasks
     active_tasks: RwLock<HashMap<String, TaskStatus>>,
-    /// Agent mention regex
-    mention_regex: Regex,
 }
 
 impl AgentOrchestrator {
@@ -192,7 +195,6 @@ impl AgentOrchestrator {
             cli_registry: Arc::new(CliRegistry::with_defaults()),
             config,
             active_tasks: RwLock::new(HashMap::new()),
-            mention_regex: Regex::new(r"@(\w+)\s+").expect("Invalid regex"),
         }
     }
 
@@ -261,7 +263,7 @@ impl AgentOrchestrator {
         let mut tasks = Vec::new();
 
         // Find all @mentions
-        let mentions: Vec<_> = self.mention_regex.find_iter(input).collect();
+        let mentions: Vec<_> = MENTION_REGEX.find_iter(input).collect();
 
         if mentions.is_empty() {
             // No explicit mention - use semantic routing
