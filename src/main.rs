@@ -14,9 +14,13 @@ use cratos_channels::{TelegramAdapter, TelegramConfig};
 use cratos_core::{
     metrics_global, Orchestrator, OrchestratorConfig, PlannerConfig, RedisStore, SessionStore,
 };
-use cratos_llm::{AnthropicConfig, AnthropicProvider, LlmProvider, OpenAiConfig, OpenAiProvider};
-use cratos_replay::EventStore;
-use cratos_skills::{SkillRegistry, SkillStore};
+use cratos_llm::{
+    AnthropicConfig, AnthropicProvider, EmbeddingProvider, FastEmbedProvider, LlmProvider,
+    OpenAiConfig, OpenAiProvider, SharedEmbeddingProvider,
+};
+use cratos_replay::{EventStore, ExecutionSearcher, SearchEmbedder};
+use cratos_search::{IndexConfig, VectorIndex};
+use cratos_skills::{SemanticSkillRouter, SkillEmbedder, SkillRegistry, SkillStore};
 use cratos_tools::{register_builtins, RunnerConfig, ToolRegistry};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -35,6 +39,8 @@ pub struct AppConfig {
     pub approval: ApprovalConfig,
     pub replay: ReplayConfig,
     pub channels: ChannelsConfig,
+    #[serde(default)]
+    pub vector_search: VectorSearchConfig,
 }
 
 /// Server configuration
@@ -91,6 +97,77 @@ pub struct ApprovalConfig {
 pub struct ReplayConfig {
     pub retention_days: u32,
     pub max_events_per_execution: u32,
+}
+
+/// Vector search configuration
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct VectorSearchConfig {
+    /// Enable vector search (default: true)
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Embedding dimensions (default: 768 for nomic-embed)
+    #[serde(default = "default_dimensions")]
+    pub dimensions: usize,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_dimensions() -> usize {
+    768
+}
+
+/// Adapter to use EmbeddingProvider as SearchEmbedder
+struct EmbeddingAdapter {
+    provider: SharedEmbeddingProvider,
+}
+
+#[async_trait::async_trait]
+impl SearchEmbedder for EmbeddingAdapter {
+    async fn embed(&self, text: &str) -> cratos_replay::Result<Vec<f32>> {
+        self.provider
+            .embed(text)
+            .await
+            .map_err(|e| cratos_replay::Error::Database(format!("Embedding failed: {}", e)))
+    }
+
+    async fn embed_batch(&self, texts: &[String]) -> cratos_replay::Result<Vec<Vec<f32>>> {
+        self.provider
+            .embed_batch(texts)
+            .await
+            .map_err(|e| cratos_replay::Error::Database(format!("Batch embedding failed: {}", e)))
+    }
+
+    fn dimensions(&self) -> usize {
+        self.provider.dimensions()
+    }
+}
+
+/// Adapter to use EmbeddingProvider as SkillEmbedder
+struct SkillEmbeddingAdapter {
+    provider: SharedEmbeddingProvider,
+}
+
+#[async_trait::async_trait]
+impl SkillEmbedder for SkillEmbeddingAdapter {
+    async fn embed(&self, text: &str) -> cratos_skills::Result<Vec<f32>> {
+        self.provider
+            .embed(text)
+            .await
+            .map_err(|e| cratos_skills::Error::Internal(format!("Embedding failed: {}", e)))
+    }
+
+    async fn embed_batch(&self, texts: &[String]) -> cratos_skills::Result<Vec<Vec<f32>>> {
+        self.provider
+            .embed_batch(texts)
+            .await
+            .map_err(|e| cratos_skills::Error::Internal(format!("Batch embedding failed: {}", e)))
+    }
+
+    fn dimensions(&self) -> usize {
+        self.provider.dimensions()
+    }
 }
 
 /// Channels configuration
@@ -358,6 +435,109 @@ async fn main() -> Result<()> {
     }
     let skill_count = skill_registry.count().await;
     info!("Skill registry initialized with {} active skills", skill_count);
+
+    // Initialize embedding provider for vector search (optional)
+    let embedding_provider: Option<SharedEmbeddingProvider> =
+        if config.vector_search.enabled {
+            match FastEmbedProvider::new() {
+                Ok(provider) => {
+                    info!(
+                        "Embedding provider initialized: {} ({} dimensions)",
+                        provider.name(),
+                        provider.dimensions()
+                    );
+                    Some(Arc::new(provider))
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to initialize embedding provider: {}. Semantic search disabled.",
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            info!("Vector search disabled by configuration");
+            None
+        };
+
+    // Initialize vector search infrastructure (if embedding provider available)
+    let vectors_dir = data_dir.join("vectors");
+    let (_execution_searcher, _semantic_skill_router) = if let Some(ref embedder) = embedding_provider
+    {
+        // Ensure vectors directory exists
+        std::fs::create_dir_all(&vectors_dir)
+            .context("Failed to create vectors directory")?;
+
+        let dimensions = embedder.dimensions();
+
+        // Initialize execution search index
+        let exec_index_path = vectors_dir.join("executions");
+        let exec_index = match VectorIndex::open(&exec_index_path, IndexConfig::new(dimensions)) {
+            Ok(idx) => {
+                info!(
+                    "Execution vector index loaded from {}",
+                    exec_index_path.display()
+                );
+                idx
+            }
+            Err(e) => {
+                warn!("Failed to load execution index, creating new: {}", e);
+                VectorIndex::open(&exec_index_path, IndexConfig::new(dimensions))
+                    .context("Failed to create execution vector index")?
+            }
+        };
+
+        // Initialize skill search index
+        let skill_index_path = vectors_dir.join("skills");
+        let skill_index = match VectorIndex::open(&skill_index_path, IndexConfig::new(dimensions)) {
+            Ok(idx) => {
+                info!(
+                    "Skill vector index loaded from {}",
+                    skill_index_path.display()
+                );
+                idx
+            }
+            Err(e) => {
+                warn!("Failed to load skill index, creating new: {}", e);
+                VectorIndex::open(&skill_index_path, IndexConfig::new(dimensions))
+                    .context("Failed to create skill vector index")?
+            }
+        };
+
+        // Create execution searcher
+        let exec_embedder = Arc::new(EmbeddingAdapter {
+            provider: embedder.clone(),
+        });
+        let exec_searcher = ExecutionSearcher::new(
+            event_store.clone(),
+            exec_index,
+            exec_embedder,
+        );
+        info!("Execution searcher initialized");
+
+        // Create semantic skill router
+        let skill_embedder = Arc::new(SkillEmbeddingAdapter {
+            provider: embedder.clone(),
+        });
+        let skill_router = SemanticSkillRouter::new(
+            skill_registry.clone(),
+            skill_index,
+            skill_embedder,
+        );
+
+        // Index existing skills
+        let indexed = skill_router.reindex_all().await.unwrap_or(0);
+        info!(
+            "Semantic skill router initialized with {} indexed skills",
+            indexed
+        );
+
+        (Some(Arc::new(exec_searcher)), Some(Arc::new(skill_router)))
+    } else {
+        info!("Vector search not available, using keyword-only routing");
+        (None, None)
+    };
 
     // Initialize LLM provider based on configuration
     let llm_provider: Arc<dyn LlmProvider> = match config.llm.default_provider.as_str() {

@@ -7,6 +7,7 @@ members = [
     "crates/cratos-llm",
     "crates/cratos-replay",
     "crates/cratos-skills",
+    "crates/cratos-search",
 ]
 
 [workspace.package]
@@ -66,6 +67,10 @@ tokio-test = "0.4"
 regex = "1.10"
 dirs = "5.0"
 
+# Embeddings & Vector Search
+fastembed = "4"
+usearch = "2"
+
 # Internal crates
 cratos-core = { path = "crates/cratos-core" }
 cratos-channels = { path = "crates/cratos-channels" }
@@ -73,6 +78,7 @@ cratos-tools = { path = "crates/cratos-tools" }
 cratos-llm = { path = "crates/cratos-llm" }
 cratos-replay = { path = "crates/cratos-replay" }
 cratos-skills = { path = "crates/cratos-skills" }
+cratos-search = { path = "crates/cratos-search" }
 
 [package]
 name = "cratos"
@@ -90,9 +96,10 @@ path = "src/main.rs"
 cratos-core.workspace = true
 cratos-channels.workspace = true
 cratos-tools.workspace = true
-cratos-llm.workspace = true
-cratos-replay.workspace = true
-cratos-skills.workspace = true
+cratos-llm = { workspace = true, features = ["embeddings"] }
+cratos-replay = { workspace = true, features = ["search"] }
+cratos-skills = { workspace = true, features = ["semantic"] }
+cratos-search.workspace = true
 
 tokio.workspace = true
 axum.workspace = true
@@ -103,6 +110,7 @@ dotenvy.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 redis.workspace = true
+async-trait.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true

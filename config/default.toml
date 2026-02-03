@@ -140,3 +140,16 @@ enabled = true
 [channels.slack]
 enabled = false
 # Tokens loaded from SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET environment variables
+
+# ============================================================================
+# Vector Search Configuration (Semantic Search)
+# ============================================================================
+
+[vector_search]
+# Enable vector search for semantic skill routing and execution history search
+# Requires ~100MB model download on first run (fastembed nomic-embed-text-v1.5)
+enabled = true
+
+# Embedding dimensions (768 for nomic-embed-text-v1.5)
+# Do not change unless using a different model
+dimensions = 768
