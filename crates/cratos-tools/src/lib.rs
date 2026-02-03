@@ -5,13 +5,16 @@
 //! - Runner: Tool execution engine with sandboxing
 //! - Builtins: Built-in tools (file, http, git, etc.)
 //! - Sandbox: Docker-based tool isolation
+//! - MCP: Model Context Protocol client for external tools
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod browser;
 pub mod builtins;
 pub mod doctor;
 pub mod error;
+pub mod mcp;
 pub mod registry;
 pub mod runner;
 pub mod sandbox;
@@ -25,3 +28,9 @@ pub use sandbox::{
     DockerSandbox, Mount, NetworkMode, ResourceLimits, SandboxConfig, SandboxOutput,
     SandboxPolicy, ToolSandbox,
 };
+
+// Re-export MCP types
+pub use mcp::{McpClient, McpClientConfig, McpError, McpServerConfig, McpTool, McpTransport};
+
+// Re-export browser types
+pub use browser::{BrowserAction, BrowserConfig, BrowserEngine, BrowserTool};

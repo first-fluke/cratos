@@ -62,6 +62,8 @@ pub enum ToolCategory {
     Search,
     /// Utility operations
     Utility,
+    /// External/MCP tools
+    External,
 }
 
 impl ToolCategory {
@@ -75,6 +77,7 @@ impl ToolCategory {
             Self::Git => "git",
             Self::Search => "search",
             Self::Utility => "utility",
+            Self::External => "external",
         }
     }
 }
@@ -364,12 +367,12 @@ impl ToolRegistry {
             .next()
             .unwrap_or("")
             .split('/')
-            .last()
+            .next_back()
             .unwrap_or("");
 
         // SECURITY: Use exact matching only, no prefix matching
         self.exec_allowlist.iter().any(|allowed| {
-            let allowed_base = allowed.split('/').last().unwrap_or(allowed);
+            let allowed_base = allowed.split('/').next_back().unwrap_or(allowed);
             base_command == allowed_base
         })
     }

@@ -26,6 +26,9 @@ futures.workspace = true
 url = "2.5"
 urlencoding = "2.1"
 
+# Configuration parsing (for browser config tests)
+toml = "0.8"
+
 # Docker sandbox (bollard for Docker API)
 # bollard = "0.18"  # Enable when Docker sandbox is fully implemented
 

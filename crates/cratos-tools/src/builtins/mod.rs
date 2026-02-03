@@ -19,6 +19,7 @@ pub use git::{GitBranchTool, GitCommitTool, GitDiffTool, GitPushTool, GitStatusT
 pub use github::GitHubApiTool;
 pub use http::{HttpGetTool, HttpPostTool};
 
+use crate::browser::BrowserTool;
 use crate::registry::ToolRegistry;
 use std::sync::Arc;
 
@@ -45,6 +46,9 @@ pub fn register_builtins(registry: &mut ToolRegistry) {
 
     // GitHub API tool
     registry.register(Arc::new(GitHubApiTool::new()));
+
+    // Browser automation tool
+    registry.register(Arc::new(BrowserTool::new()));
 }
 
 #[cfg(test)]
@@ -68,6 +72,7 @@ mod tests {
         assert!(registry.has("git_diff"));
         assert!(registry.has("github_api"));
         assert!(registry.has("git_push"));
-        assert_eq!(registry.len(), 12);
+        assert!(registry.has("browser"));
+        assert_eq!(registry.len(), 13);
     }
 }
