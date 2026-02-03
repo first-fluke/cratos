@@ -40,6 +40,10 @@ pub enum Error {
     /// Replay store error
     #[error("replay store error: {0}")]
     ReplayStore(#[from] cratos_replay::Error),
+
+    /// Internal error (semantic search, etc.)
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 /// Result type alias

@@ -32,6 +32,13 @@ tracing.workspace = true
 regex = { workspace = true }
 dirs = { workspace = true }
 
+# Optional: Semantic search
+cratos-search = { path = "../cratos-search", optional = true }
+
+[features]
+default = []
+semantic = ["cratos-search"]
+
 [dev-dependencies]
 mockall.workspace = true
 tokio-test.workspace = true

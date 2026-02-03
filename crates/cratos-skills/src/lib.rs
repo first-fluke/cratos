@@ -111,6 +111,8 @@ pub mod executor;
 pub mod generator;
 pub mod registry;
 pub mod router;
+#[cfg(feature = "semantic")]
+pub mod semantic_router;
 pub mod skill;
 pub mod store;
 
@@ -126,6 +128,13 @@ pub use skill::{
     SkillTrigger,
 };
 pub use store::SkillStore;
+
+// Re-export semantic router when feature is enabled
+#[cfg(feature = "semantic")]
+pub use semantic_router::{
+    create_skill_index, SemanticMatchReason, SemanticRouterConfig, SemanticRoutingResult,
+    SemanticSkillRouter, SkillEmbedder,
+};
 
 /// Get the default skill database path (uses cratos-replay's data directory)
 pub fn default_skill_db_path() -> std::path::PathBuf {
