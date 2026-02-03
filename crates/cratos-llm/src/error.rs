@@ -32,6 +32,10 @@ pub enum Error {
     /// Timeout
     #[error("timeout after {0}ms")]
     Timeout(u64),
+
+    /// Embedding provider error
+    #[error("provider error: {0}")]
+    Provider(String),
 }
 
 /// Result type alias

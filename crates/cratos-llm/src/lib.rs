@@ -10,12 +10,15 @@
 //! - Qwen: Alibaba Qwen provider
 //! - OpenRouter: Multi-provider gateway
 //! - Novita: Free tier LLM provider
+//! - Embeddings: Vector embeddings for semantic search (feature: embeddings)
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 pub mod anthropic;
 pub mod cost;
+#[cfg(feature = "embeddings")]
+pub mod embeddings;
 pub mod error;
 pub mod gemini;
 pub mod glm;
@@ -47,3 +50,9 @@ pub use ollama::{OllamaConfig, OllamaProvider};
 pub use openai::{OpenAiConfig, OpenAiProvider};
 pub use openrouter::{OpenRouterConfig, OpenRouterProvider};
 pub use qwen::{QwenConfig, QwenProvider};
+
+// Re-export embeddings (when feature is enabled)
+#[cfg(feature = "embeddings")]
+pub use embeddings::{
+    default_embedding_provider, EmbeddingProvider, FastEmbedProvider, SharedEmbeddingProvider,
+};
