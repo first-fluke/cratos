@@ -6,6 +6,7 @@ members = [
     "crates/cratos-tools",
     "crates/cratos-llm",
     "crates/cratos-replay",
+    "crates/cratos-skills",
 ]
 
 [workspace.package]
@@ -26,8 +27,8 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
-redis = { version = "0.24", features = ["tokio-comp"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "uuid", "chrono", "json"] }
+redis = { version = "1.0", features = ["tokio-comp"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -61,12 +62,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 mockall = "0.12"
 tokio-test = "0.4"
 
+# Additional utilities
+regex = "1.10"
+dirs = "5.0"
+
 # Internal crates
 cratos-core = { path = "crates/cratos-core" }
 cratos-channels = { path = "crates/cratos-channels" }
 cratos-tools = { path = "crates/cratos-tools" }
 cratos-llm = { path = "crates/cratos-llm" }
 cratos-replay = { path = "crates/cratos-replay" }
+cratos-skills = { path = "crates/cratos-skills" }
 
 [package]
 name = "cratos"
@@ -86,6 +92,7 @@ cratos-channels.workspace = true
 cratos-tools.workspace = true
 cratos-llm.workspace = true
 cratos-replay.workspace = true
+cratos-skills.workspace = true
 
 tokio.workspace = true
 axum.workspace = true
@@ -95,7 +102,6 @@ config.workspace = true
 dotenvy.workspace = true
 anyhow.workspace = true
 serde.workspace = true
-sqlx.workspace = true
 redis.workspace = true
 
 [dev-dependencies]

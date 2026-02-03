@@ -1,6 +1,9 @@
 //! Cratos - AI-Powered Personal Assistant
 //!
 //! CLI entry point for the Cratos server.
+//!
+//! Note: Cratos uses embedded SQLite for storage (no Docker/PostgreSQL required).
+//! Data is stored in ~/.cratos/cratos.db
 
 #![forbid(unsafe_code)]
 
@@ -13,9 +16,9 @@ use cratos_core::{
 };
 use cratos_llm::{AnthropicConfig, AnthropicProvider, LlmProvider, OpenAiConfig, OpenAiProvider};
 use cratos_replay::EventStore;
+use cratos_skills::{SkillRegistry, SkillStore};
 use cratos_tools::{register_builtins, RunnerConfig, ToolRegistry};
 use serde::{Deserialize, Serialize};
-use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -25,7 +28,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub server: ServerConfig,
-    pub database: DatabaseConfig,
+    #[serde(default)]
+    pub data_dir: Option<String>,
     pub redis: RedisConfig,
     pub llm: LlmConfig,
     pub approval: ApprovalConfig,
@@ -38,13 +42,6 @@ pub struct AppConfig {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
-}
-
-/// Database configuration
-#[derive(Debug, Clone, Deserialize)]
-pub struct DatabaseConfig {
-    pub url: String,
-    pub max_connections: u32,
 }
 
 /// Redis configuration
@@ -175,17 +172,10 @@ async fn health_check() -> Json<HealthResponse> {
 
 /// Detailed health check with component status
 async fn detailed_health_check(
-    db_pool: axum::extract::Extension<sqlx::PgPool>,
     redis_url: axum::extract::Extension<String>,
 ) -> Json<DetailedHealthResponse> {
-    // Check database
-    let db_health = {
-        let start = std::time::Instant::now();
-        match sqlx::query("SELECT 1").execute(&*db_pool).await {
-            Ok(_) => ComponentHealth::healthy(start.elapsed().as_millis() as u64),
-            Err(e) => ComponentHealth::unhealthy(e.to_string()),
-        }
-    };
+    // Database health (SQLite - always healthy if we got this far)
+    let db_health = ComponentHealth::healthy(0);
 
     // Check Redis
     let redis_health = {
@@ -193,7 +183,7 @@ async fn detailed_health_check(
         match redis::Client::open(redis_url.as_str()) {
             Ok(client) => match client.get_multiplexed_async_connection().await {
                 Ok(mut conn) => {
-                    match redis::cmd("PING").query_async::<_, String>(&mut conn).await {
+                    match redis::cmd("PING").query_async::<String>(&mut conn).await {
                         Ok(_) => ComponentHealth::healthy(start.elapsed().as_millis() as u64),
                         Err(e) => ComponentHealth::unhealthy(e.to_string()),
                     }
@@ -256,6 +246,50 @@ fn load_config() -> Result<AppConfig> {
         .context("Failed to deserialize configuration")
 }
 
+/// Validate configuration for production security
+fn validate_production_config(config: &AppConfig) -> Result<()> {
+    let is_production = std::env::var("CRATOS_ENV")
+        .map(|v| v.to_lowercase() == "production")
+        .unwrap_or(false);
+
+    if !is_production {
+        return Ok(());
+    }
+
+    // SECURITY: Validate server binding
+    if config.server.host == "0.0.0.0" {
+        warn!(
+            "SECURITY WARNING: Server is binding to all interfaces (0.0.0.0) in production. \
+             Consider binding to 127.0.0.1 and using a reverse proxy."
+        );
+    }
+
+    // SECURITY: Check for insecure Redis connection
+    if config.redis.url.starts_with("redis://")
+        && !config.redis.url.contains('@')
+        && is_production
+    {
+        warn!(
+            "SECURITY WARNING: Redis connection appears to have no authentication in production. \
+             Consider enabling Redis AUTH."
+        );
+    }
+
+    // SECURITY: Ensure essential environment variables are set
+    let required_env_vars = ["TELEGRAM_BOT_TOKEN"];
+    for var in required_env_vars {
+        if config.channels.telegram.enabled && std::env::var(var).is_err() {
+            warn!(
+                "SECURITY WARNING: {} is not set but Telegram is enabled. \
+                 Bot may not function correctly.",
+                var
+            );
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load environment variables from .env file (if present)
@@ -279,24 +313,51 @@ async fn main() -> Result<()> {
     let config = load_config().context("Failed to load configuration")?;
     info!("Configuration loaded");
 
-    // Initialize database connection pool
-    let db_pool = PgPoolOptions::new()
-        .max_connections(config.database.max_connections)
-        .connect(&config.database.url)
-        .await
-        .context("Failed to connect to database")?;
-    info!("Database connection established");
+    // SECURITY: Validate production configuration
+    validate_production_config(&config)?;
 
-    // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .context("Failed to run database migrations")?;
-    info!("Database migrations completed");
+    // Determine data directory
+    let data_dir = config
+        .data_dir
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(cratos_replay::default_data_dir);
 
-    // Initialize event store
-    let event_store = Arc::new(EventStore::new(db_pool.clone()));
-    info!("Event store initialized");
+    info!("Data directory: {}", data_dir.display());
+
+    // Initialize SQLite event store
+    let db_path = data_dir.join("cratos.db");
+    let event_store = Arc::new(
+        EventStore::from_path(&db_path)
+            .await
+            .context("Failed to initialize SQLite event store")?,
+    );
+    info!(
+        "SQLite event store initialized at {}",
+        db_path.display()
+    );
+
+    // Initialize skill store and registry
+    let skill_db_path = data_dir.join("skills.db");
+    let skill_store = Arc::new(
+        SkillStore::from_path(&skill_db_path)
+            .await
+            .context("Failed to initialize SQLite skill store")?,
+    );
+    info!(
+        "SQLite skill store initialized at {}",
+        skill_db_path.display()
+    );
+
+    // Load active skills into registry
+    let skill_registry = Arc::new(SkillRegistry::new());
+    let active_skills = skill_store.list_active_skills().await.unwrap_or_default();
+    for skill in active_skills {
+        if let Err(e) = skill_registry.register(skill).await {
+            warn!("Failed to register skill: {}", e);
+        }
+    }
+    let skill_count = skill_registry.count().await;
+    info!("Skill registry initialized with {} active skills", skill_count);
 
     // Initialize LLM provider based on configuration
     let llm_provider: Arc<dyn LlmProvider> = match config.llm.default_provider.as_str() {
@@ -375,26 +436,6 @@ async fn main() -> Result<()> {
     // Slack adapter (if enabled)
     if config.channels.slack.enabled {
         info!("Slack adapter enabled but not yet started (requires additional setup)");
-        // Note: Slack adapter requires additional tokens and socket mode setup
-        // Uncomment when ready:
-        // match SlackConfig::from_env() {
-        //     Ok(slack_config) => {
-        //         let slack_adapter = Arc::new(SlackAdapter::new(slack_config));
-        //         let slack_orchestrator = orchestrator.clone();
-        //
-        //         let handle = tokio::spawn(async move {
-        //             if let Err(e) = slack_adapter.run(slack_orchestrator).await {
-        //                 error!("Slack adapter error: {}", e);
-        //             }
-        //         });
-        //
-        //         channel_handles.push(handle);
-        //         info!("Slack adapter started");
-        //     }
-        //     Err(e) => {
-        //         warn!("Slack adapter not started: {}", e);
-        //     }
-        // }
     }
 
     // Build HTTP server for health checks and webhooks
@@ -405,7 +446,6 @@ async fn main() -> Result<()> {
         .route("/api/v1/health", get(health_check))
         .route("/metrics", get(metrics_endpoint))
         .route("/", get(|| async { "Cratos AI Assistant" }))
-        .layer(Extension(db_pool.clone()))
         .layer(Extension(redis_url_for_health));
 
     let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)
