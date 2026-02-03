@@ -18,8 +18,53 @@ use async_openai::{
     },
     Client,
 };
+use std::fmt;
 use std::time::Duration;
 use tracing::{debug, instrument};
+
+// ============================================================================
+// Security Utilities
+// ============================================================================
+
+/// Sanitize API error messages to prevent leaking sensitive information
+fn sanitize_api_error(error: &str) -> String {
+    let lower = error.to_lowercase();
+
+    // Don't expose authentication details
+    if lower.contains("api key")
+        || lower.contains("apikey")
+        || lower.contains("invalid key")
+        || lower.contains("unauthorized")
+        || lower.contains("authentication")
+    {
+        return "API authentication error. Please check your API key configuration.".to_string();
+    }
+
+    // Don't expose rate limit details that could be exploited
+    if lower.contains("rate limit") || lower.contains("quota") {
+        return "API rate limit exceeded. Please try again later.".to_string();
+    }
+
+    // Don't expose internal server errors with details
+    if lower.contains("internal") || lower.contains("server error") {
+        return "API server error. Please try again later.".to_string();
+    }
+
+    // For short, generic errors, return as-is
+    if error.len() < 100 && !error.contains("sk-") && !error.contains("key") {
+        return error.to_string();
+    }
+
+    "An API error occurred. Please try again.".to_string()
+}
+
+/// Mask API key for safe display (show first/last 4 chars)
+fn mask_api_key(key: &str) -> String {
+    if key.len() <= 8 {
+        return "****".to_string();
+    }
+    format!("{}...{}", &key[..4], &key[key.len() - 4..])
+}
 
 /// Available OpenAI models
 pub const MODELS: &[&str] = &[
@@ -34,7 +79,7 @@ pub const MODELS: &[&str] = &[
 pub const DEFAULT_MODEL: &str = "gpt-4o";
 
 /// OpenAI provider configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenAiConfig {
     /// API key
     pub api_key: String,
@@ -46,6 +91,19 @@ pub struct OpenAiConfig {
     pub default_model: String,
     /// Request timeout
     pub timeout: Duration,
+}
+
+// SECURITY: Custom Debug implementation to mask API key
+impl fmt::Debug for OpenAiConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenAiConfig")
+            .field("api_key", &mask_api_key(&self.api_key))
+            .field("base_url", &self.base_url)
+            .field("org_id", &self.org_id.as_ref().map(|_| "[REDACTED]"))
+            .field("default_model", &self.default_model)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 impl OpenAiConfig {
@@ -264,7 +322,7 @@ impl LlmProvider for OpenAiProvider {
             .chat()
             .create(openai_request)
             .await
-            .map_err(|e| Error::Api(e.to_string()))?;
+            .map_err(|e| Error::Api(sanitize_api_error(&e.to_string())))?;
 
         let choice = response
             .choices
@@ -337,7 +395,7 @@ impl LlmProvider for OpenAiProvider {
             .chat()
             .create(openai_request)
             .await
-            .map_err(|e| Error::Api(e.to_string()))?;
+            .map_err(|e| Error::Api(sanitize_api_error(&e.to_string())))?;
 
         let choice = response
             .choices
@@ -397,5 +455,50 @@ mod tests {
     fn test_available_models() {
         assert!(MODELS.contains(&"gpt-4o"));
         assert!(MODELS.contains(&"gpt-4o-mini"));
+    }
+
+    // Security tests
+
+    #[test]
+    fn test_api_key_masking() {
+        let masked = mask_api_key("sk-1234567890abcdefghijklmnop");
+        assert!(masked.starts_with("sk-1"));
+        assert!(masked.ends_with("mnop"));
+        assert!(masked.contains("..."));
+        assert!(!masked.contains("567890abcdefghijkl"));
+    }
+
+    #[test]
+    fn test_short_key_masking() {
+        let masked = mask_api_key("short");
+        assert_eq!(masked, "****");
+    }
+
+    #[test]
+    fn test_sanitize_api_error() {
+        // Auth errors should be sanitized
+        let sanitized = sanitize_api_error("Invalid API key: sk-1234567890");
+        assert!(!sanitized.contains("sk-"));
+        assert!(sanitized.contains("authentication"));
+
+        // Rate limit errors should be sanitized
+        let sanitized = sanitize_api_error("Rate limit exceeded: 100 requests per minute");
+        assert!(!sanitized.contains("100"));
+        assert!(sanitized.contains("rate limit"));
+
+        // Short generic errors can pass through
+        let sanitized = sanitize_api_error("Model not found");
+        assert_eq!(sanitized, "Model not found");
+    }
+
+    #[test]
+    fn test_config_debug_masks_key() {
+        let config = OpenAiConfig::new("sk-1234567890abcdefghijklmnop");
+        let debug_str = format!("{:?}", config);
+
+        // Should not contain the full API key
+        assert!(!debug_str.contains("1234567890abcdefghijkl"));
+        // Should contain masked version
+        assert!(debug_str.contains("sk-1...mnop"));
     }
 }

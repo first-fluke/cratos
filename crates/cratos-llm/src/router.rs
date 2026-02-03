@@ -2,12 +2,109 @@
 //!
 //! This module defines the core traits and types for LLM providers,
 //! as well as the router for selecting providers based on configuration.
+//!
+//! ## Token Management
+//!
+//! The router includes intelligent token management features:
+//! - **Task-specific token budgets**: Different tasks get appropriate max_tokens
+//! - **Token counting**: Accurate client-side token estimation using tiktoken
+//! - **Cost estimation**: Relative cost calculation based on model tier
 
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tiktoken_rs::{cl100k_base, CoreBPE};
 use tracing::{debug, info, instrument};
+
+// ============================================================================
+// Token Counting
+// ============================================================================
+
+/// Token counter for estimating message token usage
+///
+/// Uses tiktoken's cl100k_base encoding (GPT-4, Claude 3, etc.)
+/// for accurate token estimation across modern LLMs.
+pub struct TokenCounter {
+    bpe: CoreBPE,
+}
+
+impl TokenCounter {
+    /// Create a new token counter
+    ///
+    /// Uses cl100k_base encoding which is compatible with:
+    /// - OpenAI GPT-4, GPT-4o, GPT-3.5-turbo
+    /// - Anthropic Claude 3.x (approximate)
+    /// - Most modern LLMs
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            bpe: cl100k_base().expect("Failed to load cl100k_base tokenizer"),
+        }
+    }
+
+    /// Count tokens in a string
+    #[must_use]
+    pub fn count_tokens(&self, text: &str) -> usize {
+        self.bpe.encode_with_special_tokens(text).len()
+    }
+
+    /// Count tokens in a message (includes role overhead)
+    ///
+    /// Adds overhead for message structure:
+    /// - Role marker: ~4 tokens
+    /// - Message separators: ~2 tokens
+    #[must_use]
+    pub fn count_message_tokens(&self, message: &Message) -> usize {
+        const MESSAGE_OVERHEAD: usize = 6; // role + separators
+        self.count_tokens(&message.content) + MESSAGE_OVERHEAD
+    }
+
+    /// Count total tokens in a conversation
+    #[must_use]
+    pub fn count_conversation_tokens(&self, messages: &[Message]) -> usize {
+        const CONVERSATION_OVERHEAD: usize = 3; // start/end tokens
+        messages
+            .iter()
+            .map(|m| self.count_message_tokens(m))
+            .sum::<usize>()
+            + CONVERSATION_OVERHEAD
+    }
+
+    /// Estimate tokens for a tool definition
+    #[must_use]
+    pub fn count_tool_tokens(&self, tool: &ToolDefinition) -> usize {
+        const TOOL_OVERHEAD: usize = 10; // structure overhead
+        self.count_tokens(&tool.name)
+            + self.count_tokens(&tool.description)
+            + self.count_tokens(&tool.parameters.to_string())
+            + TOOL_OVERHEAD
+    }
+}
+
+impl Default for TokenCounter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// Thread-safe global token counter
+lazy_static::lazy_static! {
+    /// Global token counter instance for convenience
+    pub static ref TOKEN_COUNTER: TokenCounter = TokenCounter::new();
+}
+
+/// Convenience function to count tokens in text
+#[must_use]
+pub fn count_tokens(text: &str) -> usize {
+    TOKEN_COUNTER.count_tokens(text)
+}
+
+/// Convenience function to count tokens in messages
+#[must_use]
+pub fn count_message_tokens(messages: &[Message]) -> usize {
+    TOKEN_COUNTER.count_conversation_tokens(messages)
+}
 
 // ============================================================================
 // Core Types
@@ -318,6 +415,35 @@ pub enum TaskType {
     Translation,
 }
 
+/// Token budget configuration for different task types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenBudget {
+    /// Maximum tokens to generate for this task type
+    pub max_tokens: u32,
+    /// Recommended temperature for this task type
+    pub temperature: f32,
+}
+
+impl TokenBudget {
+    /// Create a new token budget
+    #[must_use]
+    pub const fn new(max_tokens: u32, temperature: f32) -> Self {
+        Self {
+            max_tokens,
+            temperature,
+        }
+    }
+}
+
+impl Default for TokenBudget {
+    fn default() -> Self {
+        Self {
+            max_tokens: 2048,
+            temperature: 0.7,
+        }
+    }
+}
+
 impl TaskType {
     /// Get the recommended model tier for this task type
     #[must_use]
@@ -341,6 +467,31 @@ impl TaskType {
             self,
             Self::Planning | Self::CodeGeneration | Self::CodeReview
         )
+    }
+
+    /// Get the default token budget for this task type
+    ///
+    /// Token budgets are optimized based on typical response lengths:
+    /// - Classification: Short labels/categories (200 tokens)
+    /// - Extraction: Structured data extraction (500 tokens)
+    /// - Summarization: Condensed summaries (1000 tokens)
+    /// - Translation: Similar length to input (800 tokens)
+    /// - Conversation: General chat responses (2000 tokens)
+    /// - Planning: Detailed step-by-step plans (3000 tokens)
+    /// - CodeReview: Analysis with suggestions (3000 tokens)
+    /// - CodeGeneration: Full code implementations (4096 tokens)
+    #[must_use]
+    pub fn default_token_budget(&self) -> TokenBudget {
+        match self {
+            Self::Classification => TokenBudget::new(200, 0.3),
+            Self::Extraction => TokenBudget::new(500, 0.2),
+            Self::Summarization => TokenBudget::new(1000, 0.5),
+            Self::Translation => TokenBudget::new(800, 0.3),
+            Self::Conversation => TokenBudget::new(2000, 0.7),
+            Self::Planning => TokenBudget::new(3000, 0.7),
+            Self::CodeReview => TokenBudget::new(3000, 0.5),
+            Self::CodeGeneration => TokenBudget::new(4096, 0.7),
+        }
     }
 }
 
@@ -373,6 +524,22 @@ impl ModelTier {
             (ModelTier::Fast, "gemini") => "gemini-1.5-flash",
             (ModelTier::Standard, "gemini") => "gemini-1.5-pro",
             (ModelTier::Premium, "gemini") => "gemini-1.5-pro",
+            // GLM models
+            (ModelTier::Fast, "glm") => "glm-4-flash",
+            (ModelTier::Standard, "glm") => "glm-4-9b",
+            (ModelTier::Premium, "glm") => "glm-4-plus",
+            // Qwen models
+            (ModelTier::Fast, "qwen") => "qwen-turbo",
+            (ModelTier::Standard, "qwen") => "qwen-plus",
+            (ModelTier::Premium, "qwen") => "qwen-max",
+            // OpenRouter models
+            (ModelTier::Fast, "openrouter") => "qwen/qwen3-32b:free",
+            (ModelTier::Standard, "openrouter") => "openai/gpt-4o-mini",
+            (ModelTier::Premium, "openrouter") => "anthropic/claude-3.5-sonnet",
+            // Novita models (free tier)
+            (ModelTier::Fast, "novita") => "qwen/qwen2.5-7b-instruct",
+            (ModelTier::Standard, "novita") => "thudm/glm-4-9b-chat",
+            (ModelTier::Premium, "novita") => "qwen/qwen2.5-72b-instruct",
             // Ollama (local) - all same tier
             (_, "ollama") => "llama3.2",
             // Default
@@ -400,12 +567,26 @@ pub struct RoutingRules {
     /// Task-specific model overrides
     #[serde(default)]
     pub task_models: HashMap<TaskType, String>,
+    /// Task-specific token budget overrides
+    #[serde(default)]
+    pub task_token_budgets: HashMap<TaskType, TokenBudget>,
     /// Whether to prefer local models when available
     #[serde(default)]
     pub prefer_local: bool,
     /// Maximum cost tier allowed
     #[serde(default)]
     pub max_tier: Option<ModelTier>,
+}
+
+impl RoutingRules {
+    /// Get token budget for a task type, with custom override or default
+    #[must_use]
+    pub fn get_token_budget(&self, task_type: TaskType) -> TokenBudget {
+        self.task_token_budgets
+            .get(&task_type)
+            .cloned()
+            .unwrap_or_else(|| task_type.default_token_budget())
+    }
 }
 
 // ============================================================================
@@ -723,6 +904,16 @@ impl LlmRouter {
     }
 
     /// Complete a request with automatic model selection based on task type
+    ///
+    /// This method automatically applies task-specific token budgets:
+    /// - Classification: 200 tokens (short labels)
+    /// - Extraction: 500 tokens (structured data)
+    /// - Summarization: 1000 tokens (condensed text)
+    /// - Translation: 800 tokens (similar to input)
+    /// - Conversation: 2000 tokens (general chat)
+    /// - Planning: 3000 tokens (detailed plans)
+    /// - CodeReview: 3000 tokens (analysis)
+    /// - CodeGeneration: 4096 tokens (full implementations)
     #[instrument(skip(self, messages))]
     pub async fn complete_for_task(
         &self,
@@ -733,11 +924,21 @@ impl LlmRouter {
             .select_for_task(task_type)
             .ok_or_else(|| Error::NotConfigured("No suitable provider found".to_string()))?;
 
+        // Get task-specific token budget (with custom override support)
+        let budget = self.routing_rules.get_token_budget(task_type);
+
+        info!(
+            task = ?task_type,
+            max_tokens = budget.max_tokens,
+            temperature = budget.temperature,
+            "Applying task-specific token budget"
+        );
+
         let request = CompletionRequest {
             model,
             messages,
-            max_tokens: Some(4096),
-            temperature: Some(0.7),
+            max_tokens: Some(budget.max_tokens),
+            temperature: Some(budget.temperature),
             stop: None,
         };
 
@@ -745,6 +946,9 @@ impl LlmRouter {
     }
 
     /// Complete with tools using automatic model selection based on task type
+    ///
+    /// Applies task-specific token budgets automatically.
+    /// See `complete_for_task` for budget details.
     #[instrument(skip(self, messages, tools))]
     pub async fn complete_with_tools_for_task(
         &self,
@@ -763,12 +967,22 @@ impl LlmRouter {
             )));
         }
 
+        // Get task-specific token budget (with custom override support)
+        let budget = self.routing_rules.get_token_budget(task_type);
+
+        info!(
+            task = ?task_type,
+            max_tokens = budget.max_tokens,
+            temperature = budget.temperature,
+            "Applying task-specific token budget for tool completion"
+        );
+
         let request = ToolCompletionRequest {
             request: CompletionRequest {
                 model,
                 messages,
-                max_tokens: Some(4096),
-                temperature: Some(0.7),
+                max_tokens: Some(budget.max_tokens),
+                temperature: Some(budget.temperature),
                 stop: None,
             },
             tools,
@@ -924,8 +1138,56 @@ mod tests {
         let rules = RoutingRules::default();
         assert!(rules.task_providers.is_empty());
         assert!(rules.task_models.is_empty());
+        assert!(rules.task_token_budgets.is_empty());
         assert!(!rules.prefer_local);
         assert!(rules.max_tier.is_none());
+    }
+
+    #[test]
+    fn test_task_type_default_token_budget() {
+        // Fast tier tasks should have small budgets
+        assert_eq!(TaskType::Classification.default_token_budget().max_tokens, 200);
+        assert_eq!(TaskType::Extraction.default_token_budget().max_tokens, 500);
+        assert_eq!(TaskType::Summarization.default_token_budget().max_tokens, 1000);
+        assert_eq!(TaskType::Translation.default_token_budget().max_tokens, 800);
+
+        // Standard tier
+        assert_eq!(TaskType::Conversation.default_token_budget().max_tokens, 2000);
+
+        // Premium tier - larger budgets
+        assert_eq!(TaskType::Planning.default_token_budget().max_tokens, 3000);
+        assert_eq!(TaskType::CodeReview.default_token_budget().max_tokens, 3000);
+        assert_eq!(TaskType::CodeGeneration.default_token_budget().max_tokens, 4096);
+    }
+
+    #[test]
+    fn test_routing_rules_get_token_budget() {
+        let mut rules = RoutingRules::default();
+
+        // Should return default budget
+        let budget = rules.get_token_budget(TaskType::Classification);
+        assert_eq!(budget.max_tokens, 200);
+
+        // With custom override
+        rules.task_token_budgets.insert(
+            TaskType::Classification,
+            TokenBudget::new(500, 0.5),
+        );
+        let budget = rules.get_token_budget(TaskType::Classification);
+        assert_eq!(budget.max_tokens, 500);
+        assert_eq!(budget.temperature, 0.5);
+    }
+
+    #[test]
+    fn test_token_budget_temperatures() {
+        // Low temperature for deterministic tasks
+        assert!(TaskType::Classification.default_token_budget().temperature < 0.5);
+        assert!(TaskType::Extraction.default_token_budget().temperature < 0.5);
+        assert!(TaskType::Translation.default_token_budget().temperature < 0.5);
+
+        // Higher temperature for creative tasks
+        assert!(TaskType::Conversation.default_token_budget().temperature >= 0.7);
+        assert!(TaskType::CodeGeneration.default_token_budget().temperature >= 0.7);
     }
 
     #[test]
@@ -956,5 +1218,82 @@ mod tests {
         // Premium tier: 20.0 multiplier
         let premium_cost = router.estimate_cost(TaskType::CodeGeneration, 1000);
         assert_eq!(premium_cost, 20.0);
+    }
+
+    // ========================================================================
+    // Token Counter Tests
+    // ========================================================================
+
+    #[test]
+    fn test_token_counter_basic() {
+        let counter = TokenCounter::new();
+
+        // Simple text
+        let tokens = counter.count_tokens("Hello, world!");
+        assert!(tokens > 0);
+        assert!(tokens < 10); // Should be ~4 tokens
+
+        // Empty string
+        assert_eq!(counter.count_tokens(""), 0);
+    }
+
+    #[test]
+    fn test_token_counter_message() {
+        let counter = TokenCounter::new();
+
+        let message = Message::user("Hello, how are you?");
+        let tokens = counter.count_message_tokens(&message);
+
+        // Should include content + overhead
+        let content_tokens = counter.count_tokens("Hello, how are you?");
+        assert!(tokens > content_tokens);
+    }
+
+    #[test]
+    fn test_token_counter_conversation() {
+        let counter = TokenCounter::new();
+
+        let messages = vec![
+            Message::system("You are a helpful assistant."),
+            Message::user("Hello!"),
+            Message::assistant("Hi there! How can I help you?"),
+        ];
+
+        let total = counter.count_conversation_tokens(&messages);
+
+        // Should be sum of messages + overhead
+        let sum: usize = messages.iter().map(|m| counter.count_message_tokens(m)).sum();
+        assert!(total >= sum);
+    }
+
+    #[test]
+    fn test_token_counter_tool() {
+        let counter = TokenCounter::new();
+
+        let tool = ToolDefinition::new(
+            "get_weather",
+            "Get the current weather for a location",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string", "description": "City name"}
+                },
+                "required": ["location"]
+            }),
+        );
+
+        let tokens = counter.count_tool_tokens(&tool);
+        assert!(tokens > 0);
+    }
+
+    #[test]
+    fn test_global_token_counter() {
+        // Test convenience functions
+        let tokens = count_tokens("Hello, world!");
+        assert!(tokens > 0);
+
+        let messages = vec![Message::user("Hello!")];
+        let msg_tokens = count_message_tokens(&messages);
+        assert!(msg_tokens > tokens); // Should include overhead
     }
 }

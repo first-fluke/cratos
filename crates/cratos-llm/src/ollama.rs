@@ -13,6 +13,41 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, instrument};
 
+// ============================================================================
+// Security Utilities
+// ============================================================================
+
+/// Sanitize API error messages to prevent leaking sensitive information
+fn sanitize_api_error(error: &str) -> String {
+    let lower = error.to_lowercase();
+
+    // Don't expose internal paths or system information
+    if lower.contains("/home")
+        || lower.contains("/root")
+        || lower.contains("/var")
+        || lower.contains("\\users\\")
+    {
+        return "An internal error occurred. Please check your Ollama installation.".to_string();
+    }
+
+    // For connection errors, provide helpful message
+    if lower.contains("connection refused") || lower.contains("failed to connect") {
+        return "Failed to connect to Ollama. Is Ollama running?".to_string();
+    }
+
+    // For model errors
+    if lower.contains("model") && (lower.contains("not found") || lower.contains("pull")) {
+        return "Model not available. Please pull the model first with: ollama pull <model>".to_string();
+    }
+
+    // For short, generic errors, return as-is
+    if error.len() < 100 {
+        return error.to_string();
+    }
+
+    "An error occurred. Please try again.".to_string()
+}
+
 /// Default Ollama models (varies by installation)
 pub const SUGGESTED_MODELS: &[&str] = &[
     "llama3.2",
@@ -351,9 +386,14 @@ impl OllamaProvider {
 
         if !status.is_success() {
             if let Ok(error) = serde_json::from_str::<OllamaError>(&body) {
-                return Err(Error::Api(error.error));
+                // SECURITY: Sanitize error messages
+                return Err(Error::Api(sanitize_api_error(&error.error)));
             }
-            return Err(Error::Api(format!("HTTP {}: {}", status, body)));
+            // SECURITY: Don't expose raw HTTP response body
+            return Err(Error::Api(sanitize_api_error(&format!(
+                "HTTP {}: {}",
+                status, body
+            ))));
         }
 
         serde_json::from_str(&body).map_err(|e| Error::InvalidResponse(format!("{}: {}", e, body)))
@@ -546,5 +586,23 @@ mod tests {
         assert_eq!(converted[0].role, "system");
         assert_eq!(converted[1].role, "user");
         assert_eq!(converted[2].role, "assistant");
+    }
+
+    // Security tests
+
+    #[test]
+    fn test_sanitize_api_error() {
+        // Path exposure should be sanitized
+        let sanitized = sanitize_api_error("Error loading model from /home/user/.ollama/models");
+        assert!(!sanitized.contains("/home"));
+        assert!(sanitized.contains("installation"));
+
+        // Connection errors should give helpful message
+        let sanitized = sanitize_api_error("connection refused");
+        assert!(sanitized.contains("Ollama running"));
+
+        // Model errors should suggest pull
+        let sanitized = sanitize_api_error("model 'llama3' not found");
+        assert!(sanitized.contains("pull"));
     }
 }

@@ -9,8 +9,54 @@ use crate::router::{
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::time::Duration;
 use tracing::{debug, instrument};
+
+// ============================================================================
+// Security Utilities
+// ============================================================================
+
+/// Sanitize API error messages to prevent leaking sensitive information
+fn sanitize_api_error(error: &str) -> String {
+    let lower = error.to_lowercase();
+
+    // Don't expose authentication details
+    if lower.contains("api key")
+        || lower.contains("apikey")
+        || lower.contains("invalid key")
+        || lower.contains("unauthorized")
+        || lower.contains("authentication")
+        || lower.contains("permission denied")
+    {
+        return "API authentication error. Please check your API key configuration.".to_string();
+    }
+
+    // Don't expose rate limit details
+    if lower.contains("rate limit") || lower.contains("quota") || lower.contains("resource_exhausted") {
+        return "API rate limit exceeded. Please try again later.".to_string();
+    }
+
+    // Don't expose internal server errors
+    if lower.contains("internal") || lower.contains("server error") {
+        return "API server error. Please try again later.".to_string();
+    }
+
+    // For short, generic errors without keys, return as-is
+    if error.len() < 100 && !error.contains("key=") && !error.contains("key ") {
+        return error.to_string();
+    }
+
+    "An API error occurred. Please try again.".to_string()
+}
+
+/// Mask API key for safe display
+fn mask_api_key(key: &str) -> String {
+    if key.len() <= 8 {
+        return "****".to_string();
+    }
+    format!("{}...{}", &key[..4], &key[key.len() - 4..])
+}
 
 /// Available Gemini models
 pub const MODELS: &[&str] = &[
@@ -158,7 +204,7 @@ struct GeminiErrorDetail {
 // ============================================================================
 
 /// Gemini provider configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GeminiConfig {
     /// API key
     pub api_key: String,
@@ -170,6 +216,19 @@ pub struct GeminiConfig {
     pub default_max_tokens: u32,
     /// Request timeout
     pub timeout: Duration,
+}
+
+// SECURITY: Custom Debug implementation to mask API key
+impl fmt::Debug for GeminiConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GeminiConfig")
+            .field("api_key", &mask_api_key(&self.api_key))
+            .field("base_url", &self.base_url)
+            .field("default_model", &self.default_model)
+            .field("default_max_tokens", &self.default_max_tokens)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 impl GeminiConfig {
@@ -366,7 +425,8 @@ impl GeminiProvider {
             self.config.base_url, model, self.config.api_key
         );
 
-        debug!("Sending request to Gemini: {}", model);
+        // SECURITY: Don't log the full URL (contains API key)
+        debug!("Sending request to Gemini model: {}", model);
 
         let response = self
             .client
@@ -388,12 +448,17 @@ impl GeminiProvider {
                 if status.as_u16() == 429 {
                     return Err(Error::RateLimit);
                 }
-                return Err(Error::Api(format!(
+                // SECURITY: Sanitize error messages
+                return Err(Error::Api(sanitize_api_error(&format!(
                     "{}: {}",
                     error.error.status, error.error.message
-                )));
+                ))));
             }
-            return Err(Error::Api(format!("HTTP {}: {}", status, body)));
+            // SECURITY: Don't expose raw HTTP response body
+            return Err(Error::Api(sanitize_api_error(&format!(
+                "HTTP {}: {}",
+                status, body
+            ))));
         }
 
         serde_json::from_str(&body).map_err(|e| Error::InvalidResponse(format!("{}: {}", e, body)))
@@ -589,5 +654,34 @@ mod tests {
         assert_eq!(converted.len(), 2);
         assert_eq!(converted[0].role, Some("user".to_string()));
         assert_eq!(converted[1].role, Some("model".to_string()));
+    }
+
+    // Security tests
+
+    #[test]
+    fn test_api_key_masking() {
+        let masked = mask_api_key("AIza1234567890abcdefghij");
+        assert!(masked.starts_with("AIza"));
+        assert!(masked.contains("..."));
+        assert!(!masked.contains("1234567890"));
+    }
+
+    #[test]
+    fn test_sanitize_api_error() {
+        let sanitized = sanitize_api_error("Permission denied: invalid API key");
+        assert!(!sanitized.contains("invalid"));
+        assert!(sanitized.contains("authentication"));
+
+        let sanitized = sanitize_api_error("RESOURCE_EXHAUSTED: quota exceeded");
+        assert!(sanitized.contains("rate limit"));
+    }
+
+    #[test]
+    fn test_config_debug_masks_key() {
+        let config = GeminiConfig::new("AIza1234567890abcdefghij");
+        let debug_str = format!("{:?}", config);
+
+        assert!(!debug_str.contains("1234567890"));
+        assert!(debug_str.contains("AIza...ghij"));
     }
 }

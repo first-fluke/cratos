@@ -9,8 +9,54 @@ use crate::router::{
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::time::Duration;
 use tracing::{debug, instrument};
+
+// ============================================================================
+// Security Utilities
+// ============================================================================
+
+/// Sanitize API error messages to prevent leaking sensitive information
+fn sanitize_api_error(error: &str) -> String {
+    let lower = error.to_lowercase();
+
+    // Don't expose authentication details
+    if lower.contains("api key")
+        || lower.contains("apikey")
+        || lower.contains("invalid key")
+        || lower.contains("unauthorized")
+        || lower.contains("authentication")
+        || lower.contains("x-api-key")
+    {
+        return "API authentication error. Please check your API key configuration.".to_string();
+    }
+
+    // Don't expose rate limit details
+    if lower.contains("rate limit") || lower.contains("quota") || lower.contains("overloaded") {
+        return "API rate limit exceeded. Please try again later.".to_string();
+    }
+
+    // Don't expose internal server errors
+    if lower.contains("internal") || lower.contains("server error") {
+        return "API server error. Please try again later.".to_string();
+    }
+
+    // For short, generic errors without keys, return as-is
+    if error.len() < 100 && !error.contains("sk-") && !error.contains("key") {
+        return error.to_string();
+    }
+
+    "An API error occurred. Please try again.".to_string()
+}
+
+/// Mask API key for safe display
+fn mask_api_key(key: &str) -> String {
+    if key.len() <= 8 {
+        return "****".to_string();
+    }
+    format!("{}...{}", &key[..4], &key[key.len() - 4..])
+}
 
 /// Anthropic API version
 const API_VERSION: &str = "2023-06-01";
@@ -145,7 +191,7 @@ struct AnthropicErrorDetail {
 // ============================================================================
 
 /// Anthropic provider configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AnthropicConfig {
     /// API key
     pub api_key: String,
@@ -157,6 +203,19 @@ pub struct AnthropicConfig {
     pub default_max_tokens: u32,
     /// Request timeout
     pub timeout: Duration,
+}
+
+// SECURITY: Custom Debug implementation to mask API key
+impl fmt::Debug for AnthropicConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AnthropicConfig")
+            .field("api_key", &mask_api_key(&self.api_key))
+            .field("base_url", &self.base_url)
+            .field("default_model", &self.default_model)
+            .field("default_max_tokens", &self.default_max_tokens)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 impl AnthropicConfig {
@@ -332,12 +391,17 @@ impl AnthropicProvider {
                 if status.as_u16() == 429 {
                     return Err(Error::RateLimit);
                 }
-                return Err(Error::Api(format!(
+                // SECURITY: Sanitize error messages
+                return Err(Error::Api(sanitize_api_error(&format!(
                     "{}: {}",
                     error.error.r#type, error.error.message
-                )));
+                ))));
             }
-            return Err(Error::Api(format!("HTTP {}: {}", status, body)));
+            // SECURITY: Don't expose raw HTTP response body
+            return Err(Error::Api(sanitize_api_error(&format!(
+                "HTTP {}: {}",
+                status, body
+            ))));
         }
 
         serde_json::from_str(&body).map_err(|e| Error::InvalidResponse(e.to_string()))
@@ -512,5 +576,34 @@ mod tests {
         assert_eq!(converted.len(), 2);
         assert_eq!(converted[0].role, "user");
         assert_eq!(converted[1].role, "assistant");
+    }
+
+    // Security tests
+
+    #[test]
+    fn test_api_key_masking() {
+        let masked = mask_api_key("sk-ant-1234567890abcdefghij");
+        assert!(masked.starts_with("sk-a"));
+        assert!(masked.contains("..."));
+        assert!(!masked.contains("1234567890"));
+    }
+
+    #[test]
+    fn test_sanitize_api_error() {
+        let sanitized = sanitize_api_error("Invalid x-api-key header");
+        assert!(!sanitized.contains("x-api-key"));
+        assert!(sanitized.contains("authentication"));
+
+        let sanitized = sanitize_api_error("overloaded: too many requests");
+        assert!(sanitized.contains("rate limit"));
+    }
+
+    #[test]
+    fn test_config_debug_masks_key() {
+        let config = AnthropicConfig::new("sk-ant-1234567890abcdefghij");
+        let debug_str = format!("{:?}", config);
+
+        assert!(!debug_str.contains("1234567890"));
+        assert!(debug_str.contains("sk-a...ghij"));
     }
 }
