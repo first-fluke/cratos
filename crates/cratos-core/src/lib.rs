@@ -13,11 +13,13 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod agents;
 pub mod approval;
 pub mod credentials;
 pub mod error;
 pub mod memory;
 pub mod orchestrator;
+pub mod permissions;
 pub mod planner;
 pub mod security;
 pub mod utils;
@@ -28,13 +30,18 @@ pub use credentials::{
 };
 pub use error::{Error, Result};
 pub use memory::{
-    MemoryStore, RedisStore, SessionContext, SessionStore, ToolExecution, WorkingMemory,
+    MemoryStore, RedisStore, SessionBackend, SessionBackendConfig, SessionContext, SessionStore,
+    SqliteStore, ToolExecution, WorkingMemory,
 };
 pub use orchestrator::{
     ExecutionResult, ExecutionStatus, Orchestrator, OrchestratorConfig, OrchestratorInput,
     ToolCallRecord,
 };
 pub use planner::{PlanResponse, PlanStep, Planner, PlannerConfig};
+pub use permissions::{
+    ChannelPermissions, ChannelToolConfig, PermissionConfig, PermissionError, PermissionManager,
+    PermissionStatus, TimeRestrictions, ToolPermissions,
+};
 pub use security::{
     sanitize_input, validate_tool_output, InjectionDetector, InjectionError, InjectionPattern,
     SecurityConfig, ThreatLevel,
@@ -43,4 +50,12 @@ pub use utils::{
     metrics_global, retry_with_backoff, CircuitBreaker, CircuitBreakerConfig, CircuitState,
     Counter, Gauge, Histogram, MetricsRegistry, RateLimitConfig, RateLimitResult, RateLimiter,
     RetryConfig, TieredRateLimiter, Timer,
+};
+
+// Re-export agents module types
+pub use agents::{
+    AgentConfig, AgentOrchestrator, AgentPersona, AgentResponse, AgentRouting, AgentToolConfig,
+    CliConfig, CliError, CliProvider, CliProviderConfig, CliRegistry, CliResult, ExecutionContext,
+    OrchestratorConfig as AgentOrchestratorConfig, OrchestratorError, OrchestratorResult,
+    ParsedAgentTask, TaskStatus,
 };
