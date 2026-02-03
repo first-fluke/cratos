@@ -480,6 +480,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // Lock is for test isolation, not shared state
     async fn test_memory_store() {
         let _lock = ENV_LOCK.lock().unwrap();
         ensure_non_production();
@@ -507,6 +508,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // Lock is for test isolation, not shared state
     async fn test_memory_store_get_or_create() {
         let _lock = ENV_LOCK.lock().unwrap();
         ensure_non_production();
@@ -522,6 +524,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // Lock is for test isolation, not shared state
     async fn test_memory_store_list_keys() {
         let _lock = ENV_LOCK.lock().unwrap();
         ensure_non_production();

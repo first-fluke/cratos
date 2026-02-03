@@ -572,11 +572,17 @@ mod tests {
 
     #[test]
     fn test_channel_permissions() {
-        let mut channels = ChannelPermissions::default();
+        // Configure Slack with restricted tools using struct init
+        let slack_config = {
+            let mut config = ChannelToolConfig::with_allowed(["search", "read_file"]);
+            config.deny.insert("shell".to_string());
+            config
+        };
 
-        // Configure Slack with restricted tools
-        channels.slack = ChannelToolConfig::with_allowed(["search", "read_file"]);
-        channels.slack.deny.insert("shell".to_string());
+        let channels = ChannelPermissions {
+            slack: slack_config,
+            ..Default::default()
+        };
 
         // Telegram uses default (all allowed)
         assert!(channels.is_tool_allowed("telegram", "shell"));
