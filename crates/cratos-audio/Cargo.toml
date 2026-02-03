@@ -1,0 +1,63 @@
+[package]
+name = "cratos-audio"
+description = "Voice control for Cratos AI assistant (Wake Word, STT, TTS)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+default = ["tts"]
+# Enable TTS (Edge TTS - free)
+tts = []
+# Enable STT (requires OPENAI_API_KEY)
+stt = []
+# Enable full voice control (wake word + STT + TTS)
+full = ["tts", "stt"]
+
+[dependencies]
+cratos-core.workspace = true
+
+# Async runtime
+tokio = { workspace = true, features = ["sync", "time", "fs"] }
+futures.workspace = true
+async-trait.workspace = true
+
+# Audio I/O
+cpal = "0.15"
+rodio = { version = "0.19", default-features = false, features = ["wav"] }
+hound = "3.5"
+
+# STT (Whisper API via OpenAI)
+async-openai.workspace = true
+
+# Wake Word detection - ONNX support for future Silero VAD integration
+# Currently using energy-based VAD as fallback
+# ort = { version = "2.0.0-rc.5", features = ["download-binaries"] }
+# ndarray = "0.15"
+
+# TTS (Edge TTS - free Microsoft service)
+# Note: Using reqwest to call Edge TTS API directly
+reqwest = { workspace = true, features = ["json", "stream"] }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Utilities
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+
+# Ring buffer for audio (optional, for future optimizations)
+# ringbuf = "0.3"
+
+# Base64 for audio encoding
+base64 = "0.21"
+
+[dev-dependencies]
+tokio-test.workspace = true
+tempfile = "3.10"

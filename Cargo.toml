@@ -8,6 +8,7 @@ members = [
     "crates/cratos-replay",
     "crates/cratos-skills",
     "crates/cratos-search",
+    "crates/cratos-audio",
 ]
 
 [workspace.package]
@@ -38,6 +39,7 @@ serde_json = "1.0"
 # Channels
 teloxide = { version = "0.12", features = ["macros"] }
 slack-morphism = { version = "2.0", features = ["hyper"] }
+serenity = { version = "0.12", features = ["client", "gateway", "model"] }
 
 # LLM
 async-openai = "0.18"
@@ -79,6 +81,16 @@ cratos-llm = { path = "crates/cratos-llm" }
 cratos-replay = { path = "crates/cratos-replay" }
 cratos-skills = { path = "crates/cratos-skills" }
 cratos-search = { path = "crates/cratos-search" }
+cratos-audio = { path = "crates/cratos-audio" }
+
+# Audio
+cpal = "0.15"
+rodio = { version = "0.19", default-features = false, features = ["wav"] }
+hound = "3.5"
+ort = { version = "2.0.0-rc.5", features = ["download-binaries"] }
+ndarray = "0.15"
+ringbuf = "0.3"
+base64 = "0.21"
 
 [package]
 name = "cratos"
