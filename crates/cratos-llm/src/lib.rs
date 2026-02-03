@@ -10,6 +10,8 @@
 //! - Qwen: Alibaba Qwen provider
 //! - OpenRouter: Multi-provider gateway
 //! - Novita: Free tier LLM provider
+//! - Groq: Free tier with ultra-fast inference
+//! - DeepSeek: Ultra-low-cost provider ($0.14/1M tokens)
 //! - Embeddings: Vector embeddings for semantic search (feature: embeddings)
 
 #![forbid(unsafe_code)]
@@ -17,11 +19,13 @@
 
 pub mod anthropic;
 pub mod cost;
+pub mod deepseek;
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
 pub mod error;
 pub mod gemini;
 pub mod glm;
+pub mod groq;
 pub mod novita;
 pub mod ollama;
 pub mod openai;
@@ -36,15 +40,17 @@ pub use cost::{
 pub use error::{Error, Result};
 pub use router::{
     count_message_tokens, count_tokens, CompletionRequest, CompletionResponse, LlmProvider,
-    LlmRouter, Message, MessageRole, ModelTier, ProviderConfig, RouterConfig, RoutingRules,
-    TaskType, TokenBudget, TokenCounter, TokenUsage, ToolCall, ToolChoice, ToolCompletionRequest,
-    ToolCompletionResponse, ToolDefinition, TOKEN_COUNTER,
+    LlmRouter, Message, MessageRole, ModelConfig, ModelRoutingConfig, ModelTier, ProviderConfig,
+    RouterConfig, RoutingRules, TaskType, TokenBudget, TokenCounter, TokenUsage, ToolCall,
+    ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition, TOKEN_COUNTER,
 };
 
 // Re-export provider types
 pub use anthropic::{AnthropicConfig, AnthropicProvider};
+pub use deepseek::{DeepSeekConfig, DeepSeekProvider};
 pub use gemini::{GeminiConfig, GeminiProvider};
 pub use glm::{GlmConfig, GlmProvider};
+pub use groq::{GroqConfig, GroqProvider};
 pub use novita::{NovitaConfig, NovitaProvider};
 pub use ollama::{OllamaConfig, OllamaProvider};
 pub use openai::{OpenAiConfig, OpenAiProvider};

@@ -512,18 +512,26 @@ impl ModelTier {
     #[must_use]
     pub fn default_model(&self, provider: &str) -> &'static str {
         match (self, provider) {
+            // Groq models (FREE - prioritize for Fast tier!)
+            (ModelTier::Fast, "groq") => "llama-3.3-70b-versatile",
+            (ModelTier::Standard, "groq") => "llama-3.3-70b-versatile",
+            (ModelTier::Premium, "groq") => "llama-3.3-70b-versatile",
+            // DeepSeek models (ultra-low-cost)
+            (ModelTier::Fast, "deepseek") => "deepseek-chat",
+            (ModelTier::Standard, "deepseek") => "deepseek-chat",
+            (ModelTier::Premium, "deepseek") => "deepseek-reasoner",
             // OpenAI models
             (ModelTier::Fast, "openai") => "gpt-4o-mini",
             (ModelTier::Standard, "openai") => "gpt-4o",
             (ModelTier::Premium, "openai") => "gpt-4-turbo",
             // Anthropic models
             (ModelTier::Fast, "anthropic") => "claude-3-5-haiku-20241022",
-            (ModelTier::Standard, "anthropic") => "claude-3-5-sonnet-20241022",
-            (ModelTier::Premium, "anthropic") => "claude-3-opus-20240229",
+            (ModelTier::Standard, "anthropic") => "claude-sonnet-4-20250514",
+            (ModelTier::Premium, "anthropic") => "claude-opus-4-20250514",
             // Gemini models
-            (ModelTier::Fast, "gemini") => "gemini-1.5-flash",
-            (ModelTier::Standard, "gemini") => "gemini-1.5-pro",
-            (ModelTier::Premium, "gemini") => "gemini-1.5-pro",
+            (ModelTier::Fast, "gemini") => "gemini-2.0-flash",
+            (ModelTier::Standard, "gemini") => "gemini-2.0-pro",
+            (ModelTier::Premium, "gemini") => "gemini-2.0-pro",
             // GLM models
             (ModelTier::Fast, "glm") => "glm-4-flash",
             (ModelTier::Standard, "glm") => "glm-4-9b",
@@ -1002,6 +1010,169 @@ impl LlmRouter {
 }
 
 // ============================================================================
+// Model Routing Configuration (Cost Optimization)
+// ============================================================================
+
+/// Model configuration for a specific tier
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelConfig {
+    /// Provider name (e.g., "groq", "deepseek", "anthropic")
+    pub provider: String,
+    /// Model name (e.g., "llama-3.3-70b-versatile", "deepseek-chat")
+    pub model: String,
+}
+
+impl ModelConfig {
+    /// Create a new model configuration
+    #[must_use]
+    pub fn new(provider: impl Into<String>, model: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            model: model.into(),
+        }
+    }
+}
+
+/// Model routing configuration for cost optimization
+///
+/// Cratos uses a tiered approach to minimize costs:
+/// - Simple tasks: Free tier (Groq) - $0
+/// - General tasks: Low-cost (DeepSeek) - $0.14/1M tokens
+/// - Complex tasks: Premium (Anthropic/OpenAI) - Higher cost but better quality
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelRoutingConfig {
+    /// Model for simple tasks (classification, extraction)
+    /// Default: Groq (FREE)
+    pub simple: ModelConfig,
+    /// Model for general tasks (conversation, summarization)
+    /// Default: DeepSeek ($0.14/1M)
+    pub general: ModelConfig,
+    /// Model for complex tasks (planning, code generation)
+    /// Default: Claude Sonnet
+    pub complex: ModelConfig,
+    /// Fallback model when primary provider fails
+    pub fallback: Option<ModelConfig>,
+    /// Whether to automatically downgrade on rate limits
+    #[serde(default = "default_true")]
+    pub auto_downgrade: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for ModelRoutingConfig {
+    fn default() -> Self {
+        Self {
+            // FREE - Groq Llama 3.3 70B
+            simple: ModelConfig::new("groq", "llama-3.3-70b-versatile"),
+            // Ultra-low-cost - DeepSeek ($0.14/1M input, $0.28/1M output)
+            general: ModelConfig::new("deepseek", "deepseek-chat"),
+            // Premium - Claude Sonnet for complex reasoning
+            complex: ModelConfig::new("anthropic", "claude-sonnet-4-20250514"),
+            // Fallback to OpenAI if others fail
+            fallback: Some(ModelConfig::new("openai", "gpt-4o-mini")),
+            auto_downgrade: true,
+        }
+    }
+}
+
+impl ModelRoutingConfig {
+    /// Create a config optimized for free/low-cost usage
+    #[must_use]
+    pub fn free_tier() -> Self {
+        Self {
+            simple: ModelConfig::new("groq", "llama-3.3-70b-versatile"),
+            general: ModelConfig::new("groq", "llama-3.3-70b-versatile"),
+            complex: ModelConfig::new("deepseek", "deepseek-chat"),
+            fallback: Some(ModelConfig::new("novita", "qwen/qwen2.5-72b-instruct")),
+            auto_downgrade: true,
+        }
+    }
+
+    /// Create a config optimized for quality (uses premium models)
+    #[must_use]
+    pub fn quality_tier() -> Self {
+        Self {
+            simple: ModelConfig::new("anthropic", "claude-3-5-haiku-20241022"),
+            general: ModelConfig::new("anthropic", "claude-sonnet-4-20250514"),
+            complex: ModelConfig::new("anthropic", "claude-opus-4-20250514"),
+            fallback: Some(ModelConfig::new("openai", "gpt-4-turbo")),
+            auto_downgrade: false,
+        }
+    }
+
+    /// Create a config for local-only usage (Ollama)
+    #[must_use]
+    pub fn local_only() -> Self {
+        Self {
+            simple: ModelConfig::new("ollama", "llama3.2"),
+            general: ModelConfig::new("ollama", "llama3.2"),
+            complex: ModelConfig::new("ollama", "llama3.2"),
+            fallback: None,
+            auto_downgrade: false,
+        }
+    }
+
+    /// Get the model config for a task type
+    #[must_use]
+    pub fn get_for_task(&self, task_type: TaskType) -> &ModelConfig {
+        match task_type.recommended_tier() {
+            ModelTier::Fast => &self.simple,
+            ModelTier::Standard => &self.general,
+            ModelTier::Premium => &self.complex,
+        }
+    }
+
+    /// Estimate monthly cost for given usage pattern (in USD)
+    ///
+    /// # Arguments
+    /// * `simple_tokens` - Monthly tokens for simple tasks
+    /// * `general_tokens` - Monthly tokens for general tasks
+    /// * `complex_tokens` - Monthly tokens for complex tasks
+    #[must_use]
+    pub fn estimate_monthly_cost(
+        &self,
+        simple_tokens: u64,
+        general_tokens: u64,
+        complex_tokens: u64,
+    ) -> f64 {
+        // Pricing per 1M tokens (approximate)
+        let simple_price = match self.simple.provider.as_str() {
+            "groq" => 0.0,      // FREE
+            "deepseek" => 0.14,
+            "novita" => 0.0,    // FREE tier
+            "openai" => 0.15,   // gpt-4o-mini
+            "anthropic" => 0.25, // haiku
+            _ => 0.10,
+        };
+
+        let general_price = match self.general.provider.as_str() {
+            "groq" => 0.0,
+            "deepseek" => 0.14,
+            "novita" => 0.0,
+            "openai" => 2.50,   // gpt-4o
+            "anthropic" => 3.00, // sonnet
+            _ => 1.00,
+        };
+
+        let complex_price = match self.complex.provider.as_str() {
+            "groq" => 0.0,
+            "deepseek" => 0.14,
+            "openai" => 10.00,  // gpt-4-turbo
+            "anthropic" => 15.00, // opus
+            _ => 5.00,
+        };
+
+        let simple_cost = (simple_tokens as f64 / 1_000_000.0) * simple_price;
+        let general_cost = (general_tokens as f64 / 1_000_000.0) * general_price;
+        let complex_cost = (complex_tokens as f64 / 1_000_000.0) * complex_price;
+
+        simple_cost + general_cost + complex_cost
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -1111,18 +1282,18 @@ mod tests {
         );
         assert_eq!(
             ModelTier::Standard.default_model("anthropic"),
-            "claude-3-5-sonnet-20241022"
+            "claude-sonnet-4-20250514"
         );
         assert_eq!(
             ModelTier::Premium.default_model("anthropic"),
-            "claude-3-opus-20240229"
+            "claude-opus-4-20250514"
         );
 
         // Gemini
-        assert_eq!(ModelTier::Fast.default_model("gemini"), "gemini-1.5-flash");
+        assert_eq!(ModelTier::Fast.default_model("gemini"), "gemini-2.0-flash");
         assert_eq!(
             ModelTier::Standard.default_model("gemini"),
-            "gemini-1.5-pro"
+            "gemini-2.0-pro"
         );
     }
 
