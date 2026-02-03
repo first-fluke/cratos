@@ -2,7 +2,7 @@
 
 use leptos::*;
 
-use crate::components::{Card, StatCard};
+use crate::components::{Card, Chart, ChartData, ChartType, DataSeries, StatCard};
 
 /// Main dashboard page
 #[component]
@@ -68,6 +68,16 @@ pub fn Dashboard() -> impl IntoView {
             <Card title="System Status">
                 <SystemStatus />
             </Card>
+
+            // Usage charts
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card title="Executions Over Time">
+                    <ExecutionsChart />
+                </Card>
+                <Card title="Model Usage">
+                    <ModelUsageChart />
+                </Card>
+            </div>
         </div>
     }
 }
@@ -158,6 +168,67 @@ fn ActionButton(
             <h3 class="font-medium text-white">{title}</h3>
             <p class="text-xs text-gray-400 mt-1">{description}</p>
         </a>
+    }
+}
+
+/// Executions chart component
+#[component]
+fn ExecutionsChart() -> impl IntoView {
+    let data = ChartData {
+        title: String::new(),
+        labels: vec![
+            "Mon".to_string(),
+            "Tue".to_string(),
+            "Wed".to_string(),
+            "Thu".to_string(),
+            "Fri".to_string(),
+            "Sat".to_string(),
+            "Sun".to_string(),
+        ],
+        series: vec![DataSeries {
+            name: "Executions".to_string(),
+            values: vec![25.0, 42.0, 38.0, 55.0, 48.0, 32.0, 45.0],
+            color: Some("#3B82F6".to_string()),
+        }],
+    };
+
+    view! {
+        <Chart
+            data=data
+            chart_type=ChartType::Area
+            width=600
+            height=300
+            show_legend=false
+        />
+    }
+}
+
+/// Model usage chart component
+#[component]
+fn ModelUsageChart() -> impl IntoView {
+    let data = ChartData {
+        title: String::new(),
+        labels: vec![
+            "Groq".to_string(),
+            "DeepSeek".to_string(),
+            "Claude".to_string(),
+            "GPT-4".to_string(),
+        ],
+        series: vec![DataSeries {
+            name: "Requests".to_string(),
+            values: vec![45.0, 30.0, 15.0, 10.0],
+            color: None,
+        }],
+    };
+
+    view! {
+        <Chart
+            data=data
+            chart_type=ChartType::Bar
+            width=600
+            height=300
+            show_legend=false
+        />
     }
 }
 

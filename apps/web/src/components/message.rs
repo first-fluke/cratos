@@ -2,7 +2,7 @@
 
 use leptos::*;
 
-use crate::components::{CodeBlock, MarkdownBlock};
+use crate::components::{CodeBlock, Diagram, MarkdownBlock};
 use crate::pages::chat::{ContentBlock, MessageRole};
 
 /// Message bubble component
@@ -61,7 +61,7 @@ pub fn MessageBubble(
                             }
                             ContentBlock::Diagram { diagram_type, source } => {
                                 view! {
-                                    <DiagramBlock diagram_type=diagram_type source=source />
+                                    <Diagram diagram_type=diagram_type source=source />
                                 }.into_view()
                             }
                             ContentBlock::Image { url, alt } => {
@@ -82,47 +82,3 @@ pub fn MessageBubble(
     }
 }
 
-/// Diagram block component (renders via Kroki)
-#[component]
-fn DiagramBlock(
-    #[prop(into)] diagram_type: String,
-    #[prop(into)] source: String,
-) -> impl IntoView {
-    let diagram_url = create_kroki_url(&diagram_type, &source);
-
-    view! {
-        <div class="bg-gray-900 rounded-lg p-4">
-            <div class="text-xs text-gray-400 mb-2">
-                {diagram_type.clone()} " diagram"
-            </div>
-            <img
-                src=diagram_url
-                alt="Diagram"
-                class="max-w-full"
-                loading="lazy"
-            />
-        </div>
-    }
-}
-
-/// Create a Kroki URL for diagram rendering
-fn create_kroki_url(diagram_type: &str, source: &str) -> String {
-    use base64::Engine;
-    use std::io::Write;
-
-    let kroki_type = match diagram_type {
-        "mermaid" => "mermaid",
-        "plantuml" => "plantuml",
-        "graphviz" | "dot" => "graphviz",
-        "d2" => "d2",
-        _ => "mermaid",
-    };
-
-    // Compress and encode
-    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    let _ = encoder.write_all(source.as_bytes());
-    let compressed = encoder.finish().unwrap_or_default();
-    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&compressed);
-
-    format!("https://kroki.io/{}/svg/{}", kroki_type, encoded)
-}
