@@ -1,6 +1,17 @@
 //! Session storage backends
 //!
 //! Provides both in-memory and Redis-backed session storage.
+//!
+//! # Security Considerations
+//!
+//! - `MemoryStore` is for development/testing only - data is lost on restart
+//! - `RedisStore` should be used in production with proper authentication
+//! - Session data may contain sensitive user information - handle with care
+//!
+//! # Production Safety
+//!
+//! When `CRATOS_ENV=production`, `MemoryStore::new()` will return an error.
+//! Use `MemoryStore::new_unsafe()` to bypass this check (not recommended).
 
 use super::SessionContext;
 use crate::error::{Error, Result};
@@ -9,7 +20,21 @@ use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::{debug, error, info, warn};
+
+/// Check if running in production environment
+fn is_production() -> bool {
+    std::env::var("CRATOS_ENV")
+        .map(|v| v.to_lowercase() == "production")
+        .unwrap_or(false)
+}
+
+/// Check if production safety bypass is enabled
+fn is_production_bypass_enabled() -> bool {
+    std::env::var("CRATOS_ALLOW_MEMORY_STORE_IN_PRODUCTION")
+        .map(|v| v == "1" || v.to_lowercase() == "true")
+        .unwrap_or(false)
+}
 
 /// Session store trait for abstracting storage backends
 #[async_trait]
@@ -37,35 +62,154 @@ pub trait SessionStore: Send + Sync {
 }
 
 /// In-memory session store (for development/testing)
+///
+/// # Security Warning
+///
+/// This store is NOT suitable for production use:
+/// - Data is lost on application restart
+/// - No persistence or replication
+/// - No encryption at rest
+/// - Memory can grow unbounded without proper cleanup
+///
+/// Use `RedisStore` for production deployments.
+///
+/// # Production Safety
+///
+/// In production (`CRATOS_ENV=production`), `new()` returns an error.
+/// Use `new_unsafe()` or set `CRATOS_ALLOW_MEMORY_STORE_IN_PRODUCTION=1` to bypass.
 pub struct MemoryStore {
     sessions: Arc<RwLock<HashMap<String, SessionContext>>>,
     /// Session TTL in hours
     ttl_hours: u64,
+    /// Whether production safety was bypassed
+    production_bypass: bool,
 }
 
 impl Default for MemoryStore {
     fn default() -> Self {
-        Self::new()
+        Self::try_new().expect("MemoryStore not allowed in production. Use RedisStore or set CRATOS_ALLOW_MEMORY_STORE_IN_PRODUCTION=1")
     }
 }
 
 impl MemoryStore {
     /// Create a new memory store
+    ///
+    /// # Errors
+    ///
+    /// Returns error if `CRATOS_ENV=production` unless bypass is enabled.
+    ///
+    /// # Production Safety
+    ///
+    /// - In production: Returns `Err(Error::Configuration(...))`
+    /// - To bypass: Set `CRATOS_ALLOW_MEMORY_STORE_IN_PRODUCTION=1`
+    /// - Or use `new_unsafe()` (not recommended)
+    pub fn try_new() -> Result<Self> {
+        if is_production() && !is_production_bypass_enabled() {
+            error!(
+                "SECURITY BLOCK: MemoryStore is not allowed in production. \
+                 Use RedisStore for production deployments. \
+                 To bypass (NOT RECOMMENDED), set CRATOS_ALLOW_MEMORY_STORE_IN_PRODUCTION=1"
+            );
+            return Err(Error::Configuration(
+                "MemoryStore is not allowed in production. Use RedisStore instead.".to_string(),
+            ));
+        }
+
+        if is_production() {
+            warn!(
+                "SECURITY WARNING: MemoryStore is being used in production with safety bypass. \
+                 This is not recommended - use RedisStore instead for data persistence and security."
+            );
+        }
+
+        info!("Initializing MemoryStore for session storage");
+
+        Ok(Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            ttl_hours: 24,
+            production_bypass: is_production(),
+        })
+    }
+
+    /// Create a new memory store (legacy API, panics in production)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `CRATOS_ENV=production` unless bypass is enabled.
+    ///
+    /// # Deprecated
+    ///
+    /// Use `try_new()` instead for better error handling.
     #[must_use]
     pub fn new() -> Self {
+        Self::try_new().expect(
+            "MemoryStore not allowed in production. Use RedisStore or set CRATOS_ALLOW_MEMORY_STORE_IN_PRODUCTION=1"
+        )
+    }
+
+    /// Create a new memory store, bypassing production safety checks
+    ///
+    /// # Security Warning
+    ///
+    /// This bypasses production safety checks. Only use when:
+    /// - You have a specific, documented reason
+    /// - You understand the security implications
+    /// - There is no alternative (e.g., Redis is unavailable)
+    ///
+    /// Production use without persistence means:
+    /// - All sessions lost on restart
+    /// - No data recovery possible
+    /// - Potential data loss for users
+    #[must_use]
+    pub fn new_unsafe() -> Self {
+        if is_production() {
+            warn!(
+                "SECURITY WARNING: MemoryStore::new_unsafe() called in production. \
+                 Session data will not persist across restarts. \
+                 This should only be used when Redis is unavailable."
+            );
+        }
+
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             ttl_hours: 24,
+            production_bypass: true,
         }
     }
 
     /// Create with custom TTL
+    ///
+    /// # Errors
+    ///
+    /// Returns error if `CRATOS_ENV=production` unless bypass is enabled.
+    pub fn try_with_ttl_hours(ttl_hours: u64) -> Result<Self> {
+        let mut store = Self::try_new()?;
+        store.ttl_hours = ttl_hours;
+        Ok(store)
+    }
+
+    /// Create with custom TTL (legacy API, panics in production)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `CRATOS_ENV=production` unless bypass is enabled.
     #[must_use]
     pub fn with_ttl_hours(ttl_hours: u64) -> Self {
-        Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-            ttl_hours,
-        }
+        Self::try_with_ttl_hours(ttl_hours).expect(
+            "MemoryStore not allowed in production. Use RedisStore or set CRATOS_ALLOW_MEMORY_STORE_IN_PRODUCTION=1"
+        )
+    }
+
+    /// Check if this store is running with production safety bypass
+    #[must_use]
+    pub fn is_production_bypass(&self) -> bool {
+        self.production_bypass
+    }
+
+    /// Check if this store is safe for the current environment
+    #[must_use]
+    pub fn is_production_safe(&self) -> bool {
+        !is_production()
     }
 
     /// Get or create a session (synchronous convenience method)
@@ -121,12 +265,44 @@ impl SessionStore for MemoryStore {
         let cutoff = Utc::now() - chrono::Duration::hours(self.ttl_hours as i64);
         let mut sessions = self.sessions.write().await;
         let initial_count = sessions.len();
-        sessions.retain(|_, session| session.last_activity > cutoff);
-        Ok(initial_count - sessions.len())
+
+        // SECURITY: Collect keys to remove first, then explicitly clear session data
+        let expired_keys: Vec<String> = sessions
+            .iter()
+            .filter(|(_, session)| session.last_activity <= cutoff)
+            .map(|(key, _)| key.clone())
+            .collect();
+
+        let removed_count = expired_keys.len();
+
+        for key in expired_keys {
+            if let Some(mut session) = sessions.remove(&key) {
+                // SECURITY: Explicitly clear sensitive data before dropping
+                session.messages.clear();
+                session.metadata.clear();
+                debug!(session_key = %key, "Expired session data cleared and removed");
+            }
+        }
+
+        if removed_count > 0 {
+            debug!(
+                removed = removed_count,
+                remaining = initial_count - removed_count,
+                "Cleaned up expired sessions"
+            );
+        }
+
+        Ok(removed_count)
     }
 }
 
 /// Redis-backed session store (for production)
+///
+/// # Security Features
+///
+/// - Automatic TTL-based expiration
+/// - Session keys are prefixed to isolate from other Redis data
+/// - Consider enabling Redis AUTH and TLS in production
 pub struct RedisStore {
     client: redis::Client,
     /// Key prefix for session keys
@@ -215,7 +391,7 @@ impl SessionStore for RedisStore {
             .arg(&key)
             .arg(self.ttl_seconds)
             .arg(&json)
-            .query_async::<_, ()>(&mut conn)
+            .query_async::<()>(&mut conn)
             .await
             .map_err(|e| Error::Internal(format!("Redis SETEX failed: {}", e)))?;
 
@@ -291,10 +467,23 @@ impl SessionStore for RedisStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Global lock for tests that modify environment variables
+    // This prevents race conditions when tests run in parallel
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    // Helper to ensure tests run in non-production mode
+    fn ensure_non_production() {
+        std::env::remove_var("CRATOS_ENV");
+        std::env::remove_var("CRATOS_ALLOW_MEMORY_STORE_IN_PRODUCTION");
+    }
 
     #[tokio::test]
     async fn test_memory_store() {
-        let store = MemoryStore::new();
+        let _lock = ENV_LOCK.lock().unwrap();
+        ensure_non_production();
+        let store = MemoryStore::try_new().unwrap();
 
         // Initially empty
         assert_eq!(store.count().await.unwrap(), 0);
@@ -319,7 +508,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_store_get_or_create() {
-        let store = MemoryStore::new();
+        let _lock = ENV_LOCK.lock().unwrap();
+        ensure_non_production();
+        let store = MemoryStore::try_new().unwrap();
 
         // First call creates
         let session1 = store.get_or_create("new:key").await;
@@ -332,7 +523,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_store_list_keys() {
-        let store = MemoryStore::new();
+        let _lock = ENV_LOCK.lock().unwrap();
+        ensure_non_production();
+        let store = MemoryStore::try_new().unwrap();
 
         store.save(&SessionContext::new("key1")).await.unwrap();
         store.save(&SessionContext::new("key2")).await.unwrap();
@@ -343,6 +536,57 @@ mod tests {
         assert!(keys.contains(&"key1".to_string()));
         assert!(keys.contains(&"key2".to_string()));
         assert!(keys.contains(&"key3".to_string()));
+    }
+
+    // ========================================================================
+    // Production Safety Tests
+    // Note: These tests use new_unsafe() to avoid environment variable races
+    // ========================================================================
+
+    #[test]
+    fn test_memory_store_new_unsafe_always_works() {
+        // new_unsafe should always work regardless of environment
+        let store = MemoryStore::new_unsafe();
+        // In test environment, bypass flag is set because we used new_unsafe
+        assert!(store.is_production_bypass());
+    }
+
+    #[test]
+    fn test_production_checks() {
+        let _lock = ENV_LOCK.lock().unwrap();
+
+        // Test 1: Non-production mode
+        ensure_non_production();
+        assert!(!is_production());
+        assert!(!is_production_bypass_enabled());
+
+        let store = MemoryStore::try_new().unwrap();
+        assert!(!store.is_production_bypass());
+        assert!(store.is_production_safe());
+
+        // Test 2: Production mode without bypass - should fail
+        std::env::set_var("CRATOS_ENV", "production");
+        std::env::remove_var("CRATOS_ALLOW_MEMORY_STORE_IN_PRODUCTION");
+        assert!(is_production());
+        assert!(!is_production_bypass_enabled());
+
+        let result = MemoryStore::try_new();
+        assert!(result.is_err());
+        if let Err(Error::Configuration(msg)) = result {
+            assert!(msg.contains("not allowed in production"));
+        }
+
+        // Test 3: Production mode with bypass - should succeed
+        std::env::set_var("CRATOS_ALLOW_MEMORY_STORE_IN_PRODUCTION", "1");
+        assert!(is_production());
+        assert!(is_production_bypass_enabled());
+
+        let store = MemoryStore::try_new().unwrap();
+        assert!(store.is_production_bypass());
+        assert!(!store.is_production_safe()); // Still not safe, just bypassed
+
+        // Clean up
+        ensure_non_production();
     }
 
     // Redis tests require a running Redis instance

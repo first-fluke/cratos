@@ -36,8 +36,10 @@ pub struct ApprovalRequest {
     pub channel_type: String,
     /// Channel ID
     pub channel_id: String,
-    /// User ID
+    /// User ID who initiated the request
     pub user_id: String,
+    /// User ID who responded (for audit)
+    pub responder_id: Option<String>,
     /// Action description
     pub action: String,
     /// Tool name (if applicable)
@@ -75,6 +77,7 @@ impl ApprovalRequest {
             channel_type: channel_type.into(),
             channel_id: channel_id.into(),
             user_id: user_id.into(),
+            responder_id: None,
             action: action.into(),
             tool_name: None,
             tool_args: None,
@@ -106,7 +109,54 @@ impl ApprovalRequest {
         self.status == ApprovalStatus::Pending && !self.is_expired()
     }
 
-    /// Approve the request
+    /// Check if a user is authorized to respond to this request
+    ///
+    /// By default, only the original requester can approve/reject.
+    /// Override this for multi-user approval workflows.
+    #[must_use]
+    pub fn can_respond(&self, responder_user_id: &str) -> bool {
+        // SECURITY: Only the original user can approve their own requests
+        self.user_id == responder_user_id
+    }
+
+    /// Approve the request with responder verification
+    ///
+    /// Returns true if approved, false if not authorized or not pending
+    pub fn approve_by(&mut self, responder_id: &str) -> bool {
+        if !self.is_pending() {
+            return false;
+        }
+
+        if !self.can_respond(responder_id) {
+            return false;
+        }
+
+        self.status = ApprovalStatus::Approved;
+        self.responder_id = Some(responder_id.to_string());
+        self.responded_at = Some(Utc::now());
+        true
+    }
+
+    /// Reject the request with responder verification
+    ///
+    /// Returns true if rejected, false if not authorized or not pending
+    pub fn reject_by(&mut self, responder_id: &str) -> bool {
+        if !self.is_pending() {
+            return false;
+        }
+
+        if !self.can_respond(responder_id) {
+            return false;
+        }
+
+        self.status = ApprovalStatus::Rejected;
+        self.responder_id = Some(responder_id.to_string());
+        self.responded_at = Some(Utc::now());
+        true
+    }
+
+    /// Approve the request (without responder verification - for internal use)
+    #[deprecated(note = "Use approve_by() with responder verification instead")]
     pub fn approve(&mut self) {
         if self.is_pending() {
             self.status = ApprovalStatus::Approved;
@@ -114,7 +164,8 @@ impl ApprovalRequest {
         }
     }
 
-    /// Reject the request
+    /// Reject the request (without responder verification - for internal use)
+    #[deprecated(note = "Use reject_by() with responder verification instead")]
     pub fn reject(&mut self) {
         if self.is_pending() {
             self.status = ApprovalStatus::Rejected;
@@ -123,10 +174,24 @@ impl ApprovalRequest {
     }
 
     /// Mark as expired
+    ///
+    /// SECURITY: Expired requests are automatically rejected (fail-safe default)
     pub fn expire(&mut self) {
         if self.status == ApprovalStatus::Pending {
-            self.status = ApprovalStatus::Expired;
+            // SECURITY: Expired = Rejected (fail-safe)
+            // This ensures that unanswered requests don't accidentally allow actions
+            self.status = ApprovalStatus::Rejected;
+            self.responded_at = Some(Utc::now());
         }
+    }
+
+    /// Check if the request was effectively denied (rejected or expired)
+    #[must_use]
+    pub fn is_denied(&self) -> bool {
+        matches!(
+            self.status,
+            ApprovalStatus::Rejected | ApprovalStatus::Expired
+        )
     }
 }
 
@@ -194,10 +259,52 @@ impl ApprovalManager {
         requests.get(&id).cloned()
     }
 
-    /// Approve a request
+    /// Approve a request with responder verification
+    ///
+    /// Returns Some(request) if approved, None if not found or not authorized
+    pub async fn approve_by(
+        &self,
+        id: Uuid,
+        responder_id: &str,
+    ) -> Option<ApprovalRequest> {
+        let mut requests = self.requests.write().await;
+        if let Some(request) = requests.get_mut(&id) {
+            if request.approve_by(responder_id) {
+                Some(request.clone())
+            } else {
+                None // Not authorized or not pending
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Reject a request with responder verification
+    ///
+    /// Returns Some(request) if rejected, None if not found or not authorized
+    pub async fn reject_by(
+        &self,
+        id: Uuid,
+        responder_id: &str,
+    ) -> Option<ApprovalRequest> {
+        let mut requests = self.requests.write().await;
+        if let Some(request) = requests.get_mut(&id) {
+            if request.reject_by(responder_id) {
+                Some(request.clone())
+            } else {
+                None // Not authorized or not pending
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Approve a request (deprecated - use approve_by for security)
+    #[deprecated(note = "Use approve_by() with responder verification instead")]
     pub async fn approve(&self, id: Uuid) -> Option<ApprovalRequest> {
         let mut requests = self.requests.write().await;
         if let Some(request) = requests.get_mut(&id) {
+            #[allow(deprecated)]
             request.approve();
             Some(request.clone())
         } else {
@@ -205,10 +312,12 @@ impl ApprovalManager {
         }
     }
 
-    /// Reject a request
+    /// Reject a request (deprecated - use reject_by for security)
+    #[deprecated(note = "Use reject_by() with responder verification instead")]
     pub async fn reject(&self, id: Uuid) -> Option<ApprovalRequest> {
         let mut requests = self.requests.write().await;
         if let Some(request) = requests.get_mut(&id) {
+            #[allow(deprecated)]
             request.reject();
             Some(request.clone())
         } else {
@@ -316,24 +425,44 @@ mod tests {
     }
 
     #[test]
-    fn test_approval_approve() {
+    fn test_approval_approve_by_authorized_user() {
         let mut request = ApprovalRequest::new(
             Uuid::new_v4(),
             "telegram",
             "123",
-            "456",
+            "456", // user_id
             "Test action",
             "Test risk",
             60,
         );
 
-        request.approve();
+        // Same user can approve
+        assert!(request.approve_by("456"));
         assert_eq!(request.status, ApprovalStatus::Approved);
+        assert_eq!(request.responder_id, Some("456".to_string()));
         assert!(request.responded_at.is_some());
     }
 
     #[test]
-    fn test_approval_reject() {
+    fn test_approval_reject_by_unauthorized_user() {
+        let mut request = ApprovalRequest::new(
+            Uuid::new_v4(),
+            "telegram",
+            "123",
+            "456", // user_id
+            "Test action",
+            "Test risk",
+            60,
+        );
+
+        // Different user cannot approve
+        assert!(!request.approve_by("789"));
+        assert_eq!(request.status, ApprovalStatus::Pending);
+        assert!(request.responder_id.is_none());
+    }
+
+    #[test]
+    fn test_approval_expire_becomes_rejected() {
         let mut request = ApprovalRequest::new(
             Uuid::new_v4(),
             "telegram",
@@ -344,13 +473,66 @@ mod tests {
             60,
         );
 
-        request.reject();
+        // SECURITY: Expired requests should be treated as rejected (fail-safe)
+        request.expire();
         assert_eq!(request.status, ApprovalStatus::Rejected);
+        assert!(request.is_denied());
+    }
+
+    #[test]
+    fn test_is_denied() {
+        let mut request = ApprovalRequest::new(
+            Uuid::new_v4(),
+            "telegram",
+            "123",
+            "456",
+            "Test action",
+            "Test risk",
+            60,
+        );
+
+        assert!(!request.is_denied());
+
+        request.reject_by("456");
+        assert!(request.is_denied());
     }
 
     #[tokio::test]
-    async fn test_approval_manager() {
+    async fn test_approval_manager_with_verification() {
         let manager = ApprovalManager::new();
+
+        let request = manager
+            .create_request(
+                Uuid::new_v4(),
+                "telegram",
+                "123",
+                "456", // user_id
+                "Test action",
+                "Test risk",
+            )
+            .await;
+
+        assert!(manager.get(request.id).await.is_some());
+
+        let pending = manager.pending_for_user("456").await;
+        assert_eq!(pending.len(), 1);
+
+        // Should fail with wrong user
+        let result = manager.approve_by(request.id, "789").await;
+        assert!(result.is_none());
+
+        // Should succeed with correct user
+        let result = manager.approve_by(request.id, "456").await;
+        assert!(result.is_some());
+
+        let approved = manager.get(request.id).await.unwrap();
+        assert_eq!(approved.status, ApprovalStatus::Approved);
+        assert_eq!(approved.responder_id, Some("456".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_approval_manager_cleanup_expired() {
+        let manager = ApprovalManager::with_timeout_secs(1); // 1 second timeout
 
         let request = manager
             .create_request(
@@ -363,13 +545,14 @@ mod tests {
             )
             .await;
 
-        assert!(manager.get(request.id).await.is_some());
+        // Wait for expiration
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-        let pending = manager.pending_for_user("456").await;
-        assert_eq!(pending.len(), 1);
+        // Cleanup should mark as rejected (not just expired)
+        manager.cleanup_expired().await;
 
-        manager.approve(request.id).await;
-        let approved = manager.get(request.id).await.unwrap();
-        assert_eq!(approved.status, ApprovalStatus::Approved);
+        let expired = manager.get(request.id).await.unwrap();
+        assert_eq!(expired.status, ApprovalStatus::Rejected);
+        assert!(expired.is_denied());
     }
 }
