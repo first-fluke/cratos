@@ -3,7 +3,63 @@
 use crate::error::{Error, Result};
 use crate::registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolResult};
 use std::time::Instant;
-use tracing::debug;
+use tracing::{debug, warn};
+
+/// Maximum length for owner/repo names
+const MAX_NAME_LENGTH: usize = 100;
+
+/// Validate and sanitize a GitHub owner or repo name
+fn validate_name(name: &str, field: &str) -> Result<String> {
+    // Check length
+    if name.is_empty() {
+        return Err(Error::InvalidInput(format!("{} cannot be empty", field)));
+    }
+
+    if name.len() > MAX_NAME_LENGTH {
+        return Err(Error::InvalidInput(format!(
+            "{} exceeds maximum length of {} characters",
+            field, MAX_NAME_LENGTH
+        )));
+    }
+
+    // GitHub only allows alphanumeric, hyphens, and underscores
+    // Also dots for repo names in some cases
+    let is_valid = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+
+    if !is_valid {
+        warn!(name = %name, field = %field, "Invalid GitHub name with special characters");
+        return Err(Error::InvalidInput(format!(
+            "{} contains invalid characters. Only alphanumeric, hyphens, underscores, and dots are allowed.",
+            field
+        )));
+    }
+
+    // Prevent path traversal
+    if name.contains("..") {
+        return Err(Error::InvalidInput(format!(
+            "{} cannot contain '..'",
+            field
+        )));
+    }
+
+    Ok(name.to_string())
+}
+
+/// Validate state parameter (open, closed, all)
+fn validate_state(state: &str) -> Result<&str> {
+    match state {
+        "open" | "closed" | "all" => Ok(state),
+        _ => {
+            warn!(state = %state, "Invalid state parameter");
+            Err(Error::InvalidInput(format!(
+                "Invalid state '{}'. Must be one of: open, closed, all",
+                state
+            )))
+        }
+    }
+}
 
 /// Tool for GitHub API operations
 pub struct GitHubApiTool {
@@ -111,30 +167,41 @@ impl Tool for GitHubApiTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::InvalidInput("Missing 'action' parameter".to_string()))?;
 
-        let owner = input
+        let owner_raw = input
             .get("owner")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::InvalidInput("Missing 'owner' parameter".to_string()))?;
 
-        let repo = input
+        let repo_raw = input
             .get("repo")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::InvalidInput("Missing 'repo' parameter".to_string()))?;
 
+        // SECURITY: Validate owner and repo names
+        let owner = validate_name(owner_raw, "owner")?;
+        let repo = validate_name(repo_raw, "repo")?;
+
         let token = self.get_token(&input)?;
 
+        // Don't log the token
         debug!(action = %action, owner = %owner, repo = %repo, "GitHub API call");
 
-        let base_url = format!("https://api.github.com/repos/{}/{}", owner, repo);
+        // Use URL-encoded values in the URL (though validation above should prevent issues)
+        let base_url = format!(
+            "https://api.github.com/repos/{}/{}",
+            urlencoding::encode(&owner),
+            urlencoding::encode(&repo)
+        );
 
         let (method, url, body): (&str, String, Option<serde_json::Value>) = match action {
             "get_repo" => ("GET", base_url.clone(), None),
 
             "list_issues" => {
-                let state = input
+                let state_raw = input
                     .get("state")
                     .and_then(|v| v.as_str())
                     .unwrap_or("open");
+                let state = validate_state(state_raw)?;
                 ("GET", format!("{}/issues?state={}", base_url, state), None)
             }
 
@@ -164,10 +231,11 @@ impl Tool for GitHubApiTool {
             }
 
             "list_prs" => {
-                let state = input
+                let state_raw = input
                     .get("state")
                     .and_then(|v| v.as_str())
                     .unwrap_or("open");
+                let state = validate_state(state_raw)?;
                 ("GET", format!("{}/pulls?state={}", base_url, state), None)
             }
 
@@ -280,6 +348,66 @@ mod tests {
             .execute(serde_json::json!({
                 "owner": "test",
                 "repo": "test"
+            }))
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_name() {
+        // Valid names
+        assert!(validate_name("rust-lang", "owner").is_ok());
+        assert!(validate_name("cratos_project", "repo").is_ok());
+        assert!(validate_name("my.repo", "repo").is_ok());
+
+        // Invalid names - special characters
+        assert!(validate_name("test/repo", "repo").is_err());
+        assert!(validate_name("test;rm", "owner").is_err());
+        assert!(validate_name("test&echo", "owner").is_err());
+
+        // Invalid names - path traversal
+        assert!(validate_name("...", "repo").is_err());
+        assert!(validate_name("test/../etc", "repo").is_err());
+
+        // Invalid names - empty or too long
+        assert!(validate_name("", "owner").is_err());
+        let long_name = "a".repeat(200);
+        assert!(validate_name(&long_name, "owner").is_err());
+    }
+
+    #[test]
+    fn test_validate_state() {
+        assert!(validate_state("open").is_ok());
+        assert!(validate_state("closed").is_ok());
+        assert!(validate_state("all").is_ok());
+
+        assert!(validate_state("OPEN").is_err());
+        assert!(validate_state("invalid").is_err());
+        assert!(validate_state("open;rm").is_err());
+    }
+
+    #[tokio::test]
+    async fn test_github_api_blocks_injection() {
+        let tool = GitHubApiTool::new();
+
+        // Should block injection attempts in owner
+        let result = tool
+            .execute(serde_json::json!({
+                "action": "get_repo",
+                "owner": "test/../../../etc",
+                "repo": "repo",
+                "token": "test"
+            }))
+            .await;
+        assert!(result.is_err());
+
+        // Should block special characters
+        let result = tool
+            .execute(serde_json::json!({
+                "action": "list_issues",
+                "owner": "test",
+                "repo": "repo;rm -rf /",
+                "token": "test"
             }))
             .await;
         assert!(result.is_err());

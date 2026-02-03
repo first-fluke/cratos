@@ -15,7 +15,7 @@ mod http;
 
 pub use exec::ExecTool;
 pub use file::{FileListTool, FileReadTool, FileWriteTool};
-pub use git::{GitBranchTool, GitCommitTool, GitDiffTool, GitStatusTool};
+pub use git::{GitBranchTool, GitCommitTool, GitDiffTool, GitPushTool, GitStatusTool};
 pub use github::GitHubApiTool;
 pub use http::{HttpGetTool, HttpPostTool};
 
@@ -41,6 +41,7 @@ pub fn register_builtins(registry: &mut ToolRegistry) {
     registry.register(Arc::new(GitCommitTool::new()));
     registry.register(Arc::new(GitBranchTool::new()));
     registry.register(Arc::new(GitDiffTool::new()));
+    registry.register(Arc::new(GitPushTool::new()));
 
     // GitHub API tool
     registry.register(Arc::new(GitHubApiTool::new()));
@@ -66,6 +67,7 @@ mod tests {
         assert!(registry.has("git_branch"));
         assert!(registry.has("git_diff"));
         assert!(registry.has("github_api"));
-        assert_eq!(registry.len(), 11);
+        assert!(registry.has("git_push"));
+        assert_eq!(registry.len(), 12);
     }
 }

@@ -8,6 +8,62 @@ use tokio::process::Command;
 use tracing::debug;
 
 // ============================================================================
+// Security Constants
+// ============================================================================
+
+/// Dangerous git flags that should be blocked
+#[allow(dead_code)] // Used in tests and for documentation
+const BLOCKED_FLAGS: &[&str] = &[
+    "--force",
+    "-f",
+    "--force-with-lease",
+    "--no-verify",
+    "-n",
+    "--hard",
+    "--delete",
+    "-D",
+    "--force-delete",
+    "--mirror",
+    "--prune",
+    "--all",  // when used with push
+];
+
+/// Check if an argument contains blocked flags
+#[allow(dead_code)] // Used in tests and for future validation
+fn contains_blocked_flag(arg: &str) -> bool {
+    BLOCKED_FLAGS.iter().any(|flag| {
+        arg == *flag || arg.starts_with(&format!("{}=", flag))
+    })
+}
+
+/// Validate branch name for security (prevent command injection)
+fn is_valid_branch_name(name: &str) -> bool {
+    // Git branch names have specific restrictions
+    // Reject anything that looks like it could be command injection
+    if name.is_empty() || name.len() > 255 {
+        return false;
+    }
+
+    // Must not start with - (could be interpreted as flag)
+    if name.starts_with('-') {
+        return false;
+    }
+
+    // Must not contain dangerous characters
+    let dangerous_chars = ['`', '$', '|', ';', '&', '>', '<', '\n', '\r', '\0'];
+    if name.chars().any(|c| dangerous_chars.contains(&c)) {
+        return false;
+    }
+
+    // Must not contain .. (path traversal)
+    if name.contains("..") {
+        return false;
+    }
+
+    true
+}
+
+// ============================================================================
 // Git Status Tool
 // ============================================================================
 
@@ -350,18 +406,40 @@ impl Tool for GitBranchTool {
                 let branch_name = name.ok_or_else(|| {
                     Error::InvalidInput("Branch name required for create".to_string())
                 })?;
+                // SECURITY: Validate branch name
+                if !is_valid_branch_name(branch_name) {
+                    return Err(Error::InvalidInput(format!(
+                        "Invalid branch name: {}",
+                        branch_name
+                    )));
+                }
                 cmd.args(["branch", branch_name]);
             }
             "checkout" => {
                 let branch_name = name.ok_or_else(|| {
                     Error::InvalidInput("Branch name required for checkout".to_string())
                 })?;
+                // SECURITY: Validate branch name
+                if !is_valid_branch_name(branch_name) {
+                    return Err(Error::InvalidInput(format!(
+                        "Invalid branch name: {}",
+                        branch_name
+                    )));
+                }
                 cmd.args(["checkout", branch_name]);
             }
             "delete" => {
                 let branch_name = name.ok_or_else(|| {
                     Error::InvalidInput("Branch name required for delete".to_string())
                 })?;
+                // SECURITY: Validate branch name
+                if !is_valid_branch_name(branch_name) {
+                    return Err(Error::InvalidInput(format!(
+                        "Invalid branch name: {}",
+                        branch_name
+                    )));
+                }
+                // SECURITY: Use -d (safe delete) instead of -D (force delete)
                 cmd.args(["branch", "-d", branch_name]);
             }
             _ => {
@@ -552,6 +630,146 @@ impl Tool for GitDiffTool {
     }
 }
 
+// ============================================================================
+// Git Push Tool
+// ============================================================================
+
+/// Tool for pushing to remote repositories (with security restrictions)
+pub struct GitPushTool {
+    definition: ToolDefinition,
+}
+
+impl GitPushTool {
+    /// Create a new git push tool
+    #[must_use]
+    pub fn new() -> Self {
+        let definition = ToolDefinition::new("git_push", "Push commits to remote repository")
+            .with_category(ToolCategory::Utility)
+            .with_risk_level(RiskLevel::High)
+            .with_parameters(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the git repository (default: current directory)"
+                    },
+                    "remote": {
+                        "type": "string",
+                        "description": "Remote name (default: origin)",
+                        "default": "origin"
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Branch to push (default: current branch)"
+                    },
+                    "set_upstream": {
+                        "type": "boolean",
+                        "description": "Set upstream tracking",
+                        "default": false
+                    }
+                }
+            }));
+
+        Self { definition }
+    }
+}
+
+impl Default for GitPushTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait::async_trait]
+impl Tool for GitPushTool {
+    fn definition(&self) -> &ToolDefinition {
+        &self.definition
+    }
+
+    async fn execute(&self, input: serde_json::Value) -> Result<ToolResult> {
+        let start = Instant::now();
+
+        let path = input.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        let remote = input
+            .get("remote")
+            .and_then(|v| v.as_str())
+            .unwrap_or("origin");
+        let branch = input.get("branch").and_then(|v| v.as_str());
+        let set_upstream = input
+            .get("set_upstream")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        // SECURITY: Validate remote name
+        if !is_valid_branch_name(remote) {
+            return Err(Error::InvalidInput(format!(
+                "Invalid remote name: {}",
+                remote
+            )));
+        }
+
+        // SECURITY: Validate branch name if provided
+        if let Some(b) = branch {
+            if !is_valid_branch_name(b) {
+                return Err(Error::InvalidInput(format!("Invalid branch name: {}", b)));
+            }
+        }
+
+        debug!(path = %path, remote = %remote, branch = ?branch, "Git push");
+
+        let mut cmd = Command::new("git");
+        cmd.arg("push");
+
+        // SECURITY: Never allow force push flags
+        // The tool intentionally does not expose --force, -f, or --force-with-lease
+
+        if set_upstream {
+            cmd.arg("-u");
+        }
+
+        cmd.arg(remote);
+
+        if let Some(b) = branch {
+            cmd.arg(b);
+        }
+
+        cmd.current_dir(path);
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| Error::Execution(format!("Failed to run git push: {}", e)))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        let duration = start.elapsed().as_millis() as u64;
+
+        if output.status.success() {
+            Ok(ToolResult::success(
+                serde_json::json!({
+                    "success": true,
+                    "remote": remote,
+                    "branch": branch,
+                    "output": format!("{}{}", stdout, stderr)
+                }),
+                duration,
+            ))
+        } else {
+            // SECURITY: Sanitize error message (don't leak remote URLs with tokens)
+            let sanitized_error = if stderr.contains("http") || stderr.contains("@") {
+                "git push failed: authentication or remote error".to_string()
+            } else {
+                format!("git push failed: {}", stderr)
+            };
+
+            Ok(ToolResult::failure(sanitized_error, duration))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -598,6 +816,82 @@ mod tests {
     async fn test_git_commit_missing_message() {
         let tool = GitCommitTool::new();
         let result = tool.execute(serde_json::json!({})).await;
+        assert!(result.is_err());
+    }
+
+    // Security tests
+
+    #[test]
+    fn test_blocked_flags_detection() {
+        assert!(contains_blocked_flag("--force"));
+        assert!(contains_blocked_flag("-f"));
+        assert!(contains_blocked_flag("--no-verify"));
+        assert!(contains_blocked_flag("-D"));
+        assert!(contains_blocked_flag("--hard"));
+
+        // These should not be blocked
+        assert!(!contains_blocked_flag("main"));
+        assert!(!contains_blocked_flag("feature/test"));
+        assert!(!contains_blocked_flag("-m"));
+    }
+
+    #[test]
+    fn test_valid_branch_names() {
+        assert!(is_valid_branch_name("main"));
+        assert!(is_valid_branch_name("feature/new-feature"));
+        assert!(is_valid_branch_name("fix-123"));
+
+        // Invalid names
+        assert!(!is_valid_branch_name("-flag"));
+        assert!(!is_valid_branch_name("branch;rm -rf /"));
+        assert!(!is_valid_branch_name("branch`whoami`"));
+        assert!(!is_valid_branch_name("branch$PATH"));
+        assert!(!is_valid_branch_name("branch|cat /etc/passwd"));
+        assert!(!is_valid_branch_name("branch..traversal"));
+        assert!(!is_valid_branch_name(""));
+    }
+
+    #[test]
+    fn test_git_push_definition() {
+        let tool = GitPushTool::new();
+        let def = tool.definition();
+
+        assert_eq!(def.name, "git_push");
+        assert_eq!(def.risk_level, RiskLevel::High);
+    }
+
+    #[tokio::test]
+    async fn test_git_branch_rejects_invalid_name() {
+        let tool = GitBranchTool::new();
+
+        // Test command injection attempt
+        let result = tool
+            .execute(serde_json::json!({
+                "action": "create",
+                "name": "branch;rm -rf /"
+            }))
+            .await;
+        assert!(result.is_err());
+
+        // Test flag injection attempt
+        let result = tool
+            .execute(serde_json::json!({
+                "action": "create",
+                "name": "--force"
+            }))
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_git_push_rejects_invalid_remote() {
+        let tool = GitPushTool::new();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "remote": "-f origin"
+            }))
+            .await;
         assert!(result.is_err());
     }
 }

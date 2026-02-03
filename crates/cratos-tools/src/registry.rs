@@ -210,12 +210,24 @@ pub trait Tool: Send + Sync {
     }
 }
 
+/// Security mode for exec allowlist
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExecSecurityMode {
+    /// Default: Block all commands unless explicitly allowed
+    #[default]
+    DenyByDefault,
+    /// Allow all commands (DANGEROUS - use only in development)
+    AllowAll,
+}
+
 /// Registry for managing tools
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
     definitions: HashMap<String, ToolDefinition>,
-    /// Allowlist for exec command (if empty, all commands allowed)
+    /// Allowlist for exec command
     exec_allowlist: Vec<String>,
+    /// Security mode for exec command
+    exec_security_mode: ExecSecurityMode,
 }
 
 impl Default for ToolRegistry {
@@ -225,14 +237,35 @@ impl Default for ToolRegistry {
 }
 
 impl ToolRegistry {
-    /// Create a new empty registry
+    /// Create a new empty registry with secure defaults
     #[must_use]
     pub fn new() -> Self {
         Self {
             tools: HashMap::new(),
             definitions: HashMap::new(),
             exec_allowlist: Vec::new(),
+            exec_security_mode: ExecSecurityMode::DenyByDefault,
         }
+    }
+
+    /// Create a registry that allows all commands (DANGEROUS)
+    ///
+    /// # Security Warning
+    /// This mode disables command allowlist checks. Only use in
+    /// development environments where you trust all inputs.
+    #[must_use]
+    pub fn new_allow_all() -> Self {
+        Self {
+            tools: HashMap::new(),
+            definitions: HashMap::new(),
+            exec_allowlist: Vec::new(),
+            exec_security_mode: ExecSecurityMode::AllowAll,
+        }
+    }
+
+    /// Set the exec security mode
+    pub fn set_exec_security_mode(&mut self, mode: ExecSecurityMode) {
+        self.exec_security_mode = mode;
     }
 
     /// Register a tool
@@ -310,18 +343,35 @@ impl ToolRegistry {
     }
 
     /// Check if a command is allowed
+    ///
+    /// By default (DenyByDefault mode), returns false unless the command
+    /// is explicitly in the allowlist. In AllowAll mode, always returns true.
     #[must_use]
     pub fn is_command_allowed(&self, command: &str) -> bool {
-        if self.exec_allowlist.is_empty() {
+        // If AllowAll mode is enabled, allow everything (DANGEROUS)
+        if self.exec_security_mode == ExecSecurityMode::AllowAll {
             return true;
         }
 
-        // Extract base command (first word)
-        let base_command = command.split_whitespace().next().unwrap_or("");
+        // In DenyByDefault mode, empty allowlist means nothing is allowed
+        if self.exec_allowlist.is_empty() {
+            return false;
+        }
 
-        self.exec_allowlist
-            .iter()
-            .any(|allowed| base_command == allowed || command.starts_with(allowed))
+        // Extract base command (handle full paths like /usr/bin/git)
+        let base_command = command
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .split('/')
+            .last()
+            .unwrap_or("");
+
+        // SECURITY: Use exact matching only, no prefix matching
+        self.exec_allowlist.iter().any(|allowed| {
+            let allowed_base = allowed.split('/').last().unwrap_or(allowed);
+            base_command == allowed_base
+        })
     }
 
     /// Enable a tool
@@ -412,16 +462,50 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_allowlist() {
-        let mut registry = ToolRegistry::new();
+    fn test_exec_allowlist_secure_default() {
+        let registry = ToolRegistry::new();
 
-        // Empty allowlist allows everything
-        assert!(registry.is_command_allowed("rm -rf /"));
+        // SECURITY: Empty allowlist should block everything by default
+        assert!(!registry.is_command_allowed("ls"));
+        assert!(!registry.is_command_allowed("rm -rf /"));
+        assert!(!registry.is_command_allowed("cat /etc/passwd"));
+    }
+
+    #[test]
+    fn test_exec_allowlist_with_commands() {
+        let mut registry = ToolRegistry::new();
 
         // With allowlist, only specified commands allowed
         registry.set_exec_allowlist(vec!["ls".to_string(), "cat".to_string(), "git".to_string()]);
         assert!(registry.is_command_allowed("ls -la"));
         assert!(registry.is_command_allowed("git status"));
+        assert!(registry.is_command_allowed("/usr/bin/git status"));
         assert!(!registry.is_command_allowed("rm -rf /"));
+        assert!(!registry.is_command_allowed("bash"));
+    }
+
+    #[test]
+    fn test_exec_allowlist_allow_all_mode() {
+        let mut registry = ToolRegistry::new_allow_all();
+
+        // AllowAll mode allows everything (DANGEROUS)
+        assert!(registry.is_command_allowed("rm -rf /"));
+        assert!(registry.is_command_allowed("anything"));
+
+        // Can switch back to secure mode
+        registry.set_exec_security_mode(ExecSecurityMode::DenyByDefault);
+        assert!(!registry.is_command_allowed("rm -rf /"));
+    }
+
+    #[test]
+    fn test_exec_allowlist_no_prefix_bypass() {
+        let mut registry = ToolRegistry::new();
+        registry.set_exec_allowlist(vec!["git".to_string()]);
+
+        // Should NOT allow commands that start with "git" but aren't "git"
+        assert!(registry.is_command_allowed("git status"));
+        // These should be blocked even though they start with "git"
+        // (the base command extraction should prevent this)
+        assert!(!registry.is_command_allowed("gitsome-malware"));
     }
 }
