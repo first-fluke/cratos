@@ -21,6 +21,10 @@ pub enum Error {
     #[error("approval error: {0}")]
     Approval(String),
 
+    /// Configuration error (invalid settings, production safety violations)
+    #[error("configuration error: {0}")]
+    Configuration(String),
+
     /// LLM provider error
     #[error("llm error: {0}")]
     Llm(#[from] cratos_llm::Error),

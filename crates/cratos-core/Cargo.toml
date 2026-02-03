@@ -23,6 +23,17 @@ tracing.workspace = true
 async-trait.workspace = true
 redis.workspace = true
 
+# Credential security
+# keyring = "3.0"     # OS keychain (enable when needed)
+zeroize = { version = "1.8", features = ["derive"] }  # Cryptographic memory wiping
+subtle = "2.5"  # Constant-time comparison for secrets
+aes-gcm = "0.10"    # AES-256-GCM encryption for EncryptedFile backend
+rand = "0.8"        # Secure random nonce generation
+base64 = "0.22"     # Encoding encrypted data
+sha2 = "0.10"       # Key derivation from master password
+dirs = "5.0"        # Platform-specific directories for storing encrypted file
+hostname = "0.4"    # Machine-specific key derivation fallback
+
 [dev-dependencies]
 mockall.workspace = true
 tokio-test.workspace = true

@@ -7,18 +7,25 @@
 //! - Memory: Managing session and working memory contexts
 //! - Approval: Handling user approval flows for risky operations
 //! - Utils: Retry logic, circuit breaker, and other utilities
+//! - Credentials: Secure credential storage
+//! - Security: Prompt injection defense
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 pub mod approval;
+pub mod credentials;
 pub mod error;
 pub mod memory;
 pub mod orchestrator;
 pub mod planner;
+pub mod security;
 pub mod utils;
 
 pub use approval::{ApprovalManager, ApprovalRequest, ApprovalStatus, SharedApprovalManager};
+pub use credentials::{
+    get_api_key, Credential, CredentialBackend, CredentialError, CredentialStore, SecureString,
+};
 pub use error::{Error, Result};
 pub use memory::{
     MemoryStore, RedisStore, SessionContext, SessionStore, ToolExecution, WorkingMemory,
@@ -28,6 +35,10 @@ pub use orchestrator::{
     ToolCallRecord,
 };
 pub use planner::{PlanResponse, PlanStep, Planner, PlannerConfig};
+pub use security::{
+    sanitize_input, validate_tool_output, InjectionDetector, InjectionError, InjectionPattern,
+    SecurityConfig, ThreatLevel,
+};
 pub use utils::{
     metrics_global, retry_with_backoff, CircuitBreaker, CircuitBreakerConfig, CircuitState,
     Counter, Gauge, Histogram, MetricsRegistry, RateLimitConfig, RateLimitResult, RateLimiter,
