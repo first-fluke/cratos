@@ -1,195 +1,240 @@
-# Cratos 설치 및 설정 가이드
+# Cratos 설치 가이드
 
-이 문서는 Cratos를 처음 설치하고 실행하기까지의 전체 과정을 설명합니다.
+Cratos는 **내 컴퓨터**에 설치하여, 외출 중에도 Telegram으로 PC 작업을 원격 지시하는 AI 어시스턴트입니다.
 
 ## 목차
 
-1. [사전 요구사항](#1-사전-요구사항)
-2. [Telegram 봇 생성](#2-telegram-봇-생성)
-3. [LLM API 키 발급](#3-llm-api-키-발급)
-4. [환경 변수 설정](#4-환경-변수-설정)
-5. [서비스 실행](#5-서비스-실행)
-6. [헬스체크](#6-헬스체크)
-7. [문제 해결](#7-문제-해결)
-8. [서비스 중지](#8-서비스-중지)
-9. [로컬 개발 모드](#9-로컬-개발-모드-선택)
+1. [개념 이해](#1-개념-이해)
+2. [사전 요구사항](#2-사전-요구사항)
+3. [Telegram 봇 만들기](#3-telegram-봇-만들기)
+4. [LLM API 키 발급](#4-llm-api-키-발급)
+5. [환경 변수 설정](#5-환경-변수-설정)
+6. [Cratos 실행](#6-cratos-실행)
+7. [정상 동작 확인](#7-정상-동작-확인)
+8. [문제 해결](#8-문제-해결)
+9. [종료 및 재시작](#9-종료-및-재시작)
 
 ---
 
-## 1. 사전 요구사항
+## 1. 개념 이해
 
-### 필수 소프트웨어
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     내 컴퓨터 (집/회사)                      │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                    Cratos                            │   │
+│  │  - 파일 읽기/쓰기                                    │   │
+│  │  - 명령 실행                                         │   │
+│  │  - Git/GitHub 작업                                   │   │
+│  │  - 웹 정보 수집                                      │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                           ↑                                 │
+│                           │ Telegram API                    │
+└───────────────────────────┼─────────────────────────────────┘
+                            │
+                            ↓
+                   ┌─────────────────┐
+                   │  Telegram 서버   │
+                   └─────────────────┘
+                            ↑
+                            │
+                   ┌─────────────────┐
+                   │    내 스마트폰    │
+                   │   (어디서든!)     │
+                   └─────────────────┘
+```
 
+**핵심**: Cratos는 내 컴퓨터에서 실행됩니다. 나만의 Telegram 봇을 통해 어디서든 내 PC에 명령할 수 있습니다.
+
+---
+
+## 2. 사전 요구사항
+
+### Docker 설치 (권장)
+
+가장 쉬운 방법입니다. Docker만 설치하면 됩니다.
+
+**macOS**:
 ```bash
-# Docker 설치 확인
+brew install --cask docker
+# Docker Desktop 앱 실행
+```
+
+**Windows**:
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) 다운로드 및 설치
+
+**Linux**:
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# 로그아웃 후 재로그인
+```
+
+설치 확인:
+```bash
 docker --version
-# 예: Docker version 24.0.0
-
-# Docker Compose 확인
 docker-compose --version
-# 예: Docker Compose version v2.20.0
-```
-
-### 선택 (로컬 개발용)
-
-```bash
-# Rust 설치 확인
-rustc --version
-# 예: rustc 1.75.0
 ```
 
 ---
 
-## 2. Telegram 봇 생성
+## 3. Telegram 봇 만들기
 
-Telegram에서 봇을 생성하여 토큰을 발급받습니다.
+나만의 Telegram 봇을 만들어야 합니다. **5분이면 완료됩니다.**
 
-### 단계별 진행
+### 3.1 BotFather에서 봇 생성
 
-1. **Telegram 앱 열기** (모바일 또는 데스크톱)
+1. Telegram 앱 열기 (핸드폰 또는 데스크톱)
+2. 검색창에 `@BotFather` 입력
+3. 파란색 체크 표시된 공식 BotFather 선택
+4. `/newbot` 입력
 
-2. **@BotFather 검색**
-   - 검색창에 `BotFather` 입력
-   - 파란색 체크마크가 있는 공식 계정 선택
+### 3.2 봇 이름 정하기
 
-3. **새 봇 생성**
-   ```
-   /newbot
-   ```
+```
+BotFather: Alright, a new bot. How are we going to call it?
+나: My Personal Assistant
+```
 
-4. **봇 이름 입력**
-   - 사용자에게 표시될 이름
-   - 예: `My Cratos Assistant`
+봇 표시 이름을 입력합니다 (한글 가능).
 
-5. **봇 유저네임 입력**
-   - 고유한 이름 (반드시 `_bot`으로 끝나야 함)
-   - 예: `my_cratos_bot`
+### 3.3 봇 유저네임 정하기
 
-6. **봇 토큰 복사**
-   - BotFather가 발급한 토큰을 복사
-   - 형식: `7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxx`
-   - **주의: 이 토큰을 외부에 노출하지 마세요!**
+```
+BotFather: Good. Now let's choose a username for your bot.
+나: my_personal_cratos_bot
+```
+
+**중요**: 반드시 `_bot`으로 끝나야 합니다.
+
+### 3.4 토큰 복사
+
+```
+BotFather: Done! Congratulations on your new bot.
+Use this token to access the HTTP API:
+7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+이 토큰을 안전한 곳에 복사해 둡니다.
+
+⚠️ **경고**: 이 토큰은 절대 공개하면 안 됩니다!
 
 ---
 
-## 3. LLM API 키 발급
+## 4. LLM API 키 발급
 
-최소 하나의 LLM 프로바이더 API 키가 필요합니다.
+Cratos가 AI 기능을 사용하려면 LLM API 키가 필요합니다.
 
-### OpenAI API 키
+### 옵션 1: OpenAI (GPT-4)
 
 1. https://platform.openai.com/api-keys 접속
-2. OpenAI 계정으로 로그인
+2. 계정 생성 또는 로그인
 3. "Create new secret key" 클릭
-4. 키 이름 입력 (예: `cratos`)
-5. 키 복사 (예: `sk-proj-xxxx...`)
+4. 키 복사 (예: `sk-proj-xxxx...`)
 
-**비용**: 사용량 기반 과금 (GPT-4o: ~$2.5/1M 입력 토큰)
-
-### Anthropic API 키
+### 옵션 2: Anthropic (Claude)
 
 1. https://console.anthropic.com/settings/keys 접속
-2. Anthropic 계정으로 로그인
+2. 계정 생성 또는 로그인
 3. "Create Key" 클릭
 4. 키 복사 (예: `sk-ant-api03-xxxx...`)
 
-**비용**: 사용량 기반 과금 (Claude Sonnet: ~$3/1M 입력 토큰)
+### 옵션 3: Ollama (무료, 로컬)
+
+별도 API 키 없이 로컬에서 무료로 사용 가능:
+```bash
+# Ollama 설치 (macOS)
+brew install ollama
+
+# 모델 다운로드
+ollama pull llama3.2
+
+# Ollama 실행
+ollama serve
+```
 
 ---
 
-## 4. 환경 변수 설정
+## 5. 환경 변수 설정
 
-### 4.1 .env 파일 생성
+### 5.1 Cratos 다운로드
 
 ```bash
-cd /path/to/cratos
+git clone https://github.com/cratos/cratos.git
+cd cratos
+```
 
-# 예제 파일 복사
+### 5.2 설정 파일 생성
+
+```bash
 cp .env.example .env
 ```
 
-### 4.2 .env 파일 편집
+### 5.3 .env 파일 편집
 
 ```bash
-# 편집기로 열기
-vim .env
+# 텍스트 편집기로 열기
+nano .env
 # 또는
 code .env
 ```
 
-### 4.3 .env 파일 내용
+필수 항목만 채우면 됩니다:
 
 ```bash
 # ================================
-# 데이터베이스 (Docker 사용 시 수정 불필요)
-# ================================
-DATABASE_URL=postgres://cratos:cratos@postgres:5432/cratos
-REDIS_URL=redis://redis:6379
-
-# ================================
-# LLM API 키 (최소 하나 필수)
-# ================================
-OPENAI_API_KEY=sk-proj-your-openai-key-here
-ANTHROPIC_API_KEY=sk-ant-api03-your-anthropic-key-here
-
-# ================================
-# Telegram 봇 토큰 (필수)
+# 필수: Telegram 봇 토큰
 # ================================
 TELEGRAM_BOT_TOKEN=7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # ================================
-# Slack (선택, 사용 안하면 비워두기)
+# 필수: LLM API 키 (최소 하나)
 # ================================
-SLACK_BOT_TOKEN=
-SLACK_SIGNING_SECRET=
+# OpenAI 사용 시
+OPENAI_API_KEY=sk-proj-your-key-here
+
+# 또는 Anthropic 사용 시
+ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
+
+# 또는 Ollama 사용 시 (키 불필요, 아래 주석 해제)
+# OLLAMA_BASE_URL=http://host.docker.internal:11434
 
 # ================================
-# 로깅 레벨
+# 아래는 수정하지 않아도 됩니다
 # ================================
+DATABASE_URL=postgres://cratos:cratos@postgres:5432/cratos
+REDIS_URL=redis://redis:6379
 RUST_LOG=cratos=info,tower_http=info
 ```
 
 ---
 
-## 5. 서비스 실행
-
-### 5.1 전체 스택 빌드 및 실행
+## 6. Cratos 실행
 
 ```bash
-# 빌드 및 백그라운드 실행
+# 첫 실행 (빌드 포함, 약 5~10분)
 docker-compose up --build -d
 ```
 
-첫 빌드는 약 5-10분 소요됩니다.
-
-### 5.2 로그 확인
-
+실행 후 로그 확인:
 ```bash
-# 실시간 로그 확인
 docker-compose logs -f cratos
 ```
 
-### 5.3 정상 시작 로그
-
+정상 시작 시 다음과 같이 표시됩니다:
 ```
 Starting Cratos AI Assistant v0.1.0
 Configuration loaded
 Database connection established
-Database migrations completed
-Event store initialized
-LLM provider initialized: anthropic
-Tool registry initialized with 11 tools
-Redis session store initialized
-Orchestrator initialized
 Telegram adapter started
 HTTP server listening on http://0.0.0.0:8080
 ```
 
 ---
 
-## 6. 헬스체크
+## 7. 정상 동작 확인
 
-### 기본 헬스체크
+### 7.1 헬스체크
 
 ```bash
 curl http://localhost:9742/health
@@ -200,33 +245,34 @@ curl http://localhost:9742/health
 {"status":"healthy","version":"0.1.0"}
 ```
 
-### 상세 헬스체크
+### 7.2 Telegram에서 테스트
 
-```bash
-curl http://localhost:9742/health/detailed
+1. Telegram 앱 열기
+2. 검색창에 내 봇 유저네임 입력 (예: `@my_personal_cratos_bot`)
+3. 봇 선택 후 "시작" 버튼 클릭
+4. 메시지 전송: `안녕`
+
+10초 내에 응답이 오면 성공입니다!
+
+### 7.3 기본 명령 테스트
+
 ```
+나: 현재 디렉토리 파일 목록 보여줘
+봇: (파일 목록 응답)
 
-응답:
-```json
-{
-  "status": "healthy",
-  "version": "0.1.0",
-  "checks": {
-    "database": {"status": "healthy", "latency_ms": 2},
-    "redis": {"status": "healthy", "latency_ms": 1}
-  }
-}
+나: 오늘 날짜 알려줘
+봇: (날짜 응답)
 ```
 
 ---
 
-## 7. 문제 해결
+## 8. 문제 해결
 
-### 봇이 응답하지 않을 때
+### 봇이 응답하지 않음
 
 ```bash
 # 1. 로그 확인
-docker-compose logs -f cratos
+docker-compose logs cratos
 
 # 2. 컨테이너 상태 확인
 docker-compose ps
@@ -235,47 +281,55 @@ docker-compose ps
 docker-compose restart cratos
 ```
 
-### 데이터베이스 연결 오류
+### "Unauthorized" 또는 API 키 오류
 
-```bash
-# PostgreSQL 로그 확인
-docker-compose logs postgres
-
-# DB 직접 접속 테스트
-docker-compose exec postgres psql -U cratos -d cratos -c "SELECT 1"
-```
-
-### API 키 오류
-
-**증상**: 로그에 `401 Unauthorized` 또는 `invalid API key`
-
-**해결**:
 1. `.env` 파일의 API 키 확인
-2. API 키가 만료되지 않았는지 확인
-3. 키 앞뒤 공백 제거
-4. 컨테이너 재시작: `docker-compose restart cratos`
+2. 키 앞뒤 공백 제거
+3. 재시작: `docker-compose restart cratos`
 
 ### 포트 충돌
 
-**증상**: `port is already allocated`
+다른 프로그램과 포트가 겹칠 경우:
 
-**해결**: `docker-compose.yml`에서 포트 변경
 ```yaml
+# docker-compose.yml 수정
 ports:
-  - "9743:8080"  # 9742 대신 다른 포트 사용
+  - "9999:8080"  # 9742 대신 다른 포트
+```
+
+### 데이터베이스 연결 오류
+
+```bash
+# PostgreSQL 상태 확인
+docker-compose logs postgres
+
+# 데이터베이스 재시작
+docker-compose restart postgres
 ```
 
 ---
 
-## 8. 서비스 중지
+## 9. 종료 및 재시작
 
-### 일반 중지
+### 일시 중지
+
+```bash
+docker-compose stop
+```
+
+### 완전 종료
 
 ```bash
 docker-compose down
 ```
 
-### 데이터까지 완전 삭제 (초기화)
+### 재시작
+
+```bash
+docker-compose up -d
+```
+
+### 초기화 (모든 데이터 삭제)
 
 ```bash
 docker-compose down -v
@@ -283,37 +337,14 @@ docker-compose down -v
 
 ---
 
-## 9. 로컬 개발 모드 (선택)
-
-Docker 대신 로컬에서 직접 실행하려면:
-
-### 9.1 DB와 Redis만 Docker로 실행
-
-```bash
-docker-compose up -d postgres redis
-```
-
-### 9.2 .env 수정 (로컬 포트 사용)
-
-```bash
-DATABASE_URL=postgres://cratos:cratos@localhost:54329/cratos
-REDIS_URL=redis://localhost:63791
-```
-
-### 9.3 마이그레이션 실행
-
-```bash
-cargo sqlx migrate run
-```
-
-### 9.4 실행
-
-```bash
-cargo run
-```
-
----
-
 ## 다음 단계
 
-설치가 완료되면 [사용자 가이드](./USER_GUIDE.md)를 참고하여 Cratos를 사용해 보세요.
+설치가 완료되었습니다! [사용 가이드](./USER_GUIDE.md)에서 다양한 기능을 확인하세요.
+
+### 추천 첫 사용
+
+```
+나: 안녕, 넌 뭘 할 수 있어?
+```
+
+Cratos가 할 수 있는 일들을 안내받을 수 있습니다.
