@@ -1,6 +1,60 @@
-//! Skill generator for creating skills from detected patterns
+//! Skill generator for creating skills from detected patterns.
 //!
-//! This module generates skill definitions from patterns detected by the analyzer.
+//! This module generates executable skill definitions from patterns detected
+//! by the [`PatternAnalyzer`](crate::PatternAnalyzer).
+//!
+//! # Overview
+//!
+//! The [`SkillGenerator`] transforms detected usage patterns into complete
+//! skill definitions including:
+//!
+//! - **Name**: Descriptive name based on tool sequence
+//! - **Triggers**: Keywords extracted from user inputs
+//! - **Steps**: Ordered tool invocations with input templates
+//! - **Schema**: JSON Schema for input validation
+//!
+//! # Generated Skill Structure
+//!
+//! For a pattern like `[file_read, git_commit]`, the generator creates:
+//!
+//! ```text
+//! Skill {
+//!     name: "file_read_then_git_commit",
+//!     triggers: ["read", "commit", "file"],
+//!     steps: [
+//!         { tool: "file_read", input: {"path": "{{file_path}}"} },
+//!         { tool: "git_commit", input: {"message": "{{commit_message}}"} }
+//!     ],
+//!     input_schema: {
+//!         "properties": {
+//!             "file_path": {"type": "string"},
+//!             "commit_message": {"type": "string"}
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! # Example
+//!
+//! ```ignore
+//! use cratos_skills::{SkillGenerator, GeneratorConfig};
+//!
+//! let config = GeneratorConfig {
+//!     min_confidence: 0.8,    // Only high-confidence patterns
+//!     auto_activate: false,    // Manual review before activation
+//!     max_keywords: 3,         // Top 3 keywords for triggers
+//! };
+//!
+//! let generator = SkillGenerator::with_config(config);
+//!
+//! // Generate from a single pattern
+//! let skill = generator.generate_from_pattern(&pattern)?;
+//! println!("Created skill: {}", skill.name);
+//!
+//! // Batch generate from multiple patterns
+//! let skills = generator.generate_from_patterns(&patterns);
+//! println!("Generated {} skills", skills.len());
+//! ```
 
 use crate::analyzer::DetectedPattern;
 use crate::error::{Error, Result};

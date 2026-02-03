@@ -1,106 +1,129 @@
-//! Cratos Skills - Auto-Generated Skill System
+//! # Cratos Skills - Auto-Generated Skill System
 //!
-//! This crate provides the skill system for Cratos, enabling:
-//! - Pattern detection from usage history
-//! - Auto-generation of skills from detected patterns
-//! - Keyword/intent-based skill routing
-//! - Skill execution with variable interpolation
+//! This crate provides the core skill system for Cratos, enabling automatic
+//! learning and generation of reusable workflows from user behavior patterns.
 //!
-//! # Architecture
+//! ## Key Features
 //!
-//! ```text
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │  User Input                                                  │
-//! └─────────────────────────────────────────────────────────────┘
-//!                           │
-//!                           ▼
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │  SkillRouter                                                 │
-//! │  - Keyword matching                                         │
-//! │  - Regex pattern matching                                   │
-//! │  - Intent classification                                    │
-//! └─────────────────────────────────────────────────────────────┘
-//!                           │
-//!                           ▼
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │  SkillExecutor                                               │
-//! │  - Variable interpolation                                   │
-//! │  - Step execution                                           │
-//! │  - Error handling & retries                                 │
-//! └─────────────────────────────────────────────────────────────┘
-//!                           │
-//!                           ▼
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │  Tool Execution (via cratos-tools)                          │
-//! └─────────────────────────────────────────────────────────────┘
-//! ```
+//! - **Pattern Detection**: Automatically detects recurring tool usage patterns (3+ occurrences)
+//! - **Skill Generation**: Converts detected patterns into executable skills with 90%+ success rate
+//! - **Smart Routing**: Routes user requests to appropriate skills via keyword, regex, or semantic matching
+//! - **Variable Interpolation**: Supports `{{variable}}` syntax for dynamic skill parameters
+//! - **Execution Tracking**: Records all skill executions for continuous improvement
 //!
-//! # Pattern Detection & Skill Generation
+//! ## Core Components
+//!
+//! | Component | Description |
+//! |-----------|-------------|
+//! | [`PatternAnalyzer`] | Detects usage patterns from execution history |
+//! | [`SkillGenerator`] | Creates skills from detected patterns |
+//! | [`SkillStore`] | SQLite-based persistent storage |
+//! | [`SkillRegistry`] | In-memory skill registry with keyword indexing |
+//! | [`SkillRouter`] | Routes requests to matching skills |
+//! | [`SkillExecutor`] | Executes skill workflows with variable interpolation |
+//!
+//! ## Architecture
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │  cratos-replay EventStore                                    │
-//! │  (Execution history)                                        │
-//! └─────────────────────────────────────────────────────────────┘
-//!                           │
-//!                           ▼
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │  PatternAnalyzer                                             │
-//! │  - Extract tool sequences                                   │
-//! │  - N-gram analysis                                          │
-//! │  - Keyword extraction                                       │
-//! └─────────────────────────────────────────────────────────────┘
-//!                           │
-//!                           ▼
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │  SkillGenerator                                              │
-//! │  - Generate skill from pattern                              │
-//! │  - Create steps & triggers                                  │
-//! │  - Generate input schema                                    │
-//! └─────────────────────────────────────────────────────────────┘
-//!                           │
-//!                           ▼
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │  SkillStore (SQLite)                                         │
-//! │  - Persist skills                                           │
-//! │  - Track patterns                                           │
-//! │  - Record executions                                        │
-//! └─────────────────────────────────────────────────────────────┘
+//! User Input
+//!     │
+//!     ▼
+//! ┌────────────────────────────────────────────────────────────┐
+//! │  SkillRouter                                                │
+//! │  • Keyword matching      • Regex pattern matching          │
+//! │  • Intent classification • Priority-based selection        │
+//! └────────────────────────────────────────────────────────────┘
+//!     │
+//!     ▼
+//! ┌────────────────────────────────────────────────────────────┐
+//! │  SkillExecutor                                              │
+//! │  • Variable interpolation ({{var}} → value)                │
+//! │  • Step-by-step execution with error handling              │
+//! │  • Dry-run mode for testing                                │
+//! └────────────────────────────────────────────────────────────┘
+//!     │
+//!     ▼
+//! Tool Execution (cratos-tools)
 //! ```
 //!
-//! # Example Usage
+//! ## Pattern Detection & Skill Generation Flow
+//!
+//! ```text
+//! cratos-replay EventStore (execution history)
+//!     │
+//!     ▼
+//! ┌────────────────────────────────────────────────────────────┐
+//! │  PatternAnalyzer                                            │
+//! │  • Extract tool sequences from executions                  │
+//! │  • N-gram analysis (2-5 tool combinations)                 │
+//! │  • Keyword extraction (stopword removal)                   │
+//! │  • Confidence score calculation                            │
+//! └────────────────────────────────────────────────────────────┘
+//!     │
+//!     ▼
+//! ┌────────────────────────────────────────────────────────────┐
+//! │  SkillGenerator                                             │
+//! │  • Pattern → Skill conversion                              │
+//! │  • Trigger keywords & regex patterns                       │
+//! │  • Input schema generation (JSON Schema)                   │
+//! └────────────────────────────────────────────────────────────┘
+//!     │
+//!     ▼
+//! ┌────────────────────────────────────────────────────────────┐
+//! │  SkillStore (SQLite: ~/.cratos/skills.db)                   │
+//! │  • Persist skills & patterns                               │
+//! │  • Track execution history                                 │
+//! │  • Manage skill lifecycle (Draft → Active → Disabled)      │
+//! └────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Quick Start
 //!
 //! ```ignore
 //! use cratos_skills::{
 //!     SkillStore, SkillRegistry, SkillRouter,
-//!     PatternAnalyzer, SkillGenerator,
+//!     PatternAnalyzer, SkillGenerator, default_skill_db_path,
 //! };
 //!
-//! // Initialize store
-//! let store = SkillStore::from_path(&default_db_path()).await?;
+//! // Initialize persistent store
+//! let store = SkillStore::from_path(&default_skill_db_path()).await?;
 //!
-//! // Load skills into registry
+//! // Load active skills into registry
 //! let registry = SkillRegistry::new();
 //! let skills = store.list_active_skills().await?;
 //! registry.load_all(skills).await?;
 //!
-//! // Route user input to skill
+//! // Route user input to best matching skill
 //! let mut router = SkillRouter::new(registry);
 //! if let Some(result) = router.route_best("read file and commit").await {
-//!     println!("Matched skill: {} (score: {:.2})", result.skill.name, result.score);
+//!     println!("Matched: {} (score: {:.2})", result.skill.name, result.score);
 //! }
 //!
-//! // Detect patterns from history
+//! // Detect patterns from execution history
 //! let analyzer = PatternAnalyzer::new();
 //! let patterns = analyzer.detect_patterns(&event_store).await?;
 //!
-//! // Generate skills from patterns
+//! // Generate skills from high-confidence patterns
 //! let generator = SkillGenerator::new();
-//! for pattern in &patterns {
+//! for pattern in patterns.iter().filter(|p| p.confidence_score >= 0.7) {
 //!     let skill = generator.generate_from_pattern(pattern)?;
 //!     store.save_skill(&skill).await?;
 //! }
 //! ```
+//!
+//! ## Security
+//!
+//! The skill system includes built-in security measures:
+//!
+//! - **Input validation**: Maximum input length limits (DoS prevention)
+//! - **Regex safety**: Pattern length limits (ReDoS prevention)
+//! - **Execution limits**: Maximum steps per skill, variable size limits
+//! - **Timeout handling**: Per-step timeout configuration
+//!
+//! ## Feature Flags
+//!
+//! - `default`: Basic skill system
+//! - `semantic`: Enable semantic routing with vector embeddings (requires `cratos-search`)
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

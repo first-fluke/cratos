@@ -1,7 +1,74 @@
-//! Skill executor for running skill workflows
+//! Skill executor for running skill workflows.
 //!
 //! This module handles the execution of skill steps, including
-//! variable interpolation and error handling.
+//! variable interpolation, error handling, and execution tracking.
+//!
+//! # Overview
+//!
+//! The [`SkillExecutor`] runs skill workflows by:
+//!
+//! 1. **Validating** the skill and input variables
+//! 2. **Interpolating** variables in step input templates (`{{var}}` syntax)
+//! 3. **Executing** each step through the [`ToolExecutor`] backend
+//! 4. **Handling errors** according to step configuration (Abort/Continue/Retry)
+//! 5. **Recording** execution results for analytics
+//!
+//! # Variable Interpolation
+//!
+//! Input templates support `{{variable}}` syntax for dynamic values:
+//!
+//! ```json
+//! {
+//!     "path": "{{file_path}}",
+//!     "message": "Updated {{file_name}} at {{timestamp}}"
+//! }
+//! ```
+//!
+//! Special variables:
+//! - `{{stepN_output}}`: Output from step N (e.g., `{{step1_output}}`)
+//!
+//! # Error Handling
+//!
+//! Each step can configure error behavior:
+//!
+//! - [`ErrorAction::Abort`]: Stop execution immediately (default for step 1)
+//! - [`ErrorAction::Continue`]: Skip to next step (default for subsequent steps)
+//! - [`ErrorAction::Retry`]: Retry up to `max_retries` times
+//!
+//! # Example
+//!
+//! ```ignore
+//! use cratos_skills::{SkillExecutor, ExecutorConfig};
+//! use std::collections::HashMap;
+//! use serde_json::json;
+//!
+//! let executor = SkillExecutor::new(tool_executor)
+//!     .with_config(ExecutorConfig {
+//!         max_retries: 3,
+//!         dry_run: false,
+//!         step_timeout_ms: 30_000,
+//!         ..Default::default()
+//!     });
+//!
+//! let mut variables = HashMap::new();
+//! variables.insert("file_path".to_string(), json!("./README.md"));
+//!
+//! let result = executor.execute(&skill, &variables).await?;
+//!
+//! if result.success {
+//!     println!("Completed in {}ms", result.total_duration_ms);
+//! } else {
+//!     println!("Failed: {:?}", result.error);
+//! }
+//! ```
+//!
+//! # Security
+//!
+//! The executor includes several security measures:
+//!
+//! - **Step limit**: Maximum steps per skill (prevents infinite loops)
+//! - **Variable size limit**: Maximum variable value length (prevents memory exhaustion)
+//! - **Timeout**: Per-step execution timeout
 
 use crate::error::{Error, Result};
 use crate::skill::{ErrorAction, Skill, SkillStep};
@@ -395,20 +462,23 @@ impl<T: ToolExecutor> SkillExecutor<T> {
     }
 }
 
+/// Type alias for tool handler function to reduce complexity
+#[cfg(test)]
+type ToolHandler = Box<dyn Fn(Value) -> std::result::Result<Value, String> + Send + Sync>;
+
 /// A mock tool executor for testing
 #[cfg(test)]
 #[allow(missing_docs)]
+#[derive(Default)]
 pub struct MockToolExecutor {
-    tools: HashMap<String, Box<dyn Fn(Value) -> std::result::Result<Value, String> + Send + Sync>>,
+    tools: HashMap<String, ToolHandler>,
 }
 
 #[cfg(test)]
 #[allow(missing_docs)]
 impl MockToolExecutor {
     pub fn new() -> Self {
-        Self {
-            tools: HashMap::new(),
-        }
+        Self::default()
     }
 
     pub fn add_tool<F>(&mut self, name: &str, handler: F)

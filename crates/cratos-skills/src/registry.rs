@@ -1,7 +1,37 @@
-//! Skill registry for managing available skills
+//! Skill registry for managing available skills.
 //!
 //! The registry provides in-memory caching and lookup of skills,
-//! working alongside the persistent store.
+//! working alongside the persistent [`SkillStore`](crate::SkillStore).
+//!
+//! # Overview
+//!
+//! The [`SkillRegistry`] provides:
+//!
+//! - **Fast lookup**: O(1) access by ID or name
+//! - **Keyword index**: Quick skill discovery by trigger keywords
+//! - **Thread-safe**: Uses `Arc<RwLock>` for concurrent access
+//!
+//! # Example
+//!
+//! ```ignore
+//! use cratos_skills::{SkillRegistry, SkillStore, default_skill_db_path};
+//!
+//! // Load skills from persistent store
+//! let store = SkillStore::from_path(&default_skill_db_path()).await?;
+//! let skills = store.list_active_skills().await?;
+//!
+//! // Create registry and load skills
+//! let registry = SkillRegistry::new();
+//! let loaded = registry.load_all(skills).await?;
+//! println!("Loaded {} skills", loaded);
+//!
+//! // Lookup by ID or name
+//! let skill = registry.get(skill_id).await;
+//! let skill = registry.get_by_name("file_reader").await;
+//!
+//! // Find skills by keyword
+//! let matches = registry.get_by_keyword("read").await;
+//! ```
 
 use crate::error::{Error, Result};
 use crate::skill::{Skill, SkillCategory, SkillOrigin};

@@ -1,7 +1,61 @@
-//! SQLite-based storage for skills and detected patterns
+//! SQLite-based storage for skills and detected patterns.
 //!
 //! This module provides persistent storage using SQLite (embedded, no Docker required).
 //! Following the same pattern as cratos-replay for consistency.
+//!
+//! # Overview
+//!
+//! The [`SkillStore`] manages three types of data:
+//!
+//! | Table | Description |
+//! |-------|-------------|
+//! | `skills` | Skill definitions with triggers, steps, and metadata |
+//! | `detected_patterns` | Patterns waiting for conversion or rejection |
+//! | `skill_executions` | Execution history for analytics |
+//!
+//! # Storage Location
+//!
+//! Default path: `~/.cratos/skills.db`
+//!
+//! Use [`crate::default_skill_db_path()`] to get the default path.
+//!
+//! # Example
+//!
+//! ```ignore
+//! use cratos_skills::{SkillStore, default_skill_db_path};
+//!
+//! // Create or open store
+//! let store = SkillStore::from_path(&default_skill_db_path()).await?;
+//!
+//! // For testing, use in-memory store
+//! let test_store = SkillStore::in_memory().await?;
+//!
+//! // Skill CRUD operations
+//! store.save_skill(&skill).await?;
+//! let skill = store.get_skill(skill_id).await?;
+//! let skill = store.get_skill_by_name("my_skill").await?;
+//! store.delete_skill(skill_id).await?;
+//!
+//! // List skills
+//! let all = store.list_skills().await?;
+//! let active = store.list_active_skills().await?;
+//! let workflows = store.list_skills_by_category(SkillCategory::Workflow).await?;
+//!
+//! // Pattern management
+//! store.save_pattern(&pattern).await?;
+//! store.mark_pattern_converted(pattern_id, skill_id).await?;
+//! store.mark_pattern_rejected(pattern_id).await?;
+//! let pending = store.list_detected_patterns().await?;
+//!
+//! // Execution tracking
+//! store.record_skill_execution(skill_id, None, true, Some(100), &[]).await?;
+//! let (total, successes) = store.get_skill_execution_count(skill_id).await?;
+//! ```
+//!
+//! # Schema
+//!
+//! The store automatically creates tables on first use. See the module source
+//! for the complete schema definition.
 
 use crate::analyzer::{DetectedPattern, PatternStatus};
 use crate::error::{Error, Result};

@@ -1,7 +1,45 @@
-//! Pattern analyzer for detecting frequent tool usage patterns
+//! Pattern analyzer for detecting frequent tool usage patterns.
 //!
 //! This module analyzes execution history from cratos-replay to detect
 //! patterns that can be converted into auto-generated skills.
+//!
+//! # Overview
+//!
+//! The [`PatternAnalyzer`] examines user execution history to find recurring
+//! tool sequences. When a sequence appears multiple times with sufficient
+//! confidence, it becomes a candidate for skill generation.
+//!
+//! # Pattern Detection Algorithm
+//!
+//! 1. **Event Collection**: Query recent executions within the analysis window
+//! 2. **Sequence Extraction**: Extract tool call order per execution
+//! 3. **N-gram Analysis**: Calculate frequency of 2 to N tool combinations
+//! 4. **Confidence Calculation**: `occurrence_count / total_executions`
+//! 5. **Keyword Extraction**: Extract user input keywords (stopwords removed)
+//! 6. **Pattern Ranking**: Sort by confidence and occurrence count
+//!
+//! # Example
+//!
+//! ```ignore
+//! use cratos_skills::{PatternAnalyzer, AnalyzerConfig};
+//!
+//! // Use custom settings for higher precision
+//! let config = AnalyzerConfig {
+//!     min_occurrences: 5,       // Require 5+ repetitions
+//!     min_confidence: 0.7,       // 70%+ confidence
+//!     max_sequence_length: 4,    // Analyze up to 4-tool sequences
+//!     analysis_window_days: 14,  // Last 2 weeks only
+//! };
+//!
+//! let analyzer = PatternAnalyzer::with_config(config);
+//! let patterns = analyzer.detect_patterns(&event_store).await?;
+//!
+//! for pattern in &patterns {
+//!     if pattern.confidence_score >= 0.8 {
+//!         println!("High-confidence pattern: {:?}", pattern.tool_sequence);
+//!     }
+//! }
+//! ```
 
 use crate::error::Result;
 use chrono::{DateTime, Duration, Utc};

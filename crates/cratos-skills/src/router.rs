@@ -1,7 +1,69 @@
-//! Skill router for matching user input to skills
+//! Skill router for matching user input to skills.
 //!
 //! The router determines which skill (if any) should handle a user request
 //! based on keywords, regex patterns, and intent classification.
+//!
+//! # Overview
+//!
+//! The [`SkillRouter`] uses a multi-factor scoring system:
+//!
+//! | Factor | Weight | Description |
+//! |--------|--------|-------------|
+//! | Keywords | 0.4 | Exact word matches from trigger keywords |
+//! | Regex | 0.5 | Pattern matches with named capture groups |
+//! | Intent | 0.6 | Intent classification (e.g., "file_operation") |
+//! | Priority | 0.1 | Skill priority bonus |
+//!
+//! # Scoring Algorithm
+//!
+//! 1. Calculate individual scores for keyword, regex, and intent matching
+//! 2. Apply weights to each score
+//! 3. Add priority bonus
+//! 4. Normalize to 0-1 range
+//! 5. Filter by minimum score threshold
+//! 6. Sort by score (descending), then priority
+//!
+//! # Example
+//!
+//! ```ignore
+//! use cratos_skills::{SkillRouter, SkillRegistry, RouterConfig};
+//!
+//! let config = RouterConfig {
+//!     min_score: 0.4,           // Higher threshold for precision
+//!     keyword_weight: 0.5,       // Emphasize keyword matches
+//!     max_input_length: 5_000,   // Stricter input limit
+//!     ..Default::default()
+//! };
+//!
+//! let mut router = SkillRouter::with_config(registry, config);
+//!
+//! // Get all matches
+//! let results = router.route("read the config file").await;
+//! for r in &results {
+//!     println!("{}: {:.2} ({:?})", r.skill.name, r.score, r.match_reason);
+//! }
+//!
+//! // Get best match only
+//! if let Some(best) = router.route_best("read the config file").await {
+//!     println!("Best match: {}", best.skill.name);
+//! }
+//! ```
+//!
+//! # Regex Capture Groups
+//!
+//! Named capture groups are extracted and available in `captured_groups`:
+//!
+//! ```text
+//! Trigger regex: r"read\s+(?P<path>\S+)"
+//! Input: "read /etc/config"
+//! Result: captured_groups = {"path": "/etc/config"}
+//! ```
+//!
+//! # Security
+//!
+//! - **Input length limit**: Prevents DoS via large inputs
+//! - **Pattern length limit**: Prevents ReDoS via complex patterns
+//! - **Compiled pattern cache**: Avoids repeated regex compilation
 
 use crate::registry::SkillRegistry;
 use crate::skill::Skill;
