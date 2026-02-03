@@ -7,6 +7,8 @@
 //! - WebSocket: Real-time canvas updates handler
 //! - Renderer: Markdown, code, and diagram rendering
 //! - Store: Persistent session storage
+//! - Error: Error types for canvas operations
+//! - Events: Replay event types for audit logging
 //!
 //! ## Features
 //!
@@ -16,6 +18,7 @@
 //! - Syntax highlighting for code blocks
 //! - Diagram rendering via Kroki
 //! - Session persistence with SQLite
+//! - Event recording for replay functionality
 //!
 //! ## Usage
 //!
@@ -54,6 +57,8 @@
 #![warn(missing_docs)]
 
 pub mod document;
+pub mod error;
+pub mod events;
 pub mod protocol;
 pub mod renderer;
 pub mod session;
@@ -62,7 +67,13 @@ pub mod websocket;
 
 // Re-export main types
 pub use document::{CanvasBlock, CanvasDocument, ChartType, DiagramType};
-pub use protocol::{ClientMessage, ServerMessage, UpdateSource};
+pub use error::{Error, Result};
+pub use events::{
+    AiCompletedPayload, AiErrorPayload, AiRequestStartedPayload, BlockAddedPayload,
+    BlockDeletedPayload, BlockMovedPayload, BlockUpdatedPayload, CanvasEvent,
+    CanvasEventRecorder, CanvasEventType, CanvasTimelineEntry,
+};
+pub use protocol::{ClientMessage, ConnectionState, ServerMessage, UpdateSource};
 pub use renderer::{ContentRenderer, RenderedBlock};
 pub use session::{CanvasSession, CanvasSessionManager};
 pub use store::{SessionStore, SessionSummary};
