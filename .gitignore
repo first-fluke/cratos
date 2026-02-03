@@ -36,3 +36,7 @@ coverage/
 # ML model cache
 .fastembed_cache/
 **/.fastembed_cache/
+
+# Planning documents (local only)
+PRD.md
+pre_prd.md
