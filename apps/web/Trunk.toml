@@ -1,0 +1,29 @@
+# Trunk configuration for WASM builds
+
+[build]
+# Target directory
+target = "index.html"
+# Output directory
+dist = "dist"
+# Public URL
+public_url = "/"
+
+[watch]
+# Watch paths
+watch = ["src", "style", "index.html"]
+# Ignore patterns
+ignore = ["target"]
+
+[serve]
+# Dev server port
+port = 3000
+# Open browser automatically
+open = false
+# Proxy API requests to backend
+proxy_backend = "http://127.0.0.1:8080/api"
+
+[[hooks]]
+# Run Tailwind CSS build before trunk
+stage = "pre_build"
+command = "sh"
+command_arguments = ["-c", "npx tailwindcss -i ./style/tailwind.css -o ./style/output.css --minify 2>/dev/null || echo 'Tailwind CSS not installed, skipping...'"]

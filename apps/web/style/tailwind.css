@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom utilities */
+@layer utilities {
+    .bg-gray-750 {
+        background-color: rgb(45, 55, 72);
+    }
+}
+
+/* Prose overrides for dark mode */
+@layer components {
+    .prose-invert {
+        --tw-prose-body: theme('colors.gray.300');
+        --tw-prose-headings: theme('colors.white');
+        --tw-prose-links: theme('colors.blue.400');
+        --tw-prose-bold: theme('colors.white');
+        --tw-prose-code: theme('colors.gray.100');
+        --tw-prose-pre-bg: theme('colors.gray.900');
+    }
+}
+
+/* Animations */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes bounce {
+    0%, 100% {
+        transform: translateY(-25%);
+        animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+    }
+    50% {
+        transform: translateY(0);
+        animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+    }
+}
+
+.animate-bounce {
+    animation: bounce 1s infinite;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: theme('colors.gray.800');
+}
+
+::-webkit-scrollbar-thumb {
+    background: theme('colors.gray.600');
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.gray.500');
+}
