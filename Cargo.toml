@@ -9,12 +9,13 @@ members = [
     "crates/cratos-skills",
     "crates/cratos-search",
     "crates/cratos-audio",
+    "crates/cratos-canvas",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.80"
 license = "MIT"
 authors = ["Cratos Team"]
 repository = "https://github.com/cratos/cratos"
@@ -82,6 +83,7 @@ cratos-replay = { path = "crates/cratos-replay" }
 cratos-skills = { path = "crates/cratos-skills" }
 cratos-search = { path = "crates/cratos-search" }
 cratos-audio = { path = "crates/cratos-audio" }
+cratos-canvas = { path = "crates/cratos-canvas" }
 
 # Audio
 cpal = "0.15"

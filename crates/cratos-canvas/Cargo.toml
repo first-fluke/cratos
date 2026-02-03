@@ -1,0 +1,51 @@
+[package]
+name = "cratos-canvas"
+description = "Live Canvas system for Cratos AI assistant - WebSocket API and document management"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true, features = ["sync"] }
+futures.workspace = true
+
+# Web framework
+axum = { workspace = true, features = ["ws"] }
+tower.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Utilities
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+
+# Markdown rendering
+pulldown-cmark = "0.10"
+
+# Code highlighting
+syntect = "5"
+
+# Diagram encoding
+base64 = "0.21"
+flate2 = "1.0"
+
+# Internal crates
+cratos-replay.workspace = true
+cratos-llm.workspace = true
+
+[dev-dependencies]
+mockall.workspace = true
+tokio-test.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

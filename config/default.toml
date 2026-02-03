@@ -271,3 +271,36 @@ enabled = true
 # Embedding dimensions (768 for nomic-embed-text-v1.5)
 # Do not change unless using a different model
 dimensions = 768
+
+# ============================================================================
+# Browser Automation Configuration
+# ============================================================================
+# Requires: npm install -g @anthropic-ai/mcp-server-playwright
+# Or:       npm install -g @anthropic-ai/mcp-server-puppeteer
+
+[browser]
+enabled = true
+default_engine = "playwright"  # "playwright" or "puppeteer"
+
+[browser.playwright]
+browser_type = "chromium"      # "chromium", "firefox", or "webkit"
+headless = true
+timeout = 30000                # Default timeout in milliseconds
+viewport_width = 1280
+viewport_height = 720
+
+# ============================================================================
+# Live Canvas Configuration
+# ============================================================================
+
+[canvas]
+enabled = true
+max_sessions = 100             # Maximum concurrent sessions
+
+[canvas.websocket]
+heartbeat_interval_secs = 30
+max_message_size_kb = 1024
+
+[canvas.ai_streaming]
+enabled = true
+chunk_size = 20                # Characters per streaming chunk
