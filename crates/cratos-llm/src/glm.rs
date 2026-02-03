@@ -10,8 +10,8 @@
 
 use crate::error::{Error, Result};
 use crate::router::{
-    CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage,
-    ToolCall, ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
+    CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage, ToolCall,
+    ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -121,8 +121,7 @@ impl GlmConfig {
             .or_else(|_| std::env::var("GLM_API_KEY"))
             .map_err(|_| Error::NotConfigured("BIGMODEL_API_KEY not set".to_string()))?;
 
-        let base_url =
-            std::env::var("BIGMODEL_BASE_URL").unwrap_or_else(|_| BASE_URL.to_string());
+        let base_url = std::env::var("BIGMODEL_BASE_URL").unwrap_or_else(|_| BASE_URL.to_string());
         let default_model =
             std::env::var("GLM_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
@@ -373,7 +372,8 @@ impl LlmProvider for GlmProvider {
             &request.model
         };
 
-        let messages: Vec<GlmMessage> = request.messages.iter().map(Self::convert_message).collect();
+        let messages: Vec<GlmMessage> =
+            request.messages.iter().map(Self::convert_message).collect();
 
         let glm_request = GlmRequest {
             model: model.to_string(),

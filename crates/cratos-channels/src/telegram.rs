@@ -75,10 +75,7 @@ fn sanitize_error_for_user(error: &str) -> String {
         return "An authentication error occurred. Please check your configuration.".to_string();
     }
 
-    if lower.contains("connection")
-        || lower.contains("timeout")
-        || lower.contains("network")
-    {
+    if lower.contains("connection") || lower.contains("timeout") || lower.contains("network") {
         return "A network error occurred. Please try again later.".to_string();
     }
 
@@ -415,7 +412,10 @@ impl TelegramAdapter {
                 // SECURITY: Send sanitized error to user (don't expose internal details)
                 let user_message = sanitize_error_for_user(&e.to_string());
                 let _ = bot
-                    .send_message(msg.chat.id, format!("Sorry, I encountered an error: {}", user_message))
+                    .send_message(
+                        msg.chat.id,
+                        format!("Sorry, I encountered an error: {}", user_message),
+                    )
                     .reply_to_message_id(msg.id)
                     .await;
             }
@@ -591,13 +591,13 @@ mod tests {
 
         // Should hide paths and stack traces
         // Note: using "config.json" instead of "secret.json" to avoid triggering auth error detection
-        let sanitized = sanitize_error_for_user(
-            "Error at /home/user/.config/app/config.json line 42"
-        );
+        let sanitized =
+            sanitize_error_for_user("Error at /home/user/.config/app/config.json line 42");
         assert!(!sanitized.contains("/home"));
         assert!(
             sanitized.to_lowercase().contains("internal"),
-            "Expected 'internal' in sanitized error, got: {}", sanitized
+            "Expected 'internal' in sanitized error, got: {}",
+            sanitized
         );
 
         // Should pass through simple, safe errors

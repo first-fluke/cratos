@@ -136,11 +136,7 @@ pub struct SemanticSkillRouter<E: SkillEmbedder> {
 
 impl<E: SkillEmbedder> SemanticSkillRouter<E> {
     /// Create a new semantic skill router
-    pub fn new(
-        registry: Arc<SkillRegistry>,
-        index: VectorIndex,
-        embedder: Arc<E>,
-    ) -> Self {
+    pub fn new(registry: Arc<SkillRegistry>, index: VectorIndex, embedder: Arc<E>) -> Self {
         let keyword_router = SkillRouter::new((*registry).clone());
 
         Self {
@@ -160,10 +156,8 @@ impl<E: SkillEmbedder> SemanticSkillRouter<E> {
         embedder: Arc<E>,
         config: SemanticRouterConfig,
     ) -> Self {
-        let keyword_router = SkillRouter::with_config(
-            (*registry).clone(),
-            config.base_config.clone(),
-        );
+        let keyword_router =
+            SkillRouter::with_config((*registry).clone(), config.base_config.clone());
 
         Self {
             registry,
@@ -203,7 +197,9 @@ impl<E: SkillEmbedder> SemanticSkillRouter<E> {
     #[instrument(skip(self))]
     pub async fn route_best(&self, input: &str) -> Option<SemanticRoutingResult> {
         let results = self.route(input).await.ok()?;
-        results.into_iter().find(|r| r.score >= self.config.base_config.min_score)
+        results
+            .into_iter()
+            .find(|r| r.score >= self.config.base_config.min_score)
     }
 
     /// Search for skills using semantic similarity
@@ -213,7 +209,8 @@ impl<E: SkillEmbedder> SemanticSkillRouter<E> {
 
         // Search vector index
         let index = self.index.read().await;
-        let results = index.search(&query_embedding, self.config.semantic_top_k)
+        let results = index
+            .search(&query_embedding, self.config.semantic_top_k)
             .map_err(|e| Error::Internal(format!("Semantic search failed: {}", e)))?;
 
         Ok(results
@@ -308,10 +305,12 @@ impl<E: SkillEmbedder> SemanticSkillRouter<E> {
         let id = skill.id.to_string();
 
         if index.contains(&id) {
-            index.update(&id, &embedding)
+            index
+                .update(&id, &embedding)
                 .map_err(|e| Error::Internal(format!("Failed to update skill index: {}", e)))?;
         } else {
-            index.add(&id, &embedding)
+            index
+                .add(&id, &embedding)
                 .map_err(|e| Error::Internal(format!("Failed to add skill to index: {}", e)))?;
         }
 
@@ -329,8 +328,9 @@ impl<E: SkillEmbedder> SemanticSkillRouter<E> {
     pub async fn remove_skill(&self, skill_id: &str) -> Result<()> {
         let index = self.index.write().await;
         if index.contains(skill_id) {
-            index.remove(skill_id)
-                .map_err(|e| Error::Internal(format!("Failed to remove skill from index: {}", e)))?;
+            index.remove(skill_id).map_err(|e| {
+                Error::Internal(format!("Failed to remove skill from index: {}", e))
+            })?;
         }
 
         // Update ID mapping
@@ -358,7 +358,8 @@ impl<E: SkillEmbedder> SemanticSkillRouter<E> {
         // Clear existing index
         {
             let index = self.index.write().await;
-            index.clear()
+            index
+                .clear()
                 .map_err(|e| Error::Internal(format!("Failed to clear index: {}", e)))?;
         }
 
@@ -393,7 +394,8 @@ impl<E: SkillEmbedder> SemanticSkillRouter<E> {
     /// Save the index to disk
     pub async fn save_index(&self) -> Result<()> {
         let index = self.index.read().await;
-        index.save()
+        index
+            .save()
             .map_err(|e| Error::Internal(format!("Failed to save skill index: {}", e)))?;
         Ok(())
     }
@@ -477,11 +479,15 @@ mod tests {
 
     #[test]
     fn test_create_skill_embedding_text() {
-        let skill = Skill::new("file_backup", "Backup files to storage", SkillCategory::Custom)
-            .with_trigger(
-                SkillTrigger::with_keywords(vec!["backup".to_string(), "save".to_string()])
-                    .add_intent("file_operation"),
-            );
+        let skill = Skill::new(
+            "file_backup",
+            "Backup files to storage",
+            SkillCategory::Custom,
+        )
+        .with_trigger(
+            SkillTrigger::with_keywords(vec!["backup".to_string(), "save".to_string()])
+                .add_intent("file_operation"),
+        );
 
         let text = create_skill_embedding_text(&skill);
         assert!(text.contains("file_backup"));

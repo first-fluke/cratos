@@ -334,15 +334,14 @@ impl CredentialStore {
 
         match self.backend {
             CredentialBackend::Memory => {
-                let mut cache = self.cache.write().map_err(|e| {
-                    CredentialError::Backend(format!("Lock poisoned: {}", e))
-                })?;
+                let mut cache = self
+                    .cache
+                    .write()
+                    .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
                 cache.insert(key, credential);
                 Ok(())
             }
-            CredentialBackend::Keychain => {
-                self.store_keychain(&full_service, account, value)
-            }
+            CredentialBackend::Keychain => self.store_keychain(&full_service, account, value),
             CredentialBackend::SecretService => {
                 self.store_secret_service(&full_service, account, value)
             }
@@ -354,7 +353,9 @@ impl CredentialStore {
             }
             CredentialBackend::Auto => {
                 // Should never happen after resolve()
-                Err(CredentialError::Configuration("Backend not resolved".to_string()))
+                Err(CredentialError::Configuration(
+                    "Backend not resolved".to_string(),
+                ))
             }
         }
     }
@@ -368,29 +369,22 @@ impl CredentialStore {
 
         match self.backend {
             CredentialBackend::Memory => {
-                let cache = self.cache.read().map_err(|e| {
-                    CredentialError::Backend(format!("Lock poisoned: {}", e))
-                })?;
+                let cache = self
+                    .cache
+                    .read()
+                    .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
                 cache
                     .get(&key)
                     .map(|c| SecureString::new(c.value()))
                     .ok_or(CredentialError::NotFound(key))
             }
-            CredentialBackend::Keychain => {
-                self.get_keychain(&full_service, account)
-            }
-            CredentialBackend::SecretService => {
-                self.get_secret_service(&full_service, account)
-            }
-            CredentialBackend::WindowsCredential => {
-                self.get_windows(&full_service, account)
-            }
-            CredentialBackend::EncryptedFile => {
-                self.get_encrypted_file(&full_service, account)
-            }
-            CredentialBackend::Auto => {
-                Err(CredentialError::Configuration("Backend not resolved".to_string()))
-            }
+            CredentialBackend::Keychain => self.get_keychain(&full_service, account),
+            CredentialBackend::SecretService => self.get_secret_service(&full_service, account),
+            CredentialBackend::WindowsCredential => self.get_windows(&full_service, account),
+            CredentialBackend::EncryptedFile => self.get_encrypted_file(&full_service, account),
+            CredentialBackend::Auto => Err(CredentialError::Configuration(
+                "Backend not resolved".to_string(),
+            )),
         }
     }
 
@@ -403,27 +397,20 @@ impl CredentialStore {
 
         match self.backend {
             CredentialBackend::Memory => {
-                let mut cache = self.cache.write().map_err(|e| {
-                    CredentialError::Backend(format!("Lock poisoned: {}", e))
-                })?;
+                let mut cache = self
+                    .cache
+                    .write()
+                    .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
                 cache.remove(&key);
                 Ok(())
             }
-            CredentialBackend::Keychain => {
-                self.delete_keychain(&full_service, account)
-            }
-            CredentialBackend::SecretService => {
-                self.delete_secret_service(&full_service, account)
-            }
-            CredentialBackend::WindowsCredential => {
-                self.delete_windows(&full_service, account)
-            }
-            CredentialBackend::EncryptedFile => {
-                self.delete_encrypted_file(&full_service, account)
-            }
-            CredentialBackend::Auto => {
-                Err(CredentialError::Configuration("Backend not resolved".to_string()))
-            }
+            CredentialBackend::Keychain => self.delete_keychain(&full_service, account),
+            CredentialBackend::SecretService => self.delete_secret_service(&full_service, account),
+            CredentialBackend::WindowsCredential => self.delete_windows(&full_service, account),
+            CredentialBackend::EncryptedFile => self.delete_encrypted_file(&full_service, account),
+            CredentialBackend::Auto => Err(CredentialError::Configuration(
+                "Backend not resolved".to_string(),
+            )),
         }
     }
 
@@ -456,16 +443,22 @@ impl CredentialStore {
             .args([
                 "add-generic-password",
                 "-U", // Update if exists
-                "-s", service,
-                "-a", account,
-                "-w", value,
+                "-s",
+                service,
+                "-a",
+                account,
+                "-w",
+                value,
             ])
             .output()
             .map_err(|e| CredentialError::Backend(format!("Failed to run security: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CredentialError::Backend(format!("Keychain error: {}", stderr)));
+            return Err(CredentialError::Backend(format!(
+                "Keychain error: {}",
+                stderr
+            )));
         }
 
         Ok(())
@@ -473,7 +466,9 @@ impl CredentialStore {
 
     #[cfg(not(target_os = "macos"))]
     fn store_keychain(&self, _service: &str, _account: &str, _value: &str) -> Result<()> {
-        Err(CredentialError::Configuration("Keychain only available on macOS".to_string()))
+        Err(CredentialError::Configuration(
+            "Keychain only available on macOS".to_string(),
+        ))
     }
 
     #[cfg(target_os = "macos")]
@@ -483,15 +478,20 @@ impl CredentialStore {
         let output = Command::new("security")
             .args([
                 "find-generic-password",
-                "-s", service,
-                "-a", account,
+                "-s",
+                service,
+                "-a",
+                account,
                 "-w", // Print password only
             ])
             .output()
             .map_err(|e| CredentialError::Backend(format!("Failed to run security: {}", e)))?;
 
         if !output.status.success() {
-            return Err(CredentialError::NotFound(format!("{}:{}", service, account)));
+            return Err(CredentialError::NotFound(format!(
+                "{}:{}",
+                service, account
+            )));
         }
 
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -500,7 +500,9 @@ impl CredentialStore {
 
     #[cfg(not(target_os = "macos"))]
     fn get_keychain(&self, _service: &str, _account: &str) -> Result<SecureString> {
-        Err(CredentialError::Configuration("Keychain only available on macOS".to_string()))
+        Err(CredentialError::Configuration(
+            "Keychain only available on macOS".to_string(),
+        ))
     }
 
     #[cfg(target_os = "macos")]
@@ -508,11 +510,7 @@ impl CredentialStore {
         use std::process::Command;
 
         let output = Command::new("security")
-            .args([
-                "delete-generic-password",
-                "-s", service,
-                "-a", account,
-            ])
+            .args(["delete-generic-password", "-s", service, "-a", account])
             .output()
             .map_err(|e| CredentialError::Backend(format!("Failed to run security: {}", e)))?;
 
@@ -520,7 +518,10 @@ impl CredentialStore {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Ignore "not found" errors
             if !stderr.contains("could not be found") {
-                return Err(CredentialError::Backend(format!("Keychain error: {}", stderr)));
+                return Err(CredentialError::Backend(format!(
+                    "Keychain error: {}",
+                    stderr
+                )));
             }
         }
 
@@ -529,7 +530,9 @@ impl CredentialStore {
 
     #[cfg(not(target_os = "macos"))]
     fn delete_keychain(&self, _service: &str, _account: &str) -> Result<()> {
-        Err(CredentialError::Configuration("Keychain only available on macOS".to_string()))
+        Err(CredentialError::Configuration(
+            "Keychain only available on macOS".to_string(),
+        ))
     }
 
     // Linux Secret Service stubs
@@ -572,9 +575,9 @@ impl CredentialStore {
 
     /// Get the path to the encrypted credentials file
     fn get_credentials_file_path() -> Result<PathBuf> {
-        let data_dir = dirs::data_dir()
-            .or_else(dirs::home_dir)
-            .ok_or_else(|| CredentialError::Configuration("Cannot determine data directory".to_string()))?;
+        let data_dir = dirs::data_dir().or_else(dirs::home_dir).ok_or_else(|| {
+            CredentialError::Configuration("Cannot determine data directory".to_string())
+        })?;
 
         let cratos_dir = data_dir.join(".cratos");
         Ok(cratos_dir.join("credentials.enc"))
@@ -584,18 +587,17 @@ impl CredentialStore {
     /// Uses SHA-256 for key derivation (in production, consider Argon2 or PBKDF2)
     fn derive_encryption_key() -> Result<[u8; 32]> {
         // Get master key from environment or generate machine-specific key
-        let master_key = std::env::var("CRATOS_MASTER_KEY")
-            .unwrap_or_else(|_| {
-                // Use machine-specific data for key derivation when no master key is set
-                // This provides basic protection but users should set CRATOS_MASTER_KEY for security
-                let hostname = hostname::get()
-                    .map(|h| h.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| "cratos-default".to_string());
-                let username = std::env::var("USER")
-                    .or_else(|_| std::env::var("USERNAME"))
-                    .unwrap_or_else(|_| "cratos-user".to_string());
-                format!("cratos-auto-key-{}-{}", hostname, username)
-            });
+        let master_key = std::env::var("CRATOS_MASTER_KEY").unwrap_or_else(|_| {
+            // Use machine-specific data for key derivation when no master key is set
+            // This provides basic protection but users should set CRATOS_MASTER_KEY for security
+            let hostname = hostname::get()
+                .map(|h| h.to_string_lossy().to_string())
+                .unwrap_or_else(|_| "cratos-default".to_string());
+            let username = std::env::var("USER")
+                .or_else(|_| std::env::var("USERNAME"))
+                .unwrap_or_else(|_| "cratos-user".to_string());
+            format!("cratos-auto-key-{}-{}", hostname, username)
+        });
 
         let mut hasher = Sha256::new();
         hasher.update(master_key.as_bytes());
@@ -631,7 +633,9 @@ impl CredentialStore {
     /// Decrypt data using AES-256-GCM
     fn decrypt_data(encrypted: &[u8]) -> Result<Vec<u8>> {
         if encrypted.len() < 12 {
-            return Err(CredentialError::Encryption("Invalid encrypted data".to_string()));
+            return Err(CredentialError::Encryption(
+                "Invalid encrypted data".to_string(),
+            ));
         }
 
         let key_bytes = Self::derive_encryption_key()?;
@@ -654,29 +658,37 @@ impl CredentialStore {
             return Ok(HashMap::new());
         }
 
-        let encrypted_b64 = std::fs::read_to_string(&path)
-            .map_err(|e| CredentialError::Backend(format!("Failed to read credentials file: {}", e)))?;
+        let encrypted_b64 = std::fs::read_to_string(&path).map_err(|e| {
+            CredentialError::Backend(format!("Failed to read credentials file: {}", e))
+        })?;
 
-        let encrypted = BASE64.decode(encrypted_b64.trim())
-            .map_err(|e| CredentialError::Encryption(format!("Failed to decode credentials: {}", e)))?;
+        let encrypted = BASE64.decode(encrypted_b64.trim()).map_err(|e| {
+            CredentialError::Encryption(format!("Failed to decode credentials: {}", e))
+        })?;
 
         let decrypted = Self::decrypt_data(&encrypted)?;
 
         let credentials: HashMap<String, EncryptedCredential> = serde_json::from_slice(&decrypted)
             .map_err(|e| CredentialError::Backend(format!("Failed to parse credentials: {}", e)))?;
 
-        debug!(count = credentials.len(), "Loaded credentials from encrypted file");
+        debug!(
+            count = credentials.len(),
+            "Loaded credentials from encrypted file"
+        );
         Ok(credentials)
     }
 
     /// Save all credentials to encrypted file
-    fn save_encrypted_credentials(credentials: &HashMap<String, EncryptedCredential>) -> Result<()> {
+    fn save_encrypted_credentials(
+        credentials: &HashMap<String, EncryptedCredential>,
+    ) -> Result<()> {
         let path = Self::get_credentials_file_path()?;
 
         // Ensure parent directory exists with secure permissions
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| CredentialError::Backend(format!("Failed to create directory: {}", e)))?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                CredentialError::Backend(format!("Failed to create directory: {}", e))
+            })?;
 
             // Set directory permissions to owner-only on Unix
             #[cfg(unix)]
@@ -687,14 +699,16 @@ impl CredentialStore {
             }
         }
 
-        let json = serde_json::to_vec(credentials)
-            .map_err(|e| CredentialError::Backend(format!("Failed to serialize credentials: {}", e)))?;
+        let json = serde_json::to_vec(credentials).map_err(|e| {
+            CredentialError::Backend(format!("Failed to serialize credentials: {}", e))
+        })?;
 
         let encrypted = Self::encrypt_data(&json)?;
         let encoded = BASE64.encode(&encrypted);
 
-        std::fs::write(&path, encoded)
-            .map_err(|e| CredentialError::Backend(format!("Failed to write credentials file: {}", e)))?;
+        std::fs::write(&path, encoded).map_err(|e| {
+            CredentialError::Backend(format!("Failed to write credentials file: {}", e))
+        })?;
 
         // Set file permissions to owner-only on Unix
         #[cfg(unix)]
@@ -715,19 +729,23 @@ impl CredentialStore {
         // Also cache in memory
         let credential = Credential::new(service, account, value);
         {
-            let mut cache = self.cache.write().map_err(|e| {
-                CredentialError::Backend(format!("Lock poisoned: {}", e))
-            })?;
+            let mut cache = self
+                .cache
+                .write()
+                .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
             cache.insert(key.clone(), credential);
         }
 
         // Load, update, and save encrypted file
         let mut credentials = Self::load_encrypted_credentials().unwrap_or_default();
-        credentials.insert(key, EncryptedCredential {
-            service: service.to_string(),
-            account: account.to_string(),
-            value: value.to_string(),
-        });
+        credentials.insert(
+            key,
+            EncryptedCredential {
+                service: service.to_string(),
+                account: account.to_string(),
+                value: value.to_string(),
+            },
+        );
         Self::save_encrypted_credentials(&credentials)?;
 
         info!(service = %service, account = %account, "Credential stored with AES-256-GCM encryption");
@@ -739,9 +757,10 @@ impl CredentialStore {
 
         // Try cache first
         {
-            let cache = self.cache.read().map_err(|e| {
-                CredentialError::Backend(format!("Lock poisoned: {}", e))
-            })?;
+            let cache = self
+                .cache
+                .read()
+                .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
             if let Some(cred) = cache.get(&key) {
                 return Ok(SecureString::new(cred.value()));
             }
@@ -752,14 +771,18 @@ impl CredentialStore {
         if let Some(cred) = credentials.get(&key) {
             // Update cache
             let credential = Credential::new(&cred.service, &cred.account, &cred.value);
-            let mut cache = self.cache.write().map_err(|e| {
-                CredentialError::Backend(format!("Lock poisoned: {}", e))
-            })?;
+            let mut cache = self
+                .cache
+                .write()
+                .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
             cache.insert(key, credential);
 
             Ok(SecureString::new(&cred.value))
         } else {
-            Err(CredentialError::NotFound(format!("{}:{}", service, account)))
+            Err(CredentialError::NotFound(format!(
+                "{}:{}",
+                service, account
+            )))
         }
     }
 
@@ -768,9 +791,10 @@ impl CredentialStore {
 
         // Remove from cache
         {
-            let mut cache = self.cache.write().map_err(|e| {
-                CredentialError::Backend(format!("Lock poisoned: {}", e))
-            })?;
+            let mut cache = self
+                .cache
+                .write()
+                .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
             cache.remove(&key);
         }
 
@@ -795,11 +819,7 @@ impl Default for CredentialStore {
 // ============================================================================
 
 /// Get an API key from environment or credential store
-pub fn get_api_key(
-    store: &CredentialStore,
-    provider: &str,
-    env_var: &str,
-) -> Result<SecureString> {
+pub fn get_api_key(store: &CredentialStore, provider: &str, env_var: &str) -> Result<SecureString> {
     store.get_or_env(provider, "api_key", env_var)
 }
 
@@ -867,7 +887,10 @@ mod tests {
         assert_eq!(cred.account, "api_key");
         assert_eq!(cred.value(), "sk-test123");
         assert_eq!(cred.key(), "openai:api_key");
-        assert_eq!(cred.metadata.get("created_at"), Some(&"2024-01-01".to_string()));
+        assert_eq!(
+            cred.metadata.get("created_at"),
+            Some(&"2024-01-01".to_string())
+        );
     }
 
     #[test]

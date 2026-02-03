@@ -135,9 +135,7 @@ impl VoiceController {
     /// Listen for voice input and transcribe
     pub async fn listen(&self) -> Result<String> {
         if !self.stt_enabled() {
-            return Err(Error::NotEnabled(
-                "STT requires OPENAI_API_KEY".to_string(),
-            ));
+            return Err(Error::NotEnabled("STT requires OPENAI_API_KEY".to_string()));
         }
 
         info!("Listening...");

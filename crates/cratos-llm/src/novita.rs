@@ -10,8 +10,8 @@
 
 use crate::error::{Error, Result};
 use crate::router::{
-    CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage,
-    ToolCall, ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
+    CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage, ToolCall,
+    ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};

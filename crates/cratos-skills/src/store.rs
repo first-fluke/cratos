@@ -60,8 +60,7 @@
 use crate::analyzer::{DetectedPattern, PatternStatus};
 use crate::error::{Error, Result};
 use crate::skill::{
-    Skill, SkillCategory, SkillMetadata, SkillOrigin, SkillStatus, SkillStep,
-    SkillTrigger,
+    Skill, SkillCategory, SkillMetadata, SkillOrigin, SkillStatus, SkillStep, SkillTrigger,
 };
 use chrono::{DateTime, Utc};
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
@@ -198,19 +197,15 @@ impl SkillStore {
         .map_err(|e| Error::Database(e.to_string()))?;
 
         // Create indexes
-        sqlx::query(
-            r#"CREATE INDEX IF NOT EXISTS idx_skills_status ON skills(status)"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Error::Database(e.to_string()))?;
+        sqlx::query(r#"CREATE INDEX IF NOT EXISTS idx_skills_status ON skills(status)"#)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Database(e.to_string()))?;
 
-        sqlx::query(
-            r#"CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Error::Database(e.to_string()))?;
+        sqlx::query(r#"CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)"#)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Database(e.to_string()))?;
 
         sqlx::query(
             r#"CREATE INDEX IF NOT EXISTS idx_patterns_status ON detected_patterns(status)"#,
@@ -249,12 +244,9 @@ impl SkillStore {
             .map_err(|e| Error::Serialization(e.to_string()))?;
         let trigger_intents = serde_json::to_string(&skill.trigger.intents)
             .map_err(|e| Error::Serialization(e.to_string()))?;
-        let steps = serde_json::to_string(&skill.steps)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
-        let input_schema = skill
-            .input_schema
-            .as_ref()
-            .map(|s| s.to_string());
+        let steps =
+            serde_json::to_string(&skill.steps).map_err(|e| Error::Serialization(e.to_string()))?;
+        let input_schema = skill.input_schema.as_ref().map(|s| s.to_string());
 
         sqlx::query(
             r#"
@@ -403,22 +395,18 @@ impl SkillStore {
     #[instrument(skip(self))]
     pub async fn delete_skill(&self, id: Uuid) -> Result<()> {
         // First delete related skill executions
-        sqlx::query(
-            r#"DELETE FROM skill_executions WHERE skill_id = ?1"#,
-        )
-        .bind(id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Error::Database(e.to_string()))?;
+        sqlx::query(r#"DELETE FROM skill_executions WHERE skill_id = ?1"#)
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Database(e.to_string()))?;
 
         // Then delete the skill
-        let result = sqlx::query(
-            r#"DELETE FROM skills WHERE id = ?1"#,
-        )
-        .bind(id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Error::Database(e.to_string()))?;
+        let result = sqlx::query(r#"DELETE FROM skills WHERE id = ?1"#)
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Database(e.to_string()))?;
 
         if result.rows_affected() == 0 {
             return Err(Error::SkillNotFound(id.to_string()));
@@ -479,21 +467,22 @@ impl SkillStore {
     /// Get a pattern by ID
     #[instrument(skip(self))]
     pub async fn get_pattern(&self, id: Uuid) -> Result<DetectedPattern> {
-        let row = sqlx::query(
-            r#"SELECT * FROM detected_patterns WHERE id = ?1"#,
-        )
-        .bind(id.to_string())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Error::Database(e.to_string()))?
-        .ok_or_else(|| Error::PatternNotFound(id.to_string()))?;
+        let row = sqlx::query(r#"SELECT * FROM detected_patterns WHERE id = ?1"#)
+            .bind(id.to_string())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Error::Database(e.to_string()))?
+            .ok_or_else(|| Error::PatternNotFound(id.to_string()))?;
 
         Self::row_to_pattern(row)
     }
 
     /// List patterns by status
     #[instrument(skip(self))]
-    pub async fn list_patterns_by_status(&self, status: PatternStatus) -> Result<Vec<DetectedPattern>> {
+    pub async fn list_patterns_by_status(
+        &self,
+        status: PatternStatus,
+    ) -> Result<Vec<DetectedPattern>> {
         let rows = sqlx::query(
             r#"
             SELECT * FROM detected_patterns WHERE status = ?1
@@ -530,20 +519,21 @@ impl SkillStore {
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
 
-        debug!("Marked pattern {} as converted to skill {}", pattern_id, skill_id);
+        debug!(
+            "Marked pattern {} as converted to skill {}",
+            pattern_id, skill_id
+        );
         Ok(())
     }
 
     /// Mark a pattern as rejected
     #[instrument(skip(self))]
     pub async fn mark_pattern_rejected(&self, pattern_id: Uuid) -> Result<()> {
-        sqlx::query(
-            r#"UPDATE detected_patterns SET status = 'rejected' WHERE id = ?1"#,
-        )
-        .bind(pattern_id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Error::Database(e.to_string()))?;
+        sqlx::query(r#"UPDATE detected_patterns SET status = 'rejected' WHERE id = ?1"#)
+            .bind(pattern_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Database(e.to_string()))?;
 
         debug!("Marked pattern {} as rejected", pattern_id);
         Ok(())
@@ -563,8 +553,8 @@ impl SkillStore {
         duration_ms: Option<u64>,
         step_results: &[serde_json::Value],
     ) -> Result<()> {
-        let step_results_json = serde_json::to_string(step_results)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
+        let step_results_json =
+            serde_json::to_string(step_results).map_err(|e| Error::Serialization(e.to_string()))?;
 
         sqlx::query(
             r#"
@@ -650,8 +640,8 @@ impl SkillStore {
             .map_err(|e| Error::Serialization(e.to_string()))?;
         let trigger_intents: Vec<String> = serde_json::from_str(&trigger_intents_str)
             .map_err(|e| Error::Serialization(e.to_string()))?;
-        let steps: Vec<SkillStep> = serde_json::from_str(&steps_str)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
+        let steps: Vec<SkillStep> =
+            serde_json::from_str(&steps_str).map_err(|e| Error::Serialization(e.to_string()))?;
         let input_schema = input_schema_str
             .map(|s| serde_json::from_str(&s))
             .transpose()
@@ -666,8 +656,7 @@ impl SkillStore {
             .transpose()?;
         let source_pattern_id = source_pattern_str
             .map(|s| {
-                Uuid::parse_str(&s)
-                    .map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))
+                Uuid::parse_str(&s).map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))
             })
             .transpose()?;
 
@@ -696,7 +685,9 @@ impl SkillStore {
             metadata: SkillMetadata {
                 usage_count: row.get::<i64, _>("usage_count") as u64,
                 success_rate: row.get("success_rate"),
-                avg_duration_ms: row.get::<Option<i64>, _>("avg_duration_ms").map(|d| d as u64),
+                avg_duration_ms: row
+                    .get::<Option<i64>, _>("avg_duration_ms")
+                    .map(|d| d as u64),
                 last_used_at,
                 source_pattern_id,
             },
@@ -718,17 +709,16 @@ impl SkillStore {
             .map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))?;
         let tool_sequence: Vec<String> = serde_json::from_str(&tool_sequence_str)
             .map_err(|e| Error::Serialization(e.to_string()))?;
-        let extracted_keywords: Vec<String> = serde_json::from_str(&keywords_str)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
-        let sample_inputs: Vec<String> = serde_json::from_str(&samples_str)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
+        let extracted_keywords: Vec<String> =
+            serde_json::from_str(&keywords_str).map_err(|e| Error::Serialization(e.to_string()))?;
+        let sample_inputs: Vec<String> =
+            serde_json::from_str(&samples_str).map_err(|e| Error::Serialization(e.to_string()))?;
         let status: PatternStatus = status_str
             .parse()
             .map_err(|e: String| Error::Serialization(e))?;
         let converted_skill_id = converted_skill_str
             .map(|s| {
-                Uuid::parse_str(&s)
-                    .map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))
+                Uuid::parse_str(&s).map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))
             })
             .transpose()?;
         let detected_at = DateTime::parse_from_rfc3339(&detected_at_str)
@@ -877,7 +867,10 @@ mod tests {
         store.save_skill(&skill).await.unwrap();
 
         store.save_pattern(&pattern).await.unwrap();
-        store.mark_pattern_converted(pattern.id, skill.id).await.unwrap();
+        store
+            .mark_pattern_converted(pattern.id, skill.id)
+            .await
+            .unwrap();
 
         let updated = store.get_pattern(pattern.id).await.unwrap();
         assert_eq!(updated.status, PatternStatus::Converted);

@@ -89,8 +89,8 @@ impl McpClient {
 
     /// Initialize a server connection
     async fn initialize_server(&self, connection: &mut McpConnection) -> McpResult<()> {
-        let request = McpRequest::new("initialize", connection.next_id())
-            .with_params(serde_json::json!({
+        let request =
+            McpRequest::new("initialize", connection.next_id()).with_params(serde_json::json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": {
                     "tools": {}
@@ -104,9 +104,8 @@ impl McpClient {
         let response = connection.send(request).await?;
 
         if let Some(result) = response.result {
-            let init_result: McpInitResult = serde_json::from_value(result).map_err(|e| {
-                McpError::Protocol(format!("Failed to parse init result: {}", e))
-            })?;
+            let init_result: McpInitResult = serde_json::from_value(result)
+                .map_err(|e| McpError::Protocol(format!("Failed to parse init result: {}", e)))?;
 
             debug!(
                 server = %connection.name,
@@ -139,9 +138,8 @@ impl McpClient {
                 tools: Vec<McpTool>,
             }
 
-            let tools_result: ToolsResult = serde_json::from_value(result).map_err(|e| {
-                McpError::Protocol(format!("Failed to parse tools: {}", e))
-            })?;
+            let tools_result: ToolsResult = serde_json::from_value(result)
+                .map_err(|e| McpError::Protocol(format!("Failed to parse tools: {}", e)))?;
 
             Ok(tools_result.tools)
         } else {
@@ -165,7 +163,10 @@ impl McpClient {
 
     /// Check if a server is connected
     pub fn is_connected(&self, name: &str) -> bool {
-        self.connections.get(name).map(|c| c.is_active()).unwrap_or(false)
+        self.connections
+            .get(name)
+            .map(|c| c.is_active())
+            .unwrap_or(false)
     }
 
     /// List all available tools from all servers
@@ -196,7 +197,9 @@ impl McpClient {
         tool_name: &str,
         arguments: serde_json::Value,
     ) -> McpResult<McpToolResult> {
-        let connection = self.connections.get(server_name)
+        let connection = self
+            .connections
+            .get(server_name)
             .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?;
 
         // Verify tool exists
@@ -209,8 +212,8 @@ impl McpClient {
             }
         }
 
-        let request = McpRequest::new("tools/call", connection.next_id())
-            .with_params(serde_json::json!({
+        let request =
+            McpRequest::new("tools/call", connection.next_id()).with_params(serde_json::json!({
                 "name": tool_name,
                 "arguments": arguments
             }));
@@ -218,9 +221,8 @@ impl McpClient {
         let response = connection.send(request).await?;
 
         if let Some(result) = response.result {
-            let tool_result: McpToolResult = serde_json::from_value(result).map_err(|e| {
-                McpError::Protocol(format!("Failed to parse tool result: {}", e))
-            })?;
+            let tool_result: McpToolResult = serde_json::from_value(result)
+                .map_err(|e| McpError::Protocol(format!("Failed to parse tool result: {}", e)))?;
             Ok(tool_result)
         } else {
             Ok(McpToolResult {

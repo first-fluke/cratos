@@ -630,8 +630,7 @@ impl EventStore {
             .with_timezone(&Utc);
         let parent_event_id = parent_event_id_str
             .map(|s| {
-                Uuid::parse_str(&s)
-                    .map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))
+                Uuid::parse_str(&s).map_err(|e| Error::Serialization(format!("invalid uuid: {e}")))
             })
             .transpose()?;
         let metadata: serde_json::Value = serde_json::from_str(&metadata_str)

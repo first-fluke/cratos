@@ -37,5 +37,7 @@ mod protocol;
 mod transport;
 
 pub use client::{McpClient, McpClientConfig};
-pub use protocol::{McpContent, McpError, McpRequest, McpResponse, McpResult, McpTool, McpToolCall};
+pub use protocol::{
+    McpContent, McpError, McpRequest, McpResponse, McpResult, McpTool, McpToolCall,
+};
 pub use transport::{McpServerConfig, McpTransport};

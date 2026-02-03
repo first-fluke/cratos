@@ -200,12 +200,11 @@ impl SessionStore for SqliteStore {
     }
 
     async fn exists(&self, session_key: &str) -> Result<bool> {
-        let row: Option<(i32,)> =
-            sqlx::query_as("SELECT 1 FROM sessions WHERE session_key = ?")
-                .bind(session_key)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| Error::Internal(format!("Failed to check session: {}", e)))?;
+        let row: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM sessions WHERE session_key = ?")
+            .bind(session_key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Error::Internal(format!("Failed to check session: {}", e)))?;
 
         Ok(row.is_some())
     }
@@ -241,7 +240,11 @@ impl SessionStore for SqliteStore {
 
         let removed = result.rows_affected() as usize;
         if removed > 0 {
-            info!(removed = removed, ttl_hours = self.ttl_hours, "Cleaned up expired sessions");
+            info!(
+                removed = removed,
+                ttl_hours = self.ttl_hours,
+                "Cleaned up expired sessions"
+            );
         }
         Ok(removed)
     }
@@ -305,15 +308,18 @@ impl SessionBackend {
     pub async fn from_config(config: &SessionBackendConfig) -> Result<Self> {
         match config.backend.as_str() {
             "sqlite" => {
-                let home = dirs::home_dir()
-                    .ok_or_else(|| Error::Internal("Could not determine home directory".to_string()))?;
+                let home = dirs::home_dir().ok_or_else(|| {
+                    Error::Internal("Could not determine home directory".to_string())
+                })?;
                 let path = home.join(".cratos").join(&config.sqlite_path);
                 let ttl_hours = (config.expiry_seconds / 3600) as i64;
                 let store = SqliteStore::with_options(&path, ttl_hours).await?;
                 Ok(Self::Sqlite(store))
             }
             "redis" => {
-                let url = config.redis_url.as_deref()
+                let url = config
+                    .redis_url
+                    .as_deref()
                     .unwrap_or("redis://localhost:6379");
                 let store = super::RedisStore::new(url)?;
                 Ok(Self::Redis(store))
@@ -322,12 +328,10 @@ impl SessionBackend {
                 let store = super::MemoryStore::try_new()?;
                 Ok(Self::Memory(store))
             }
-            other => {
-                Err(Error::Configuration(format!(
-                    "Unknown session backend: '{}'. Use 'sqlite', 'redis', or 'memory'.",
-                    other
-                )))
-            }
+            other => Err(Error::Configuration(format!(
+                "Unknown session backend: '{}'. Use 'sqlite', 'redis', or 'memory'.",
+                other
+            ))),
         }
     }
 

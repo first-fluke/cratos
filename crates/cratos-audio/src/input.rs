@@ -47,8 +47,9 @@ impl AudioInput {
             }
         }
 
-        let supported = selected_config
-            .ok_or_else(|| Error::AudioDevice(format!("No config supports {}Hz F32", sample_rate)))?;
+        let supported = selected_config.ok_or_else(|| {
+            Error::AudioDevice(format!("No config supports {}Hz F32", sample_rate))
+        })?;
 
         let config: StreamConfig = supported.into();
 
@@ -150,8 +151,7 @@ impl AudioInput {
 
         let mut buffer = Vec::new();
         let mut silence_samples = 0u64;
-        let silence_samples_threshold =
-            (silence_duration_ms as f64 * sample_rate / 1000.0) as u64;
+        let silence_samples_threshold = (silence_duration_ms as f64 * sample_rate / 1000.0) as u64;
         let max_samples = (max_duration_secs as f64 * sample_rate) as u64;
 
         let timeout = tokio::time::Duration::from_secs(max_duration_secs + 1);

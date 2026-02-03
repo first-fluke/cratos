@@ -171,11 +171,7 @@ impl SkillGenerator {
 
     /// Generate a name for the skill based on the tool sequence
     fn generate_name(&self, pattern: &DetectedPattern) -> String {
-        let tools: Vec<&str> = pattern
-            .tool_sequence
-            .iter()
-            .map(|s| s.as_str())
-            .collect();
+        let tools: Vec<&str> = pattern.tool_sequence.iter().map(|s| s.as_str()).collect();
 
         // Create a name like "file_read_then_git_commit"
         if tools.len() <= 3 {
@@ -199,7 +195,13 @@ impl SkillGenerator {
         } else {
             format!(
                 " (triggers: {})",
-                pattern.extracted_keywords.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+                pattern
+                    .extracted_keywords
+                    .iter()
+                    .take(3)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )
         };
 
@@ -455,15 +457,12 @@ mod tests {
     #[test]
     fn test_generate_from_patterns() {
         let generator = SkillGenerator::new();
-        let patterns = vec![
-            create_test_pattern(),
-            {
-                let mut p = create_test_pattern();
-                p.id = Uuid::new_v4();
-                p.tool_sequence = vec!["git_status".to_string()];
-                p
-            },
-        ];
+        let patterns = vec![create_test_pattern(), {
+            let mut p = create_test_pattern();
+            p.id = Uuid::new_v4();
+            p.tool_sequence = vec!["git_status".to_string()];
+            p
+        }];
 
         let results = generator.generate_from_patterns(&patterns);
         assert_eq!(results.len(), 2);

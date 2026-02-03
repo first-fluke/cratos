@@ -25,15 +25,15 @@ const BLOCKED_FLAGS: &[&str] = &[
     "--force-delete",
     "--mirror",
     "--prune",
-    "--all",  // when used with push
+    "--all", // when used with push
 ];
 
 /// Check if an argument contains blocked flags
 #[allow(dead_code)] // Used in tests and for future validation
 fn contains_blocked_flag(arg: &str) -> bool {
-    BLOCKED_FLAGS.iter().any(|flag| {
-        arg == *flag || arg.starts_with(&format!("{}=", flag))
-    })
+    BLOCKED_FLAGS
+        .iter()
+        .any(|flag| arg == *flag || arg.starts_with(&format!("{}=", flag)))
 }
 
 /// Validate branch name for security (prevent command injection)

@@ -658,8 +658,8 @@ impl ToolDoctor {
 
         for (i, cause) in causes.iter().enumerate() {
             // Simple heuristic: first causes are more likely
-            let base_likelihood =
-                BASE_LIKELIHOOD - (i * LIKELIHOOD_DECREASE_PER_POSITION).min(MAX_LIKELIHOOD_DECREASE);
+            let base_likelihood = BASE_LIKELIHOOD
+                - (i * LIKELIHOOD_DECREASE_PER_POSITION).min(MAX_LIKELIHOOD_DECREASE);
 
             // Boost if error message contains related keywords
             let boost = if error_lower

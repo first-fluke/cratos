@@ -104,10 +104,7 @@ impl SkillRegistry {
             let mut index = self.keyword_index.write().await;
             for keyword in keywords {
                 let keyword_lower = keyword.to_lowercase();
-                index
-                    .entry(keyword_lower)
-                    .or_default()
-                    .push(skill_id);
+                index.entry(keyword_lower).or_default().push(skill_id);
             }
         }
 
@@ -185,11 +182,7 @@ impl SkillRegistry {
     /// Get all active skills
     pub async fn get_active(&self) -> Vec<Skill> {
         let skills = self.skills_by_id.read().await;
-        skills
-            .values()
-            .filter(|s| s.is_active())
-            .cloned()
-            .collect()
+        skills.values().filter(|s| s.is_active()).cloned().collect()
     }
 
     /// Get all skills
@@ -326,10 +319,9 @@ mod tests {
     use crate::skill::SkillTrigger;
 
     fn create_test_skill(name: &str, keywords: Vec<&str>) -> Skill {
-        Skill::new(name, format!("Test skill: {}", name), SkillCategory::Custom)
-            .with_trigger(SkillTrigger::with_keywords(
-                keywords.into_iter().map(String::from).collect(),
-            ))
+        Skill::new(name, format!("Test skill: {}", name), SkillCategory::Custom).with_trigger(
+            SkillTrigger::with_keywords(keywords.into_iter().map(String::from).collect()),
+        )
     }
 
     #[tokio::test]

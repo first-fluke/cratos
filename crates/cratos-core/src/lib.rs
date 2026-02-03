@@ -37,11 +37,11 @@ pub use orchestrator::{
     ExecutionResult, ExecutionStatus, Orchestrator, OrchestratorConfig, OrchestratorInput,
     ToolCallRecord,
 };
-pub use planner::{PlanResponse, PlanStep, Planner, PlannerConfig};
 pub use permissions::{
     ChannelPermissions, ChannelToolConfig, PermissionConfig, PermissionError, PermissionManager,
     PermissionStatus, TimeRestrictions, ToolPermissions,
 };
+pub use planner::{PlanResponse, PlanStep, Planner, PlannerConfig};
 pub use security::{
     sanitize_input, validate_tool_output, InjectionDetector, InjectionError, InjectionPattern,
     SecurityConfig, ThreatLevel,

@@ -113,9 +113,7 @@ impl Error {
     pub fn is_recoverable(&self) -> bool {
         matches!(
             self,
-            Self::RateLimited { .. }
-                | Self::ConnectionClosed
-                | Self::WebSocket(_)
+            Self::RateLimited { .. } | Self::ConnectionClosed | Self::WebSocket(_)
         )
     }
 
@@ -173,13 +171,18 @@ mod tests {
         let err = Error::SessionNotFound(Uuid::nil());
         assert_eq!(err.code(), "session_not_found");
 
-        let err = Error::RateLimited { retry_after_secs: 30 };
+        let err = Error::RateLimited {
+            retry_after_secs: 30,
+        };
         assert_eq!(err.code(), "rate_limited");
     }
 
     #[test]
     fn test_error_is_recoverable() {
-        assert!(Error::RateLimited { retry_after_secs: 30 }.is_recoverable());
+        assert!(Error::RateLimited {
+            retry_after_secs: 30
+        }
+        .is_recoverable());
         assert!(Error::ConnectionClosed.is_recoverable());
         assert!(!Error::SessionNotFound(Uuid::nil()).is_recoverable());
     }

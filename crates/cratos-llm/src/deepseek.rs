@@ -21,11 +21,7 @@ use tracing::{debug, instrument};
 pub const DEEPSEEK_API_BASE: &str = "https://api.deepseek.com/v1";
 
 /// Available DeepSeek models
-pub const MODELS: &[&str] = &[
-    "deepseek-chat",
-    "deepseek-coder",
-    "deepseek-reasoner",
-];
+pub const MODELS: &[&str] = &["deepseek-chat", "deepseek-coder", "deepseek-reasoner"];
 
 /// Default DeepSeek model
 pub const DEFAULT_MODEL: &str = "deepseek-chat";
@@ -295,7 +291,8 @@ impl LlmProvider for DeepSeekProvider {
             &request.model
         };
 
-        let messages: Vec<ChatMessage> = request.messages.iter().map(Self::convert_message).collect();
+        let messages: Vec<ChatMessage> =
+            request.messages.iter().map(Self::convert_message).collect();
 
         let chat_request = ChatRequest {
             model: model.to_string(),

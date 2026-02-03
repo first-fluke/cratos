@@ -116,19 +116,15 @@ async fn handle_socket(socket: WebSocket, session_id: Uuid, state: Arc<CanvasSta
         match msg {
             Ok(Message::Text(text)) => {
                 debug!(text = %text, "Received message");
-                if let Err(e) = handle_client_message(
-                    &text,
-                    session_id,
-                    connection_id,
-                    &state,
-                    &sender_clone,
-                )
-                .await
+                if let Err(e) =
+                    handle_client_message(&text, session_id, connection_id, &state, &sender_clone)
+                        .await
                 {
                     warn!(error = %e, "Error handling message");
                     let mut sender = sender_clone.lock().await;
-                    let _ = send_message(&mut sender, &ServerMessage::error("error", e.to_string()))
-                        .await;
+                    let _ =
+                        send_message(&mut sender, &ServerMessage::error("error", e.to_string()))
+                            .await;
                 }
             }
             Ok(Message::Close(_)) => {
@@ -198,8 +194,11 @@ async fn handle_client_message(
                 });
             } else {
                 let mut sender = sender.lock().await;
-                send_message(&mut sender, &ServerMessage::error("not_found", "Block not found"))
-                    .await?;
+                send_message(
+                    &mut sender,
+                    &ServerMessage::error("not_found", "Block not found"),
+                )
+                .await?;
             }
         }
 
@@ -252,11 +251,18 @@ async fn handle_client_message(
             }
         }
 
-        ClientMessage::MoveBlock { block_id, new_index } => {
+        ClientMessage::MoveBlock {
+            block_id,
+            new_index,
+        } => {
             let moved = state
                 .session_manager
                 .update_session(session_id, |session| {
-                    if let Some(pos) = session.document.blocks.iter().position(|b| b.id() == block_id)
+                    if let Some(pos) = session
+                        .document
+                        .blocks
+                        .iter()
+                        .position(|b| b.id() == block_id)
                     {
                         let block = session.document.blocks.remove(pos);
                         let idx = new_index.min(session.document.blocks.len());
@@ -349,7 +355,9 @@ async fn handle_client_message(
             state
                 .session_manager
                 .update_session(session_id, |session| {
-                    session.document.update_block(target_id, ai_response.clone())
+                    session
+                        .document
+                        .update_block(target_id, ai_response.clone())
                 })
                 .await;
 

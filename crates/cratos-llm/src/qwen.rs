@@ -10,8 +10,8 @@
 
 use crate::error::{Error, Result};
 use crate::router::{
-    CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage,
-    ToolCall, ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
+    CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage, ToolCall,
+    ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -34,8 +34,8 @@ pub const MODELS: &[&str] = &[
     "qwen-plus-latest",
     "qwen-max",
     "qwen-max-latest",
-    "qwen-long",         // Long context
-    "qwen-coder-turbo",  // Code specialized
+    "qwen-long",        // Long context
+    "qwen-coder-turbo", // Code specialized
     "qwen-coder-plus",
 ];
 
@@ -124,8 +124,7 @@ impl QwenConfig {
             .or_else(|_| std::env::var("QWEN_API_KEY"))
             .map_err(|_| Error::NotConfigured("DASHSCOPE_API_KEY not set".to_string()))?;
 
-        let base_url =
-            std::env::var("DASHSCOPE_BASE_URL").unwrap_or_else(|_| BASE_URL.to_string());
+        let base_url = std::env::var("DASHSCOPE_BASE_URL").unwrap_or_else(|_| BASE_URL.to_string());
         let default_model =
             std::env::var("QWEN_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 

@@ -367,11 +367,7 @@ impl DockerSandbox {
         env: HashMap<String, String>,
         mounts: Vec<Mount>,
     ) -> Result<SandboxOutput> {
-        let command = vec![
-            "/bin/sh".to_string(),
-            "-c".to_string(),
-            script.to_string(),
-        ];
+        let command = vec!["/bin/sh".to_string(), "-c".to_string(), script.to_string()];
 
         self.execute(&command, env, mounts, None, None).await
     }
@@ -379,9 +375,7 @@ impl DockerSandbox {
     /// Validate environment variable name
     fn is_valid_env_name(name: &str) -> bool {
         !name.is_empty()
-            && name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
             && !name.chars().next().unwrap_or('0').is_ascii_digit()
     }
 }

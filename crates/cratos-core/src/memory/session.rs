@@ -280,7 +280,8 @@ impl SessionContext {
 
         // Rebuild messages: system first, then others in order
         self.messages = system_messages;
-        self.messages.extend(kept_messages.into_iter().map(|(_, msg)| msg));
+        self.messages
+            .extend(kept_messages.into_iter().map(|(_, msg)| msg));
 
         // Update cached token count
         self.current_tokens = count_message_tokens(&self.messages);
@@ -449,7 +450,10 @@ mod tests {
         // Tool results should be more likely to survive than assistant messages
         let messages = ctx.get_messages();
         let has_tool = messages.iter().any(|m| m.role == MessageRole::Tool);
-        let assistant_count = messages.iter().filter(|m| m.role == MessageRole::Assistant).count();
+        let assistant_count = messages
+            .iter()
+            .filter(|m| m.role == MessageRole::Assistant)
+            .count();
 
         // If there's limited space, tool messages should be preserved over assistant
         if messages.len() < 10 {

@@ -9,7 +9,8 @@ use std::time::Duration;
 use tracing::{debug, info};
 
 /// Edge TTS endpoint
-const EDGE_TTS_ENDPOINT: &str = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voice/v1";
+const EDGE_TTS_ENDPOINT: &str =
+    "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voice/v1";
 
 /// Edge TTS trusted client token (public)
 const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
@@ -89,7 +90,11 @@ impl TextToSpeech {
             return Ok(Vec::new());
         }
 
-        debug!("Synthesizing: {} chars with voice {}", text.len(), self.voice);
+        debug!(
+            "Synthesizing: {} chars with voice {}",
+            text.len(),
+            self.voice
+        );
 
         // Build SSML
         let ssml = format!(
@@ -110,17 +115,17 @@ impl TextToSpeech {
             .client
             .post(&url)
             .header("Content-Type", "application/ssml+xml")
-            .header("X-Microsoft-OutputFormat", "audio-24khz-48kbitrate-mono-mp3")
+            .header(
+                "X-Microsoft-OutputFormat",
+                "audio-24khz-48kbitrate-mono-mp3",
+            )
             .body(ssml)
             .send()
             .await
             .map_err(|e| Error::Tts(format!("Request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(Error::Tts(format!(
-                "TTS API error: {}",
-                response.status()
-            )));
+            return Err(Error::Tts(format!("TTS API error: {}", response.status())));
         }
 
         let audio_bytes = response
@@ -192,15 +197,30 @@ mod tests {
 
     #[test]
     fn test_voice_selection() {
-        assert_eq!(TextToSpeech::get_voice_for_language("ko"), "ko-KR-SunHiNeural");
-        assert_eq!(TextToSpeech::get_voice_for_language("en"), "en-US-JennyNeural");
-        assert_eq!(TextToSpeech::get_voice_for_language("ja"), "ja-JP-NanamiNeural");
-        assert_eq!(TextToSpeech::get_voice_for_language("unknown"), "en-US-JennyNeural");
+        assert_eq!(
+            TextToSpeech::get_voice_for_language("ko"),
+            "ko-KR-SunHiNeural"
+        );
+        assert_eq!(
+            TextToSpeech::get_voice_for_language("en"),
+            "en-US-JennyNeural"
+        );
+        assert_eq!(
+            TextToSpeech::get_voice_for_language("ja"),
+            "ja-JP-NanamiNeural"
+        );
+        assert_eq!(
+            TextToSpeech::get_voice_for_language("unknown"),
+            "en-US-JennyNeural"
+        );
     }
 
     #[test]
     fn test_xml_escape() {
-        assert_eq!(TextToSpeech::escape_xml("Hello & World"), "Hello &amp; World");
+        assert_eq!(
+            TextToSpeech::escape_xml("Hello & World"),
+            "Hello &amp; World"
+        );
         assert_eq!(TextToSpeech::escape_xml("<script>"), "&lt;script&gt;");
     }
 

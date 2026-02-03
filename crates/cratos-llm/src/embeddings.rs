@@ -95,8 +95,8 @@ impl FastEmbedProvider {
     pub fn with_model(model: fastembed::EmbeddingModel) -> Result<Self> {
         info!("Initializing FastEmbed provider with model: {:?}", model);
 
-        let init_options = fastembed::InitOptions::new(model.clone())
-            .with_show_download_progress(true);
+        let init_options =
+            fastembed::InitOptions::new(model.clone()).with_show_download_progress(true);
 
         let text_embedding = fastembed::TextEmbedding::try_new(init_options)
             .map_err(|e| Error::Provider(format!("Failed to initialize FastEmbed: {}", e)))?;

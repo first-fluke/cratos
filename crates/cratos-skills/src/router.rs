@@ -128,8 +128,8 @@ impl Default for RouterConfig {
             regex_weight: 0.5,
             intent_weight: 0.6,
             priority_bonus: 0.1,
-            max_input_length: 10_000,      // 10KB max input
-            max_pattern_length: 500,        // 500 chars max pattern
+            max_input_length: 10_000, // 10KB max input
+            max_pattern_length: 500,  // 500 chars max pattern
         }
     }
 }
@@ -207,7 +207,9 @@ impl SkillRouter {
     #[instrument(skip(self))]
     pub async fn route_best(&mut self, input_text: &str) -> Option<RoutingResult> {
         let results = self.route(input_text).await;
-        results.into_iter().find(|r| r.score >= self.config.min_score)
+        results
+            .into_iter()
+            .find(|r| r.score >= self.config.min_score)
     }
 
     /// Check if a specific skill matches the input
@@ -328,18 +330,16 @@ impl SkillRouter {
             // Get or compile the regex
             let regex = match self.compiled_patterns.get(pattern) {
                 Some(r) => r,
-                None => {
-                    match Regex::new(pattern) {
-                        Ok(r) => {
-                            self.compiled_patterns.insert(pattern.clone(), r);
-                            self.compiled_patterns.get(pattern).unwrap()
-                        }
-                        Err(e) => {
-                            debug!("Invalid regex pattern '{}': {}", pattern, e);
-                            continue;
-                        }
+                None => match Regex::new(pattern) {
+                    Ok(r) => {
+                        self.compiled_patterns.insert(pattern.clone(), r);
+                        self.compiled_patterns.get(pattern).unwrap()
                     }
-                }
+                    Err(e) => {
+                        debug!("Invalid regex pattern '{}': {}", pattern, e);
+                        continue;
+                    }
+                },
             };
 
             if let Some(caps) = regex.captures(input_text) {
@@ -368,9 +368,18 @@ impl SkillRouter {
         // Simple intent matching based on common words
         // In production, this would use an LLM or classifier
         let intent_keywords: HashMap<&str, Vec<&str>> = [
-            ("file_operation", vec!["file", "read", "write", "create", "delete"]),
-            ("git_operation", vec!["git", "commit", "push", "pull", "branch"]),
-            ("code_generation", vec!["generate", "create", "write", "code"]),
+            (
+                "file_operation",
+                vec!["file", "read", "write", "create", "delete"],
+            ),
+            (
+                "git_operation",
+                vec!["git", "commit", "push", "pull", "branch"],
+            ),
+            (
+                "code_generation",
+                vec!["generate", "create", "write", "code"],
+            ),
             ("search", vec!["find", "search", "look", "where"]),
             ("explain", vec!["explain", "what", "how", "why"]),
         ]
@@ -533,10 +542,7 @@ mod tests {
         // Create skill with overly long regex pattern
         let long_pattern = format!("{}+", "a".repeat(600));
         let mut skill = Skill::new("test", "Test", SkillCategory::Custom)
-            .with_trigger(
-                SkillTrigger::with_keywords(vec![])
-                    .add_pattern(&long_pattern)
-            );
+            .with_trigger(SkillTrigger::with_keywords(vec![]).add_pattern(&long_pattern));
         skill.activate();
         registry.register(skill).await.unwrap();
 

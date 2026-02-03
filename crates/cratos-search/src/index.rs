@@ -72,10 +72,10 @@ impl IndexConfig {
         Self {
             dimensions,
             metric: MetricType::Cosine,
-            connectivity: 16,      // Good balance for most use cases
-            expansion_add: 128,    // Higher for better index quality
-            expansion_search: 64,  // Higher for better recall
-            capacity: 10_000,      // Initial capacity
+            connectivity: 16,     // Good balance for most use cases
+            expansion_add: 128,   // Higher for better index quality
+            expansion_search: 64, // Higher for better recall
+            capacity: 10_000,     // Initial capacity
         }
     }
 

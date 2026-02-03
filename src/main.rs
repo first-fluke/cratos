@@ -259,12 +259,10 @@ async fn detailed_health_check(
         let start = std::time::Instant::now();
         match redis::Client::open(redis_url.as_str()) {
             Ok(client) => match client.get_multiplexed_async_connection().await {
-                Ok(mut conn) => {
-                    match redis::cmd("PING").query_async::<String>(&mut conn).await {
-                        Ok(_) => ComponentHealth::healthy(start.elapsed().as_millis() as u64),
-                        Err(e) => ComponentHealth::unhealthy(e.to_string()),
-                    }
-                }
+                Ok(mut conn) => match redis::cmd("PING").query_async::<String>(&mut conn).await {
+                    Ok(_) => ComponentHealth::healthy(start.elapsed().as_millis() as u64),
+                    Err(e) => ComponentHealth::unhealthy(e.to_string()),
+                },
                 Err(e) => ComponentHealth::unhealthy(e.to_string()),
             },
             Err(e) => ComponentHealth::unhealthy(e.to_string()),
@@ -342,9 +340,7 @@ fn validate_production_config(config: &AppConfig) -> Result<()> {
     }
 
     // SECURITY: Check for insecure Redis connection
-    if config.redis.url.starts_with("redis://")
-        && !config.redis.url.contains('@')
-        && is_production
+    if config.redis.url.starts_with("redis://") && !config.redis.url.contains('@') && is_production
     {
         warn!(
             "SECURITY WARNING: Redis connection appears to have no authentication in production. \
@@ -408,10 +404,7 @@ async fn main() -> Result<()> {
             .await
             .context("Failed to initialize SQLite event store")?,
     );
-    info!(
-        "SQLite event store initialized at {}",
-        db_path.display()
-    );
+    info!("SQLite event store initialized at {}", db_path.display());
 
     // Initialize skill store and registry
     let skill_db_path = data_dir.join("skills.db");
@@ -434,40 +427,42 @@ async fn main() -> Result<()> {
         }
     }
     let skill_count = skill_registry.count().await;
-    info!("Skill registry initialized with {} active skills", skill_count);
+    info!(
+        "Skill registry initialized with {} active skills",
+        skill_count
+    );
 
     // Initialize embedding provider for vector search (optional)
-    let embedding_provider: Option<SharedEmbeddingProvider> =
-        if config.vector_search.enabled {
-            match FastEmbedProvider::new() {
-                Ok(provider) => {
-                    info!(
-                        "Embedding provider initialized: {} ({} dimensions)",
-                        provider.name(),
-                        provider.dimensions()
-                    );
-                    Some(Arc::new(provider))
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to initialize embedding provider: {}. Semantic search disabled.",
-                        e
-                    );
-                    None
-                }
+    let embedding_provider: Option<SharedEmbeddingProvider> = if config.vector_search.enabled {
+        match FastEmbedProvider::new() {
+            Ok(provider) => {
+                info!(
+                    "Embedding provider initialized: {} ({} dimensions)",
+                    provider.name(),
+                    provider.dimensions()
+                );
+                Some(Arc::new(provider))
             }
-        } else {
-            info!("Vector search disabled by configuration");
-            None
-        };
+            Err(e) => {
+                warn!(
+                    "Failed to initialize embedding provider: {}. Semantic search disabled.",
+                    e
+                );
+                None
+            }
+        }
+    } else {
+        info!("Vector search disabled by configuration");
+        None
+    };
 
     // Initialize vector search infrastructure (if embedding provider available)
     let vectors_dir = data_dir.join("vectors");
-    let (_execution_searcher, _semantic_skill_router) = if let Some(ref embedder) = embedding_provider
+    let (_execution_searcher, _semantic_skill_router) = if let Some(ref embedder) =
+        embedding_provider
     {
         // Ensure vectors directory exists
-        std::fs::create_dir_all(&vectors_dir)
-            .context("Failed to create vectors directory")?;
+        std::fs::create_dir_all(&vectors_dir).context("Failed to create vectors directory")?;
 
         let dimensions = embedder.dimensions();
 
@@ -509,22 +504,15 @@ async fn main() -> Result<()> {
         let exec_embedder = Arc::new(EmbeddingAdapter {
             provider: embedder.clone(),
         });
-        let exec_searcher = ExecutionSearcher::new(
-            event_store.clone(),
-            exec_index,
-            exec_embedder,
-        );
+        let exec_searcher = ExecutionSearcher::new(event_store.clone(), exec_index, exec_embedder);
         info!("Execution searcher initialized");
 
         // Create semantic skill router
         let skill_embedder = Arc::new(SkillEmbeddingAdapter {
             provider: embedder.clone(),
         });
-        let skill_router = SemanticSkillRouter::new(
-            skill_registry.clone(),
-            skill_index,
-            skill_embedder,
-        );
+        let skill_router =
+            SemanticSkillRouter::new(skill_registry.clone(), skill_index, skill_embedder);
 
         // Index existing skills
         let indexed = skill_router.reindex_all().await.unwrap_or(0);

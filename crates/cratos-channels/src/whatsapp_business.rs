@@ -22,7 +22,13 @@ const MAX_LOG_TEXT_LENGTH: usize = 50;
 
 /// Sensitive patterns to mask
 const SENSITIVE_PATTERNS: &[&str] = &[
-    "password", "secret", "token", "api_key", "bearer", "credential", "private",
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "bearer",
+    "credential",
+    "private",
 ];
 
 /// Mask sensitive text for logging
@@ -320,7 +326,10 @@ impl WhatsAppBusinessAdapter {
     }
 
     /// Extract messages from webhook payload
-    pub fn extract_messages(&self, webhook: &WhatsAppBusinessWebhook) -> Vec<(String, WebhookMessage)> {
+    pub fn extract_messages(
+        &self,
+        webhook: &WhatsAppBusinessWebhook,
+    ) -> Vec<(String, WebhookMessage)> {
         let mut messages = Vec::new();
 
         for entry in &webhook.entry {
@@ -366,13 +375,8 @@ impl WhatsAppBusinessAdapter {
             return None;
         }
 
-        let mut normalized = NormalizedMessage::new(
-            ChannelType::WhatsApp,
-            &msg.from,
-            &msg.from,
-            &msg.id,
-            &text,
-        );
+        let mut normalized =
+            NormalizedMessage::new(ChannelType::WhatsApp, &msg.from, &msg.from, &msg.id, &text);
 
         if !sender_name.is_empty() {
             normalized = normalized.with_user_name(sender_name);

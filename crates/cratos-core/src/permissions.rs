@@ -366,10 +366,8 @@ impl TimeRestrictions {
             None => unreachable!(),
         };
 
-        let start = NaiveTime::parse_from_str(&self.work_start, "%H:%M")
-            .unwrap_or(DEFAULT_START);
-        let end = NaiveTime::parse_from_str(&self.work_end, "%H:%M")
-            .unwrap_or(DEFAULT_END);
+        let start = NaiveTime::parse_from_str(&self.work_start, "%H:%M").unwrap_or(DEFAULT_START);
+        let end = NaiveTime::parse_from_str(&self.work_end, "%H:%M").unwrap_or(DEFAULT_END);
 
         current_time >= start && current_time <= end
     }
@@ -439,10 +437,7 @@ impl PermissionConfig {
         Self {
             mode: "strict".to_string(),
             tools: ToolPermissions {
-                always_allow: HashSet::from([
-                    "search".to_string(),
-                    "list_files".to_string(),
-                ]),
+                always_allow: HashSet::from(["search".to_string(), "list_files".to_string()]),
                 ..Default::default()
             },
             ..Default::default()
@@ -636,10 +631,7 @@ mod tests {
         let manager = PermissionManager::strict();
 
         // In strict mode, fewer tools are allowed by default
-        assert_eq!(
-            manager.check("search", "cli"),
-            PermissionStatus::Allowed
-        );
+        assert_eq!(manager.check("search", "cli"), PermissionStatus::Allowed);
         // read_file should require confirmation in strict mode
         assert_eq!(
             manager.check("read_file", "cli"),

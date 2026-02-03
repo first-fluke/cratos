@@ -31,7 +31,13 @@ const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
 /// Sensitive patterns to mask
 const SENSITIVE_PATTERNS: &[&str] = &[
-    "password", "secret", "token", "api_key", "bearer", "credential", "private",
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "bearer",
+    "credential",
+    "private",
 ];
 
 /// Mask sensitive text for logging
@@ -84,7 +90,8 @@ impl Default for WhatsAppConfig {
 impl WhatsAppConfig {
     /// Create from environment variables
     pub fn from_env() -> Result<Self> {
-        let bridge_url = std::env::var("WHATSAPP_BRIDGE_URL").unwrap_or_else(|_| default_bridge_url());
+        let bridge_url =
+            std::env::var("WHATSAPP_BRIDGE_URL").unwrap_or_else(|_| default_bridge_url());
 
         let allowed_numbers: Vec<String> = std::env::var("WHATSAPP_ALLOWED_NUMBERS")
             .ok()
@@ -225,10 +232,7 @@ impl WhatsAppAdapter {
             .replace(" ", "");
 
         self.config.allowed_numbers.iter().any(|allowed| {
-            let norm_allowed = allowed
-                .replace("+", "")
-                .replace("-", "")
-                .replace(" ", "");
+            let norm_allowed = allowed.replace("+", "").replace("-", "").replace(" ", "");
             normalized.contains(&norm_allowed) || norm_allowed.contains(&normalized)
         })
     }
@@ -313,7 +317,10 @@ impl WhatsAppAdapter {
     }
 
     /// Convert webhook message to normalized message
-    pub fn normalize_webhook_message(&self, msg: &WhatsAppWebhookMessage) -> Option<NormalizedMessage> {
+    pub fn normalize_webhook_message(
+        &self,
+        msg: &WhatsAppWebhookMessage,
+    ) -> Option<NormalizedMessage> {
         // Check if number is allowed
         let sender = msg.participant.as_ref().unwrap_or(&msg.from);
         if !self.is_number_allowed(sender) {

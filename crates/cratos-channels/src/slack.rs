@@ -251,11 +251,7 @@ impl SlackAdapter {
     }
 
     /// Verify webhook request with all headers
-    pub fn verify_webhook_request(
-        &self,
-        headers: &[(String, String)],
-        body: &str,
-    ) -> Result<()> {
+    pub fn verify_webhook_request(&self, headers: &[(String, String)], body: &str) -> Result<()> {
         let timestamp = headers
             .iter()
             .find(|(k, _)| k.to_lowercase() == "x-slack-request-timestamp")
@@ -628,14 +624,15 @@ mod tests {
         use sha2::Sha256;
 
         type HmacSha256 = Hmac<Sha256>;
-        let mut mac =
-            HmacSha256::new_from_slice(b"8f742231b10e8888abcd99yyyzzz85a5").unwrap();
+        let mut mac = HmacSha256::new_from_slice(b"8f742231b10e8888abcd99yyyzzz85a5").unwrap();
         mac.update(sig_basestring.as_bytes());
         let expected = mac.finalize().into_bytes();
         let signature = format!("v0={}", hex::encode(expected));
 
         // Should verify successfully with correct signature
-        assert!(adapter.verify_signature(&timestamp, body, &signature).is_ok());
+        assert!(adapter
+            .verify_signature(&timestamp, body, &signature)
+            .is_ok());
 
         // Should fail with incorrect signature
         assert!(adapter

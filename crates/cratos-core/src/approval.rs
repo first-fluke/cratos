@@ -262,11 +262,7 @@ impl ApprovalManager {
     /// Approve a request with responder verification
     ///
     /// Returns Some(request) if approved, None if not found or not authorized
-    pub async fn approve_by(
-        &self,
-        id: Uuid,
-        responder_id: &str,
-    ) -> Option<ApprovalRequest> {
+    pub async fn approve_by(&self, id: Uuid, responder_id: &str) -> Option<ApprovalRequest> {
         let mut requests = self.requests.write().await;
         if let Some(request) = requests.get_mut(&id) {
             if request.approve_by(responder_id) {
@@ -282,11 +278,7 @@ impl ApprovalManager {
     /// Reject a request with responder verification
     ///
     /// Returns Some(request) if rejected, None if not found or not authorized
-    pub async fn reject_by(
-        &self,
-        id: Uuid,
-        responder_id: &str,
-    ) -> Option<ApprovalRequest> {
+    pub async fn reject_by(&self, id: Uuid, responder_id: &str) -> Option<ApprovalRequest> {
         let mut requests = self.requests.write().await;
         if let Some(request) = requests.get_mut(&id) {
             if request.reject_by(responder_id) {

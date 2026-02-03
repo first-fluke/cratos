@@ -162,7 +162,10 @@ impl PatternAnalyzer {
         // Group events by execution
         let mut executions: HashMap<Uuid, Vec<&Event>> = HashMap::new();
         for event in events {
-            executions.entry(event.execution_id).or_default().push(event);
+            executions
+                .entry(event.execution_id)
+                .or_default()
+                .push(event);
         }
 
         // Extract tool sequences
@@ -217,11 +220,7 @@ impl PatternAnalyzer {
         // Filter by minimum occurrences
         ngram_counts.retain(|_, count| *count >= self.config.min_occurrences);
 
-        debug!(
-            "Found {} frequent {}-grams",
-            ngram_counts.len(),
-            n
-        );
+        debug!("Found {} frequent {}-grams", ngram_counts.len(), n);
         ngram_counts
     }
 
@@ -300,11 +299,8 @@ impl PatternAnalyzer {
 
                 if confidence >= self.config.min_confidence {
                     // Find keywords associated with this pattern
-                    let associated_keywords = self.find_associated_keywords(
-                        &ngram,
-                        &all_events,
-                        &keywords_by_execution,
-                    );
+                    let associated_keywords =
+                        self.find_associated_keywords(&ngram, &all_events, &keywords_by_execution);
 
                     // Find sample inputs
                     let sample_inputs = self.find_sample_inputs(
@@ -352,7 +348,10 @@ impl PatternAnalyzer {
 
         let mut executions: HashMap<Uuid, Vec<&Event>> = HashMap::new();
         for event in events {
-            executions.entry(event.execution_id).or_default().push(event);
+            executions
+                .entry(event.execution_id)
+                .or_default()
+                .push(event);
         }
 
         for (exec_id, exec_events) in executions {
@@ -399,7 +398,10 @@ impl PatternAnalyzer {
 
         let mut executions: HashMap<Uuid, Vec<&Event>> = HashMap::new();
         for event in events {
-            executions.entry(event.execution_id).or_default().push(event);
+            executions
+                .entry(event.execution_id)
+                .or_default()
+                .push(event);
         }
 
         for (_, exec_events) in executions {
@@ -450,20 +452,104 @@ fn contains_subsequence<T: PartialEq>(sequence: &[T], subsequence: &[T]) -> bool
         return false;
     }
 
-    sequence.windows(subsequence.len()).any(|w| w == subsequence)
+    sequence
+        .windows(subsequence.len())
+        .any(|w| w == subsequence)
 }
 
 /// Check if a word is a stop word
 fn is_stop_word(word: &str) -> bool {
     const STOP_WORDS: &[&str] = &[
-        "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by",
-        "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does",
-        "did", "will", "would", "could", "should", "may", "might", "must", "shall", "can",
-        "this", "that", "these", "those", "it", "its", "i", "me", "my", "we", "our", "you",
-        "your", "he", "she", "they", "them", "their", "what", "which", "who", "how", "when",
-        "where", "why", "all", "each", "every", "both", "few", "more", "most", "other", "some",
-        "such", "no", "not", "only", "same", "so", "than", "too", "very", "just", "also",
-        "please", "해줘", "해주세요", "좀", "거", "것", "이", "저", "그",
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "must",
+        "shall",
+        "can",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "i",
+        "me",
+        "my",
+        "we",
+        "our",
+        "you",
+        "your",
+        "he",
+        "she",
+        "they",
+        "them",
+        "their",
+        "what",
+        "which",
+        "who",
+        "how",
+        "when",
+        "where",
+        "why",
+        "all",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "not",
+        "only",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+        "also",
+        "please",
+        "해줘",
+        "해주세요",
+        "좀",
+        "거",
+        "것",
+        "이",
+        "저",
+        "그",
     ];
 
     STOP_WORDS.contains(&word.to_lowercase().as_str())

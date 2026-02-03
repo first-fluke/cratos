@@ -11,8 +11,8 @@
 
 use crate::error::{Error, Result};
 use crate::router::{
-    CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage,
-    ToolCall, ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
+    CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage, ToolCall,
+    ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -360,10 +360,7 @@ impl OpenRouterProvider {
     }
 
     /// Make API request
-    async fn request<T: serde::de::DeserializeOwned>(
-        &self,
-        body: &OpenRouterRequest,
-    ) -> Result<T> {
+    async fn request<T: serde::de::DeserializeOwned>(&self, body: &OpenRouterRequest) -> Result<T> {
         let url = format!("{}/chat/completions", self.config.base_url);
 
         let mut request = self

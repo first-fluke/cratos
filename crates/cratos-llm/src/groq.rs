@@ -297,7 +297,8 @@ impl LlmProvider for GroqProvider {
             &request.model
         };
 
-        let messages: Vec<ChatMessage> = request.messages.iter().map(Self::convert_message).collect();
+        let messages: Vec<ChatMessage> =
+            request.messages.iter().map(Self::convert_message).collect();
 
         let chat_request = ChatRequest {
             model: model.to_string(),

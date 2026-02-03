@@ -132,9 +132,9 @@ impl<E: SearchEmbedder> ExecutionSearcher<E> {
 
         // Search vector index
         let index = self.index.read().await;
-        let vector_results = index.search(&query_embedding, top_k).map_err(|e| {
-            Error::Database(format!("Vector search failed: {}", e))
-        })?;
+        let vector_results = index
+            .search(&query_embedding, top_k)
+            .map_err(|e| Error::Database(format!("Vector search failed: {}", e)))?;
 
         // Convert to execution search results
         let mut results = Vec::with_capacity(vector_results.len());
@@ -151,9 +151,9 @@ impl<E: SearchEmbedder> ExecutionSearcher<E> {
                 Err(_) => None,
             };
 
-            let snippet = execution.as_ref().map(|e| {
-                truncate_text(&e.input_text, 200)
-            });
+            let snippet = execution
+                .as_ref()
+                .map(|e| truncate_text(&e.input_text, 200));
 
             results.push(ExecutionSearchResult {
                 execution_id,
@@ -188,13 +188,13 @@ impl<E: SearchEmbedder> ExecutionSearcher<E> {
 
         // Update if exists, otherwise add
         if index.contains(&id) {
-            index.update(&id, &embedding).map_err(|e| {
-                Error::Database(format!("Failed to update index: {}", e))
-            })?;
+            index
+                .update(&id, &embedding)
+                .map_err(|e| Error::Database(format!("Failed to update index: {}", e)))?;
         } else {
-            index.add(&id, &embedding).map_err(|e| {
-                Error::Database(format!("Failed to add to index: {}", e))
-            })?;
+            index
+                .add(&id, &embedding)
+                .map_err(|e| Error::Database(format!("Failed to add to index: {}", e)))?;
         }
 
         debug!("Indexed execution {}", execution.id);
@@ -206,9 +206,9 @@ impl<E: SearchEmbedder> ExecutionSearcher<E> {
     pub async fn remove_execution(&self, execution_id: &str) -> Result<()> {
         let index = self.index.write().await;
         if index.contains(execution_id) {
-            index.remove(execution_id).map_err(|e| {
-                Error::Database(format!("Failed to remove from index: {}", e))
-            })?;
+            index
+                .remove(execution_id)
+                .map_err(|e| Error::Database(format!("Failed to remove from index: {}", e)))?;
             debug!("Removed execution {} from index", execution_id);
         }
         Ok(())
@@ -231,9 +231,9 @@ impl<E: SearchEmbedder> ExecutionSearcher<E> {
         // Clear existing index
         {
             let index = self.index.write().await;
-            index.clear().map_err(|e| {
-                Error::Database(format!("Failed to clear index: {}", e))
-            })?;
+            index
+                .clear()
+                .map_err(|e| Error::Database(format!("Failed to clear index: {}", e)))?;
         }
 
         // Process in batches
@@ -269,9 +269,9 @@ impl<E: SearchEmbedder> ExecutionSearcher<E> {
     /// Save the index to disk
     pub async fn save_index(&self) -> Result<()> {
         let index = self.index.read().await;
-        index.save().map_err(|e| {
-            Error::Database(format!("Failed to save index: {}", e))
-        })?;
+        index
+            .save()
+            .map_err(|e| Error::Database(format!("Failed to save index: {}", e)))?;
         Ok(())
     }
 
@@ -322,9 +322,11 @@ fn truncate_text(text: &str, max_len: usize) -> String {
 }
 
 /// Create a default vector index for executions
-pub fn create_execution_index(dimensions: usize, path: Option<&std::path::Path>) -> cratos_search::Result<VectorIndex> {
-    let config = IndexConfig::new(dimensions)
-        .with_capacity(10_000);
+pub fn create_execution_index(
+    dimensions: usize,
+    path: Option<&std::path::Path>,
+) -> cratos_search::Result<VectorIndex> {
+    let config = IndexConfig::new(dimensions).with_capacity(10_000);
 
     match path {
         Some(p) => VectorIndex::open(p, config),

@@ -93,7 +93,9 @@ impl McpConnection {
             }
             McpTransport::Sse { url, .. } => {
                 warn!(url = %url, "SSE transport not yet implemented");
-                Err(McpError::Transport("SSE transport not yet implemented".to_string()))
+                Err(McpError::Transport(
+                    "SSE transport not yet implemented".to_string(),
+                ))
             }
         }
     }
@@ -125,17 +127,19 @@ impl McpConnection {
             cmd.env(key, expanded);
         }
 
-        let mut child = cmd.spawn().map_err(|e| {
-            McpError::Transport(format!("Failed to spawn MCP server: {}", e))
-        })?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| McpError::Transport(format!("Failed to spawn MCP server: {}", e)))?;
 
-        let stdin = child.stdin.take().ok_or_else(|| {
-            McpError::Transport("Failed to get stdin handle".to_string())
-        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| McpError::Transport("Failed to get stdin handle".to_string()))?;
 
-        let stdout = child.stdout.take().ok_or_else(|| {
-            McpError::Transport("Failed to get stdout handle".to_string())
-        })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| McpError::Transport("Failed to get stdout handle".to_string()))?;
 
         self.stdin = Some(Arc::new(Mutex::new(stdin)));
         self.process = Some(Arc::new(Mutex::new(child)));
@@ -178,9 +182,10 @@ impl McpConnection {
 
     /// Send a request and wait for response
     pub async fn send(&self, request: McpRequest) -> McpResult<McpResponse> {
-        let stdin = self.stdin.as_ref().ok_or_else(|| {
-            McpError::Transport("Connection not started".to_string())
-        })?;
+        let stdin = self
+            .stdin
+            .as_ref()
+            .ok_or_else(|| McpError::Transport("Connection not started".to_string()))?;
 
         // Register pending request
         let (tx, rx) = oneshot::channel();
@@ -190,29 +195,27 @@ impl McpConnection {
         }
 
         // Serialize and send
-        let json = serde_json::to_string(&request).map_err(|e| {
-            McpError::Protocol(format!("Failed to serialize request: {}", e))
-        })?;
+        let json = serde_json::to_string(&request)
+            .map_err(|e| McpError::Protocol(format!("Failed to serialize request: {}", e)))?;
 
         debug!(server = %self.name, request = %json, "Sending to MCP server");
 
         {
             let mut stdin = stdin.lock().unwrap_or_else(|e| e.into_inner());
-            writeln!(stdin, "{}", json).map_err(|e| {
-                McpError::Transport(format!("Failed to write to stdin: {}", e))
-            })?;
-            stdin.flush().map_err(|e| {
-                McpError::Transport(format!("Failed to flush stdin: {}", e))
-            })?;
+            writeln!(stdin, "{}", json)
+                .map_err(|e| McpError::Transport(format!("Failed to write to stdin: {}", e)))?;
+            stdin
+                .flush()
+                .map_err(|e| McpError::Transport(format!("Failed to flush stdin: {}", e)))?;
         }
 
         // Wait for response with timeout
-        let response = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            async move {
-                rx.await.map_err(|_| McpError::Transport("Response channel closed".to_string()))
-            }
-        ).await.map_err(|_| McpError::Timeout)??;
+        let response = tokio::time::timeout(std::time::Duration::from_secs(30), async move {
+            rx.await
+                .map_err(|_| McpError::Transport("Response channel closed".to_string()))
+        })
+        .await
+        .map_err(|_| McpError::Timeout)??;
 
         // Check for error
         if let Some(error) = response.error {

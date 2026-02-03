@@ -43,7 +43,10 @@ impl WakeWordDetector {
         }
 
         info!("Wake word detector initialized (using energy-based VAD)");
-        info!("Model path: {} (available for future ONNX integration)", model_path.display());
+        info!(
+            "Model path: {} (available for future ONNX integration)",
+            model_path.display()
+        );
 
         Ok(Self {
             threshold,

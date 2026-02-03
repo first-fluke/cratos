@@ -25,8 +25,8 @@ pub use error::{Error, Result};
 pub use registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolRegistry, ToolResult};
 pub use runner::{ExecutionOptions, ExecutionResult, RunnerConfig, ToolRunner};
 pub use sandbox::{
-    DockerSandbox, Mount, NetworkMode, ResourceLimits, SandboxConfig, SandboxOutput,
-    SandboxPolicy, ToolSandbox,
+    DockerSandbox, Mount, NetworkMode, ResourceLimits, SandboxConfig, SandboxOutput, SandboxPolicy,
+    ToolSandbox,
 };
 
 // Re-export MCP types

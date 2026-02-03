@@ -80,10 +80,7 @@ impl AudioOutput {
     /// Check if currently playing
     pub async fn is_playing(&self) -> bool {
         let sink_guard = self.sink.lock().await;
-        sink_guard
-            .as_ref()
-            .map(|s| !s.empty())
-            .unwrap_or(false)
+        sink_guard.as_ref().map(|s| !s.empty()).unwrap_or(false)
     }
 
     /// Play a simple beep sound (for wake word detection feedback)

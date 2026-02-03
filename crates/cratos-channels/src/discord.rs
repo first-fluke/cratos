@@ -7,8 +7,8 @@ use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingMes
 use cratos_core::{Orchestrator, OrchestratorInput};
 use serde::Deserialize;
 use serenity::all::{
-    ChannelId, Client, Context, CreateMessage, EditMessage, EventHandler, GatewayIntents,
-    Message, MessageId, MessageReference, Ready,
+    ChannelId, Client, Context, CreateMessage, EditMessage, EventHandler, GatewayIntents, Message,
+    MessageId, MessageReference, Ready,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -203,7 +203,8 @@ impl DiscordAdapter {
 
     /// Check if a channel is allowed
     pub fn is_channel_allowed(&self, channel_id: u64) -> bool {
-        self.config.allowed_channels.is_empty() || self.config.allowed_channels.contains(&channel_id)
+        self.config.allowed_channels.is_empty()
+            || self.config.allowed_channels.contains(&channel_id)
     }
 
     /// Get the bot user ID
@@ -445,7 +446,10 @@ impl EventHandler for DiscordHandler {
             .discriminator
             .map(|d| format!("#{}", d))
             .unwrap_or_default();
-        info!("Discord bot connected as {}{}", ready.user.name, discriminator);
+        info!(
+            "Discord bot connected as {}{}",
+            ready.user.name, discriminator
+        );
 
         // Store bot user ID
         self.adapter

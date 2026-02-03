@@ -37,7 +37,8 @@ fn sanitize_api_error(error: &str) -> String {
 
     // For model errors
     if lower.contains("model") && (lower.contains("not found") || lower.contains("pull")) {
-        return "Model not available. Please pull the model first with: ollama pull <model>".to_string();
+        return "Model not available. Please pull the model first with: ollama pull <model>"
+            .to_string();
     }
 
     // For short, generic errors, return as-is

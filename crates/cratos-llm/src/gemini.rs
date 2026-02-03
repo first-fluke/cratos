@@ -33,7 +33,10 @@ fn sanitize_api_error(error: &str) -> String {
     }
 
     // Don't expose rate limit details
-    if lower.contains("rate limit") || lower.contains("quota") || lower.contains("resource_exhausted") {
+    if lower.contains("rate limit")
+        || lower.contains("quota")
+        || lower.contains("resource_exhausted")
+    {
         return "API rate limit exceeded. Please try again later.".to_string();
     }
 

@@ -393,8 +393,8 @@ impl CanvasEventRecorder {
             .sequence_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        let event = CanvasEvent::new(self.session_id, seq, event_type, &self.user_id)
-            .with_payload(payload);
+        let event =
+            CanvasEvent::new(self.session_id, seq, event_type, &self.user_id).with_payload(payload);
 
         let mut events = self.events.write().await;
         events.push(event);
@@ -438,7 +438,12 @@ impl CanvasEventRecorder {
     }
 
     /// Record a block added event
-    pub async fn record_block_added(&self, block: &CanvasBlock, index: usize, source: UpdateSource) {
+    pub async fn record_block_added(
+        &self,
+        block: &CanvasBlock,
+        index: usize,
+        source: UpdateSource,
+    ) {
         self.record(
             CanvasEventType::BlockAdded,
             serde_json::to_value(BlockAddedPayload {
@@ -712,12 +717,7 @@ mod tests {
 
     #[test]
     fn test_canvas_timeline_entry_from_event() {
-        let event = CanvasEvent::new(
-            Uuid::new_v4(),
-            1,
-            CanvasEventType::BlockAdded,
-            "user1",
-        );
+        let event = CanvasEvent::new(Uuid::new_v4(), 1, CanvasEventType::BlockAdded, "user1");
 
         let entry = CanvasTimelineEntry::from(&event);
         assert_eq!(entry.event_id, event.id);

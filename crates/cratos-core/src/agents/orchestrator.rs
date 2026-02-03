@@ -20,9 +20,8 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 /// Pre-compiled regex for @mention parsing (e.g., "@backend do something")
-static MENTION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"@(\w+)\s+").expect("MENTION_REGEX is a compile-time constant")
-});
+static MENTION_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"@(\w+)\s+").expect("MENTION_REGEX is a compile-time constant"));
 
 use super::cli_registry::{CliError, CliRegistry};
 use super::config::AgentConfig;
@@ -392,7 +391,10 @@ impl AgentOrchestrator {
 
         // Get CLI provider
         let provider = self.cli_registry.get(&agent.cli.provider).ok_or_else(|| {
-            OrchestratorError::Configuration(format!("CLI provider '{}' not found", agent.cli.provider))
+            OrchestratorError::Configuration(format!(
+                "CLI provider '{}' not found",
+                agent.cli.provider
+            ))
         })?;
 
         // Determine workspace
@@ -445,7 +447,10 @@ impl AgentOrchestrator {
         {
             let mut tasks = self.active_tasks.write().await;
             if response.success {
-                tasks.insert(task.agent_id.clone(), TaskStatus::Completed(response.clone()));
+                tasks.insert(
+                    task.agent_id.clone(),
+                    TaskStatus::Completed(response.clone()),
+                );
             } else {
                 tasks.insert(
                     task.agent_id.clone(),

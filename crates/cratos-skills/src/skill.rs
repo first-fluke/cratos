@@ -486,8 +486,7 @@ impl Skill {
 
         // Update average duration
         if let Some(avg) = self.metadata.avg_duration_ms {
-            self.metadata.avg_duration_ms =
-                Some((avg * count + duration_ms) / (count + 1));
+            self.metadata.avg_duration_ms = Some((avg * count + duration_ms) / (count + 1));
         } else {
             self.metadata.avg_duration_ms = Some(duration_ms);
         }

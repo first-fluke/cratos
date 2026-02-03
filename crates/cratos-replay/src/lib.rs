@@ -28,6 +28,6 @@ pub use viewer::{
 // Re-export search types when feature is enabled
 #[cfg(feature = "search")]
 pub use search::{
-    create_execution_index, ExecutionSearcher, ExecutionSearchResult, SearchEmbedder,
+    create_execution_index, ExecutionSearchResult, ExecutionSearcher, SearchEmbedder,
     SearcherConfig,
 };

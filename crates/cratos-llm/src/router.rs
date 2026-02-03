@@ -1143,10 +1143,10 @@ impl ModelRoutingConfig {
     ) -> f64 {
         // Pricing per 1M tokens (approximate)
         let simple_price = match self.simple.provider.as_str() {
-            "groq" => 0.0,      // FREE
+            "groq" => 0.0, // FREE
             "deepseek" => 0.14,
-            "novita" => 0.0,    // FREE tier
-            "openai" => 0.15,   // gpt-4o-mini
+            "novita" => 0.0,     // FREE tier
+            "openai" => 0.15,    // gpt-4o-mini
             "anthropic" => 0.25, // haiku
             _ => 0.10,
         };
@@ -1155,7 +1155,7 @@ impl ModelRoutingConfig {
             "groq" => 0.0,
             "deepseek" => 0.14,
             "novita" => 0.0,
-            "openai" => 2.50,   // gpt-4o
+            "openai" => 2.50,    // gpt-4o
             "anthropic" => 3.00, // sonnet
             _ => 1.00,
         };
@@ -1163,7 +1163,7 @@ impl ModelRoutingConfig {
         let complex_price = match self.complex.provider.as_str() {
             "groq" => 0.0,
             "deepseek" => 0.14,
-            "openai" => 10.00,  // gpt-4-turbo
+            "openai" => 10.00,    // gpt-4-turbo
             "anthropic" => 15.00, // opus
             _ => 5.00,
         };
@@ -1321,18 +1321,30 @@ mod tests {
     #[test]
     fn test_task_type_default_token_budget() {
         // Fast tier tasks should have small budgets
-        assert_eq!(TaskType::Classification.default_token_budget().max_tokens, 200);
+        assert_eq!(
+            TaskType::Classification.default_token_budget().max_tokens,
+            200
+        );
         assert_eq!(TaskType::Extraction.default_token_budget().max_tokens, 500);
-        assert_eq!(TaskType::Summarization.default_token_budget().max_tokens, 1000);
+        assert_eq!(
+            TaskType::Summarization.default_token_budget().max_tokens,
+            1000
+        );
         assert_eq!(TaskType::Translation.default_token_budget().max_tokens, 800);
 
         // Standard tier
-        assert_eq!(TaskType::Conversation.default_token_budget().max_tokens, 2000);
+        assert_eq!(
+            TaskType::Conversation.default_token_budget().max_tokens,
+            2000
+        );
 
         // Premium tier - larger budgets
         assert_eq!(TaskType::Planning.default_token_budget().max_tokens, 3000);
         assert_eq!(TaskType::CodeReview.default_token_budget().max_tokens, 3000);
-        assert_eq!(TaskType::CodeGeneration.default_token_budget().max_tokens, 4096);
+        assert_eq!(
+            TaskType::CodeGeneration.default_token_budget().max_tokens,
+            4096
+        );
     }
 
     #[test]
@@ -1344,10 +1356,9 @@ mod tests {
         assert_eq!(budget.max_tokens, 200);
 
         // With custom override
-        rules.task_token_budgets.insert(
-            TaskType::Classification,
-            TokenBudget::new(500, 0.5),
-        );
+        rules
+            .task_token_budgets
+            .insert(TaskType::Classification, TokenBudget::new(500, 0.5));
         let budget = rules.get_token_budget(TaskType::Classification);
         assert_eq!(budget.max_tokens, 500);
         assert_eq!(budget.temperature, 0.5);
@@ -1437,7 +1448,10 @@ mod tests {
         let total = counter.count_conversation_tokens(&messages);
 
         // Should be sum of messages + overhead
-        let sum: usize = messages.iter().map(|m| counter.count_message_tokens(m)).sum();
+        let sum: usize = messages
+            .iter()
+            .map(|m| counter.count_message_tokens(m))
+            .sum();
         assert!(total >= sum);
     }
 

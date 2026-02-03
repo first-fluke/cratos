@@ -149,9 +149,9 @@ impl BrowserTool {
         self.ensure_connected().await?;
 
         let client_guard = self.mcp_client.read().await;
-        let client = client_guard.as_ref().ok_or_else(|| {
-            Error::Execution("Browser MCP client not initialized".to_string())
-        })?;
+        let client = client_guard
+            .as_ref()
+            .ok_or_else(|| Error::Execution("Browser MCP client not initialized".to_string()))?;
 
         let server_name = self.config.default_engine.server_name();
         let tool_name = action.mcp_tool_name();
@@ -237,17 +237,24 @@ impl BrowserTool {
                 let selector = input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'selector' for click".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'selector' for click".to_string())
+                    })?;
                 Ok(BrowserAction::Click {
                     selector: selector.to_string(),
-                    button: input.get("button").and_then(|v| v.as_str()).map(String::from),
+                    button: input
+                        .get("button")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                 })
             }
             "type" => {
                 let selector = input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'selector' for type".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'selector' for type".to_string())
+                    })?;
                 let text = input
                     .get("text")
                     .and_then(|v| v.as_str())
@@ -262,7 +269,9 @@ impl BrowserTool {
                 let selector = input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'selector' for fill".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'selector' for fill".to_string())
+                    })?;
                 let value = input
                     .get("value")
                     .and_then(|v| v.as_str())
@@ -274,14 +283,22 @@ impl BrowserTool {
             }
             "screenshot" => Ok(BrowserAction::Screenshot {
                 path: input.get("path").and_then(|v| v.as_str()).map(String::from),
-                full_page: input.get("full_page").and_then(|v| v.as_bool()).unwrap_or(false),
-                selector: input.get("selector").and_then(|v| v.as_str()).map(String::from),
+                full_page: input
+                    .get("full_page")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                selector: input
+                    .get("selector")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
             }),
             "get_text" => {
                 let selector = input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'selector' for get_text".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'selector' for get_text".to_string())
+                    })?;
                 Ok(BrowserAction::GetText {
                     selector: selector.to_string(),
                 })
@@ -290,7 +307,9 @@ impl BrowserTool {
                 let selector = input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'selector' for get_html".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'selector' for get_html".to_string())
+                    })?;
                 Ok(BrowserAction::GetHtml {
                     selector: selector.to_string(),
                     outer: input.get("outer").and_then(|v| v.as_bool()).unwrap_or(true),
@@ -300,11 +319,16 @@ impl BrowserTool {
                 let selector = input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'selector' for get_attribute".to_string()))?;
-                let attribute = input
-                    .get("attribute")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'attribute' for get_attribute".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'selector' for get_attribute".to_string())
+                    })?;
+                let attribute =
+                    input
+                        .get("attribute")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| {
+                            Error::InvalidInput("Missing 'attribute' for get_attribute".to_string())
+                        })?;
                 Ok(BrowserAction::GetAttribute {
                     selector: selector.to_string(),
                     attribute: attribute.to_string(),
@@ -314,21 +338,34 @@ impl BrowserTool {
                 let selector = input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'selector' for wait_for_selector".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'selector' for wait_for_selector".to_string())
+                    })?;
                 Ok(BrowserAction::WaitForSelector {
                     selector: selector.to_string(),
-                    timeout: input.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30000),
-                    visible: input.get("visible").and_then(|v| v.as_bool()).unwrap_or(true),
+                    timeout: input
+                        .get("timeout")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(30000),
+                    visible: input
+                        .get("visible")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
                 })
             }
             "wait_for_navigation" => Ok(BrowserAction::WaitForNavigation {
-                timeout: input.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30000),
+                timeout: input
+                    .get("timeout")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(30000),
             }),
             "evaluate" => {
                 let script = input
                     .get("script")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'script' for evaluate".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'script' for evaluate".to_string())
+                    })?;
                 Ok(BrowserAction::Evaluate {
                     script: script.to_string(),
                 })
@@ -337,7 +374,9 @@ impl BrowserTool {
                 let selector = input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'selector' for select".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'selector' for select".to_string())
+                    })?;
                 let value = input
                     .get("value")
                     .and_then(|v| v.as_str())
@@ -351,17 +390,24 @@ impl BrowserTool {
                 let selector = input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'selector' for check".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'selector' for check".to_string())
+                    })?;
                 Ok(BrowserAction::Check {
                     selector: selector.to_string(),
-                    checked: input.get("checked").and_then(|v| v.as_bool()).unwrap_or(true),
+                    checked: input
+                        .get("checked")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
                 })
             }
             "hover" => {
                 let selector = input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::InvalidInput("Missing 'selector' for hover".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'selector' for hover".to_string())
+                    })?;
                 Ok(BrowserAction::Hover {
                     selector: selector.to_string(),
                 })
@@ -377,7 +423,10 @@ impl BrowserTool {
                 })
             }
             "scroll" => Ok(BrowserAction::Scroll {
-                selector: input.get("selector").and_then(|v| v.as_str()).map(String::from),
+                selector: input
+                    .get("selector")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 x: input.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
                 y: input.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
             }),
@@ -387,7 +436,10 @@ impl BrowserTool {
             "go_forward" => Ok(BrowserAction::GoForward),
             "reload" => Ok(BrowserAction::Reload),
             "close" => Ok(BrowserAction::Close),
-            _ => Err(Error::InvalidInput(format!("Unknown action: {}", action_str))),
+            _ => Err(Error::InvalidInput(format!(
+                "Unknown action: {}",
+                action_str
+            ))),
         }
     }
 }

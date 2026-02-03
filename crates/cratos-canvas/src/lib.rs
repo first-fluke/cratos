@@ -70,8 +70,8 @@ pub use document::{CanvasBlock, CanvasDocument, ChartType, DiagramType};
 pub use error::{Error, Result};
 pub use events::{
     AiCompletedPayload, AiErrorPayload, AiRequestStartedPayload, BlockAddedPayload,
-    BlockDeletedPayload, BlockMovedPayload, BlockUpdatedPayload, CanvasEvent,
-    CanvasEventRecorder, CanvasEventType, CanvasTimelineEntry,
+    BlockDeletedPayload, BlockMovedPayload, BlockUpdatedPayload, CanvasEvent, CanvasEventRecorder,
+    CanvasEventType, CanvasTimelineEntry,
 };
 pub use protocol::{ClientMessage, ConnectionState, ServerMessage, UpdateSource};
 pub use renderer::{ContentRenderer, RenderedBlock};

@@ -39,7 +39,8 @@ static BLOCKED_HEADERS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 
 /// Validate a URL for security
 fn validate_url(url_str: &str) -> Result<Url> {
-    let url = Url::parse(url_str).map_err(|e| Error::InvalidInput(format!("Invalid URL: {}", e)))?;
+    let url =
+        Url::parse(url_str).map_err(|e| Error::InvalidInput(format!("Invalid URL: {}", e)))?;
 
     // SECURITY: Only allow http/https schemes
     match url.scheme() {
@@ -116,9 +117,9 @@ fn is_header_blocked(header_name: &str) -> bool {
 /// SECURITY: Resolve hostname and validate IP addresses just before making the request
 /// This prevents DNS rebinding attacks where DNS changes between validation and request
 fn validate_resolved_ips(url: &Url) -> Result<()> {
-    let host = url.host_str().ok_or_else(|| {
-        Error::InvalidInput("URL has no host".to_string())
-    })?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| Error::InvalidInput("URL has no host".to_string()))?;
 
     // Skip validation for IP addresses (already validated in validate_url)
     if host.parse::<IpAddr>().is_ok() {

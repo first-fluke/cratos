@@ -244,7 +244,11 @@ impl CliProvider for ApiCliProvider {
         Ok(format!(
             "[API Provider: {}] Would execute: {}{}",
             self.provider,
-            if persona.is_empty() { "" } else { "[with persona] " },
+            if persona.is_empty() {
+                ""
+            } else {
+                "[with persona] "
+            },
             &prompt[..prompt.len().min(100)]
         ))
     }
@@ -286,7 +290,11 @@ impl CliRegistry {
         // Register API-based providers
         registry.register(Box::new(ApiCliProvider::new("groq", "groq", None)));
         registry.register(Box::new(ApiCliProvider::new("deepseek", "deepseek", None)));
-        registry.register(Box::new(ApiCliProvider::new("anthropic", "anthropic", None)));
+        registry.register(Box::new(ApiCliProvider::new(
+            "anthropic",
+            "anthropic",
+            None,
+        )));
         registry.register(Box::new(ApiCliProvider::new("openai", "openai", None)));
 
         registry

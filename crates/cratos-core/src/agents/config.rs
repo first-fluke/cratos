@@ -141,7 +141,11 @@ pub struct AgentRouting {
 
 impl AgentConfig {
     /// Create a new agent config with basic settings
-    pub fn new(id: impl Into<String>, name: impl Into<String>, description: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),

@@ -71,7 +71,10 @@ impl SessionStore {
     }
 
     /// Load a session from the database
-    pub async fn load_session(&self, session_id: Uuid) -> Result<Option<CanvasSession>, sqlx::Error> {
+    pub async fn load_session(
+        &self,
+        session_id: Uuid,
+    ) -> Result<Option<CanvasSession>, sqlx::Error> {
         let row = sqlx::query(
             r#"
             SELECT id, user_id, document_json, execution_id, created_at, last_accessed_at, metadata_json
@@ -93,8 +96,8 @@ impl SessionStore {
                 let last_accessed_at: String = row.get("last_accessed_at");
                 let metadata_json: String = row.get("metadata_json");
 
-                let document: CanvasDocument =
-                    serde_json::from_str(&document_json).unwrap_or_else(|_| CanvasDocument::new("Error"));
+                let document: CanvasDocument = serde_json::from_str(&document_json)
+                    .unwrap_or_else(|_| CanvasDocument::new("Error"));
                 let metadata: serde_json::Value =
                     serde_json::from_str(&metadata_json).unwrap_or_default();
 
@@ -117,7 +120,10 @@ impl SessionStore {
     }
 
     /// List sessions for a user
-    pub async fn list_user_sessions(&self, user_id: &str) -> Result<Vec<SessionSummary>, sqlx::Error> {
+    pub async fn list_user_sessions(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<SessionSummary>, sqlx::Error> {
         let rows = sqlx::query(
             r#"
             SELECT id, user_id, created_at, last_accessed_at,

@@ -219,7 +219,11 @@ impl BrowserAction {
                 }
                 args
             }
-            Self::Type { selector, text, delay } => {
+            Self::Type {
+                selector,
+                text,
+                delay,
+            } => {
                 let mut args = serde_json::json!({
                     "selector": selector,
                     "text": text
@@ -235,7 +239,11 @@ impl BrowserAction {
                     "value": value
                 })
             }
-            Self::Screenshot { path, full_page, selector } => {
+            Self::Screenshot {
+                path,
+                full_page,
+                selector,
+            } => {
                 let mut args = serde_json::json!({
                     "fullPage": full_page
                 });
@@ -258,13 +266,20 @@ impl BrowserAction {
                     "outer": outer
                 })
             }
-            Self::GetAttribute { selector, attribute } => {
+            Self::GetAttribute {
+                selector,
+                attribute,
+            } => {
                 serde_json::json!({
                     "selector": selector,
                     "attribute": attribute
                 })
             }
-            Self::WaitForSelector { selector, timeout, visible } => {
+            Self::WaitForSelector {
+                selector,
+                timeout,
+                visible,
+            } => {
                 serde_json::json!({
                     "selector": selector,
                     "timeout": timeout,
@@ -314,7 +329,12 @@ impl BrowserAction {
                 }
                 args
             }
-            Self::GetUrl | Self::GetTitle | Self::GoBack | Self::GoForward | Self::Reload | Self::Close => {
+            Self::GetUrl
+            | Self::GetTitle
+            | Self::GoBack
+            | Self::GoForward
+            | Self::Reload
+            | Self::Close => {
                 serde_json::json!({})
             }
         }

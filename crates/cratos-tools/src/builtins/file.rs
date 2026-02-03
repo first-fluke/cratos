@@ -96,10 +96,7 @@ fn validate_path(path: &str) -> Result<PathBuf> {
     let canonical = if path_buf.exists() {
         path_buf.canonicalize().map_err(|e| {
             warn!(path = %path, error = %e, "Failed to canonicalize path");
-            Error::PermissionDenied(format!(
-                "Cannot resolve path '{}': {}",
-                path, e
-            ))
+            Error::PermissionDenied(format!("Cannot resolve path '{}': {}", path, e))
         })?
     } else {
         // For new files, canonicalize the parent directory
@@ -401,7 +398,6 @@ impl Tool for FileWriteTool {
 
         debug!(path = %path, append = %append, "Writing file");
 
-
         // Create parent directories if requested
         if create_dirs {
             if let Some(parent) = file_path.parent() {
@@ -617,11 +613,15 @@ mod tests {
         assert!(content_appears_sensitive("password=secret123"));
         assert!(content_appears_sensitive("Bearer eyJhbGciOiJIUzI1NiJ9"));
         assert!(content_appears_sensitive("-----BEGIN RSA PRIVATE KEY-----"));
-        assert!(content_appears_sensitive("aws_secret_access_key=AKIAIOSFODNN7EXAMPLE"));
+        assert!(content_appears_sensitive(
+            "aws_secret_access_key=AKIAIOSFODNN7EXAMPLE"
+        ));
 
         // Normal content should pass
         assert!(!content_appears_sensitive("Hello, world!"));
-        assert!(!content_appears_sensitive("fn main() { println!(\"Hello\"); }"));
+        assert!(!content_appears_sensitive(
+            "fn main() { println!(\"Hello\"); }"
+        ));
         assert!(!content_appears_sensitive("# Configuration\nport = 8080"));
     }
 

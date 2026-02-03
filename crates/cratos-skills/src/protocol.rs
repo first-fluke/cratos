@@ -253,7 +253,10 @@ impl<E: ToolExecutor + Send + Sync + 'static> UnifiedTool for SkillWrapper<E> {
     }
 
     fn input_schema(&self) -> &Value {
-        self.skill.input_schema.as_ref().unwrap_or(&self.default_schema)
+        self.skill
+            .input_schema
+            .as_ref()
+            .unwrap_or(&self.default_schema)
     }
 
     fn source(&self) -> ToolSource {
@@ -263,9 +266,7 @@ impl<E: ToolExecutor + Send + Sync + 'static> UnifiedTool for SkillWrapper<E> {
     async fn execute(&self, input: Value) -> UnifiedResult<UnifiedOutput> {
         // Convert input to variables map
         let variables: HashMap<String, Value> = if let Some(obj) = input.as_object() {
-            obj.iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect()
+            obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
         } else {
             HashMap::new()
         };
@@ -282,9 +283,7 @@ impl<E: ToolExecutor + Send + Sync + 'static> UnifiedTool for SkillWrapper<E> {
                 .join("\n");
             Ok(UnifiedOutput::success(content))
         } else {
-            let error = result
-                .error
-                .unwrap_or_else(|| "Unknown error".to_string());
+            let error = result.error.unwrap_or_else(|| "Unknown error".to_string());
             Ok(UnifiedOutput::failure(error))
         }
     }

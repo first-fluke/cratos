@@ -159,9 +159,9 @@ impl Default for ExecutorConfig {
             max_retries: 3,
             dry_run: false,
             continue_on_failure: false,
-            step_timeout_ms: 60_000,          // 1 minute
+            step_timeout_ms: 60_000,            // 1 minute
             max_variable_value_length: 100_000, // 100KB max per variable
-            max_steps_per_skill: 50,           // Max 50 steps per skill
+            max_steps_per_skill: 50,            // Max 50 steps per skill
         }
     }
 }
@@ -383,7 +383,11 @@ impl<T: ToolExecutor> SkillExecutor<T> {
                 });
             }
 
-            match self.tool_executor.execute_tool(&step.tool_name, input.clone()).await {
+            match self
+                .tool_executor
+                .execute_tool(&step.tool_name, input.clone())
+                .await
+            {
                 Ok(output) => {
                     return Ok(StepResult {
                         step: step.order,
@@ -417,10 +421,7 @@ impl<T: ToolExecutor> SkillExecutor<T> {
     }
 
     /// Interpolate variables in a JSON value using {{variable}} syntax
-    fn interpolate_variables(
-        template: &Value,
-        context: &HashMap<String, Value>,
-    ) -> Result<Value> {
+    fn interpolate_variables(template: &Value, context: &HashMap<String, Value>) -> Result<Value> {
         match template {
             Value::String(s) => {
                 // Replace {{variable}} patterns
@@ -539,9 +540,7 @@ mod tests {
             Ok(json!({"content": format!("content of {}", path)}))
         });
 
-        executor.add_tool("transform", |input| {
-            Ok(json!({"transformed": input}))
-        });
+        executor.add_tool("transform", |input| Ok(json!({"transformed": input})));
 
         executor
     }
@@ -600,7 +599,8 @@ mod tests {
         context.insert("item1".to_string(), json!("a"));
         context.insert("item2".to_string(), json!("b"));
 
-        let result = SkillExecutor::<MockToolExecutor>::interpolate_variables(&template, &context).unwrap();
+        let result =
+            SkillExecutor::<MockToolExecutor>::interpolate_variables(&template, &context).unwrap();
 
         assert_eq!(result["path"], "/path/to/file");
         assert_eq!(result["options"]["name"], "test");
@@ -630,13 +630,20 @@ mod tests {
         let mock = MockToolExecutor::new(); // No tools registered
         let executor = SkillExecutor::new(mock);
 
-        let skill = Skill::new("test", "Test", SkillCategory::Custom)
-            .with_step(SkillStep::new(1, "nonexistent", json!({})));
+        let skill = Skill::new("test", "Test", SkillCategory::Custom).with_step(SkillStep::new(
+            1,
+            "nonexistent",
+            json!({}),
+        ));
 
         let result = executor.execute(&skill, &HashMap::new()).await.unwrap();
 
         assert!(!result.success);
-        assert!(result.step_results[0].error.as_ref().unwrap().contains("not found"));
+        assert!(result.step_results[0]
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("not found"));
     }
 
     #[tokio::test]
