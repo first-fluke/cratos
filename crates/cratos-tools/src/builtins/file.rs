@@ -9,6 +9,9 @@ use std::time::Instant;
 use tokio::io::AsyncReadExt;
 use tracing::{debug, warn};
 
+/// Default maximum entries for directory listing
+const DEFAULT_MAX_ENTRIES: u64 = 1000;
+
 /// Sensitive file patterns that require extra caution
 static SENSITIVE_FILE_PATTERNS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     HashSet::from([
@@ -504,7 +507,7 @@ impl Tool for FileListTool {
         let max_entries = input
             .get("max_entries")
             .and_then(|v| v.as_u64())
-            .unwrap_or(1000) as usize;
+            .unwrap_or(DEFAULT_MAX_ENTRIES) as usize;
 
         debug!(path = %path, "Listing directory");
         let mut entries = Vec::new();

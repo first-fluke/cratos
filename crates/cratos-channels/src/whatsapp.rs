@@ -23,6 +23,12 @@ use tracing::{debug, error, info, instrument, warn};
 /// Maximum length of text to log
 const MAX_LOG_TEXT_LENGTH: usize = 50;
 
+/// Default Baileys bridge server URL
+const DEFAULT_BRIDGE_URL: &str = "http://localhost:3001";
+
+/// Default request timeout in seconds
+const DEFAULT_TIMEOUT_SECS: u64 = 30;
+
 /// Sensitive patterns to mask
 const SENSITIVE_PATTERNS: &[&str] = &[
     "password", "secret", "token", "api_key", "bearer", "credential", "private",
@@ -58,11 +64,11 @@ pub struct WhatsAppConfig {
 }
 
 fn default_bridge_url() -> String {
-    "http://localhost:3001".to_string()
+    DEFAULT_BRIDGE_URL.to_string()
 }
 
 fn default_timeout() -> u64 {
-    30
+    DEFAULT_TIMEOUT_SECS
 }
 
 impl Default for WhatsAppConfig {

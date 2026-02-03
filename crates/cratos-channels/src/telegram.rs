@@ -22,6 +22,9 @@ use tracing::{debug, error, info, instrument};
 /// Maximum length of text to log (to prevent sensitive data exposure)
 const MAX_LOG_TEXT_LENGTH: usize = 50;
 
+/// Maximum length of error message to show to users (longer = likely internal)
+const MAX_SAFE_ERROR_LENGTH: usize = 100;
+
 /// Patterns that indicate potentially sensitive content
 const SENSITIVE_PATTERNS: &[&str] = &[
     "password",
@@ -84,7 +87,7 @@ fn sanitize_error_for_user(error: &str) -> String {
     }
 
     // For other errors, give a generic message
-    if error.len() > 100 || error.contains('/') || error.contains("at ") {
+    if error.len() > MAX_SAFE_ERROR_LENGTH || error.contains('/') || error.contains("at ") {
         return "An internal error occurred. Please try again.".to_string();
     }
 

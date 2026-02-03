@@ -8,6 +8,21 @@ use std::collections::HashMap;
 use tracing::{debug, instrument, warn};
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/// Base likelihood percentage for cause ranking
+const BASE_LIKELIHOOD: usize = 100;
+/// Decrease in likelihood per position in the cause list
+const LIKELIHOOD_DECREASE_PER_POSITION: usize = 15;
+/// Maximum decrease cap for likelihood
+const MAX_LIKELIHOOD_DECREASE: usize = 60;
+/// Boost to likelihood when error contains related keyword
+const KEYWORD_MATCH_BOOST: usize = 15;
+/// Maximum likelihood percentage cap
+const MAX_LIKELIHOOD: usize = 95;
+
+// ============================================================================
 // Failure Types
 // ============================================================================
 
@@ -643,18 +658,19 @@ impl ToolDoctor {
 
         for (i, cause) in causes.iter().enumerate() {
             // Simple heuristic: first causes are more likely
-            let base_likelihood = 100 - (i * 15).min(60);
+            let base_likelihood =
+                BASE_LIKELIHOOD - (i * LIKELIHOOD_DECREASE_PER_POSITION).min(MAX_LIKELIHOOD_DECREASE);
 
             // Boost if error message contains related keywords
             let boost = if error_lower
                 .contains(cause.to_lowercase().split_whitespace().next().unwrap_or(""))
             {
-                15
+                KEYWORD_MATCH_BOOST
             } else {
                 0
             };
 
-            let likelihood = (base_likelihood + boost).min(95) as u8;
+            let likelihood = (base_likelihood + boost).min(MAX_LIKELIHOOD) as u8;
 
             probable.push(ProbableCause {
                 description: (*cause).to_string(),
