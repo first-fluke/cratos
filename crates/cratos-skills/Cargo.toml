@@ -10,6 +10,7 @@ authors.workspace = true
 [dependencies]
 # Internal crates
 cratos-replay = { path = "../cratos-replay" }
+cratos-tools = { path = "../cratos-tools" }
 
 # Async runtime
 tokio.workspace = true

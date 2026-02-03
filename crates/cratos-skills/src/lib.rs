@@ -109,6 +109,7 @@ pub mod analyzer;
 pub mod error;
 pub mod executor;
 pub mod generator;
+pub mod protocol;
 pub mod registry;
 pub mod router;
 #[cfg(feature = "semantic")]
@@ -128,6 +129,12 @@ pub use skill::{
     SkillTrigger,
 };
 pub use store::SkillStore;
+
+// Re-export unified protocol types
+pub use protocol::{
+    McpToolWrapper, SkillWrapper, ToolSource, UnifiedError, UnifiedOutput, UnifiedRegistry,
+    UnifiedResult, UnifiedTool,
+};
 
 // Re-export semantic router when feature is enabled
 #[cfg(feature = "semantic")]
