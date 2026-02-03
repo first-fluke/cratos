@@ -125,7 +125,7 @@ static BLOCKED_PATH_PATTERNS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
 fn is_command_blocked(command: &str) -> bool {
     let base_command = command
         .split('/')
-        .last()
+        .next_back()
         .unwrap_or(command)
         .split_whitespace()
         .next()
@@ -141,12 +141,7 @@ fn is_command_blocked(command: &str) -> bool {
 /// - "ls > /etc/passwd" (redirection attack)
 /// - "echo $(cat /etc/passwd)" (command substitution)
 fn contains_shell_metacharacters(s: &str) -> Option<char> {
-    for c in s.chars() {
-        if SHELL_METACHARACTERS.contains(&c) {
-            return Some(c);
-        }
-    }
-    None
+    s.chars().find(|&c| SHELL_METACHARACTERS.contains(&c))
 }
 
 /// Check if a path is in a dangerous location
@@ -225,7 +220,7 @@ impl Tool for ExecTool {
             warn!(command = %command, "Blocked dangerous command attempt");
             return Err(Error::PermissionDenied(format!(
                 "Command '{}' is blocked for security reasons",
-                command.split('/').last().unwrap_or(command)
+                command.split('/').next_back().unwrap_or(command)
             )));
         }
 

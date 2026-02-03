@@ -13,6 +13,7 @@ cratos-tools.workspace = true
 cratos-replay.workspace = true
 
 tokio.workspace = true
+sqlx.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
@@ -22,6 +23,8 @@ anyhow.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
 redis.workspace = true
+regex.workspace = true
+futures.workspace = true
 
 # Credential security
 # keyring = "3.0"     # OS keychain (enable when needed)
@@ -34,6 +37,11 @@ sha2 = "0.10"       # Key derivation from master password
 dirs = "5.0"        # Platform-specific directories for storing encrypted file
 hostname = "0.4"    # Machine-specific key derivation fallback
 
+[features]
+default = []
+redis-tests = []  # Enable Redis integration tests (requires running Redis)
+
 [dev-dependencies]
 mockall.workspace = true
 tokio-test.workspace = true
+tempfile = "3.10"

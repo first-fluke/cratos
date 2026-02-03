@@ -374,7 +374,7 @@ impl CredentialStore {
                 cache
                     .get(&key)
                     .map(|c| SecureString::new(c.value()))
-                    .ok_or_else(|| CredentialError::NotFound(key))
+                    .ok_or(CredentialError::NotFound(key))
             }
             CredentialBackend::Keychain => {
                 self.get_keychain(&full_service, account)

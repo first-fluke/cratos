@@ -261,7 +261,7 @@ impl SessionContext {
 
         // Iterate from highest importance (end) to lowest (start)
         for (idx, msg) in other_messages.into_iter().rev() {
-            let msg_tokens = count_message_tokens(&[msg.clone()]);
+            let msg_tokens = count_message_tokens(std::slice::from_ref(&msg));
 
             if kept_tokens + msg_tokens <= available_tokens {
                 kept_tokens += msg_tokens;
@@ -312,7 +312,7 @@ impl SessionContext {
     /// Check if adding a message would exceed token budget
     #[must_use]
     pub fn would_exceed_budget(&self, message: &Message) -> bool {
-        let msg_tokens = count_message_tokens(&[message.clone()]);
+        let msg_tokens = count_message_tokens(std::slice::from_ref(message));
         self.token_count() + msg_tokens > self.max_tokens
     }
 

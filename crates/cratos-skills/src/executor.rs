@@ -276,7 +276,7 @@ impl<T: ToolExecutor> SkillExecutor<T> {
         let start = Instant::now();
 
         // Interpolate variables in the input template
-        let input = self.interpolate_variables(&step.input_template, context)?;
+        let input = Self::interpolate_variables(&step.input_template, context)?;
 
         debug!(
             "Executing step {}: {} with input {:?}",
@@ -351,7 +351,6 @@ impl<T: ToolExecutor> SkillExecutor<T> {
 
     /// Interpolate variables in a JSON value using {{variable}} syntax
     fn interpolate_variables(
-        &self,
         template: &Value,
         context: &HashMap<String, Value>,
     ) -> Result<Value> {
@@ -379,14 +378,14 @@ impl<T: ToolExecutor> SkillExecutor<T> {
             Value::Object(obj) => {
                 let mut new_obj = serde_json::Map::new();
                 for (k, v) in obj {
-                    new_obj.insert(k.clone(), self.interpolate_variables(v, context)?);
+                    new_obj.insert(k.clone(), Self::interpolate_variables(v, context)?);
                 }
                 Ok(Value::Object(new_obj))
             }
             Value::Array(arr) => {
                 let new_arr: Vec<Value> = arr
                     .iter()
-                    .map(|v| self.interpolate_variables(v, context))
+                    .map(|v| Self::interpolate_variables(v, context))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Value::Array(new_arr))
             }
@@ -517,9 +516,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_variable_interpolation() {
-        let mock = create_mock_executor();
-        let executor = SkillExecutor::new(mock);
-
         let template = json!({
             "path": "{{file_path}}",
             "options": {
@@ -534,7 +530,7 @@ mod tests {
         context.insert("item1".to_string(), json!("a"));
         context.insert("item2".to_string(), json!("b"));
 
-        let result = executor.interpolate_variables(&template, &context).unwrap();
+        let result = SkillExecutor::<MockToolExecutor>::interpolate_variables(&template, &context).unwrap();
 
         assert_eq!(result["path"], "/path/to/file");
         assert_eq!(result["options"]["name"], "test");

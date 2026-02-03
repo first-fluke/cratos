@@ -17,9 +17,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument};
 
-/// WhatsApp Business API base URL
-const API_BASE_URL: &str = "https://graph.facebook.com/v18.0";
-
 /// Maximum length of text to log
 const MAX_LOG_TEXT_LENGTH: usize = 50;
 
@@ -141,6 +138,7 @@ impl WhatsAppBusinessConfig {
 
 /// WhatsApp Business API response
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // All fields needed for JSON deserialization
 struct ApiResponse {
     messaging_product: Option<String>,
     contacts: Option<Vec<Contact>>,
@@ -149,6 +147,7 @@ struct ApiResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // All fields needed for JSON deserialization
 struct Contact {
     input: String,
     wa_id: String,

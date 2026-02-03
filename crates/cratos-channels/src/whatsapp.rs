@@ -116,6 +116,7 @@ impl WhatsAppConfig {
 
 /// Connection status response
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // All fields needed for JSON deserialization
 struct StatusResponse {
     status: String,
     qr: Option<String>,
