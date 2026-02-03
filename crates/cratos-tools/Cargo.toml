@@ -22,6 +22,13 @@ tracing.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 
+# Security - URL validation and encoding
+url = "2.5"
+urlencoding = "2.1"
+
+# Docker sandbox (bollard for Docker API)
+# bollard = "0.18"  # Enable when Docker sandbox is fully implemented
+
 [dev-dependencies]
 mockall.workspace = true
 tokio-test.workspace = true
