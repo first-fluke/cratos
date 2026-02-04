@@ -31,6 +31,20 @@ use tracing::{debug, error, info, warn};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // ============================================================================
+// Helper Functions (DRY)
+// ============================================================================
+
+/// Handle RwLock poison errors consistently
+fn handle_lock_poison<T>(e: std::sync::PoisonError<T>) -> CredentialError {
+    CredentialError::Backend(format!("Lock poisoned: {}", e))
+}
+
+/// Generate credential key from service and account
+fn credential_key(service: &str, account: &str) -> String {
+    format!("{}:{}", service, account)
+}
+
+// ============================================================================
 // Error Types
 // ============================================================================
 
@@ -334,10 +348,7 @@ impl CredentialStore {
 
         match self.backend {
             CredentialBackend::Memory => {
-                let mut cache = self
-                    .cache
-                    .write()
-                    .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
+                let mut cache = self.cache.write().map_err(handle_lock_poison)?;
                 cache.insert(key, credential);
                 Ok(())
             }
@@ -363,16 +374,13 @@ impl CredentialStore {
     /// Retrieve a credential
     pub fn get(&self, service: &str, account: &str) -> Result<SecureString> {
         let full_service = self.full_service(service);
-        let key = format!("{}:{}", full_service, account);
+        let key = credential_key(&full_service, account);
 
         debug!(service = %full_service, account = %account, "Retrieving credential");
 
         match self.backend {
             CredentialBackend::Memory => {
-                let cache = self
-                    .cache
-                    .read()
-                    .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
+                let cache = self.cache.read().map_err(handle_lock_poison)?;
                 cache
                     .get(&key)
                     .map(|c| SecureString::new(c.value()))
@@ -391,16 +399,13 @@ impl CredentialStore {
     /// Delete a credential
     pub fn delete(&self, service: &str, account: &str) -> Result<()> {
         let full_service = self.full_service(service);
-        let key = format!("{}:{}", full_service, account);
+        let key = credential_key(&full_service, account);
 
         debug!(service = %full_service, account = %account, "Deleting credential");
 
         match self.backend {
             CredentialBackend::Memory => {
-                let mut cache = self
-                    .cache
-                    .write()
-                    .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
+                let mut cache = self.cache.write().map_err(handle_lock_poison)?;
                 cache.remove(&key);
                 Ok(())
             }
@@ -488,10 +493,7 @@ impl CredentialStore {
             .map_err(|e| CredentialError::Backend(format!("Failed to run security: {}", e)))?;
 
         if !output.status.success() {
-            return Err(CredentialError::NotFound(format!(
-                "{}:{}",
-                service, account
-            )));
+            return Err(CredentialError::NotFound(credential_key(service, account)));
         }
 
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -724,15 +726,12 @@ impl CredentialStore {
 
     /// Encrypted file backend - stores credentials with AES-256-GCM encryption
     fn store_encrypted_file(&self, service: &str, account: &str, value: &str) -> Result<()> {
-        let key = format!("{}:{}", service, account);
+        let key = credential_key(service, account);
 
         // Also cache in memory
         let credential = Credential::new(service, account, value);
         {
-            let mut cache = self
-                .cache
-                .write()
-                .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
+            let mut cache = self.cache.write().map_err(handle_lock_poison)?;
             cache.insert(key.clone(), credential);
         }
 
@@ -753,14 +752,11 @@ impl CredentialStore {
     }
 
     fn get_encrypted_file(&self, service: &str, account: &str) -> Result<SecureString> {
-        let key = format!("{}:{}", service, account);
+        let key = credential_key(service, account);
 
         // Try cache first
         {
-            let cache = self
-                .cache
-                .read()
-                .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
+            let cache = self.cache.read().map_err(handle_lock_poison)?;
             if let Some(cred) = cache.get(&key) {
                 return Ok(SecureString::new(cred.value()));
             }
@@ -771,30 +767,21 @@ impl CredentialStore {
         if let Some(cred) = credentials.get(&key) {
             // Update cache
             let credential = Credential::new(&cred.service, &cred.account, &cred.value);
-            let mut cache = self
-                .cache
-                .write()
-                .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
+            let mut cache = self.cache.write().map_err(handle_lock_poison)?;
             cache.insert(key, credential);
 
             Ok(SecureString::new(&cred.value))
         } else {
-            Err(CredentialError::NotFound(format!(
-                "{}:{}",
-                service, account
-            )))
+            Err(CredentialError::NotFound(credential_key(service, account)))
         }
     }
 
     fn delete_encrypted_file(&self, service: &str, account: &str) -> Result<()> {
-        let key = format!("{}:{}", service, account);
+        let key = credential_key(service, account);
 
         // Remove from cache
         {
-            let mut cache = self
-                .cache
-                .write()
-                .map_err(|e| CredentialError::Backend(format!("Lock poisoned: {}", e)))?;
+            let mut cache = self.cache.write().map_err(handle_lock_poison)?;
             cache.remove(&key);
         }
 
