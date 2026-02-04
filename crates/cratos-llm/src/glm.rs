@@ -496,8 +496,8 @@ mod tests {
 
     #[test]
     fn test_available_models() {
-        assert!(MODELS.contains(&"glm-4-9b"));
-        assert!(MODELS.contains(&"glm-z1-9b"));
+        assert!(MODELS.contains(&"glm-4.7"));
+        assert!(MODELS.contains(&"glm-4.7-flash"));
     }
 
     #[test]

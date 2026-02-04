@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn test_available_models() {
         assert!(MODELS.contains(&"kimi-k2-5"));
-        assert!(MODELS.contains(&"kimi-v1.5"));
+        assert!(MODELS.contains(&"kimi-k2"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! OpenAI - async-openai provider
 //!
-//! This module implements the OpenAI LLM provider using async-openai.
+//! This module implements the OpenAI LLM provider using async-openai 0.32+.
 
 use crate::error::{Error, Result};
 use crate::router::{
@@ -10,12 +10,14 @@ use crate::router::{
 use crate::util::mask_api_key;
 use async_openai::{
     config::OpenAIConfig,
-    types::{
-        ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
-        ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestToolMessageArgs,
-        ChatCompletionRequestUserMessageArgs, ChatCompletionTool, ChatCompletionToolArgs,
-        ChatCompletionToolChoiceOption, ChatCompletionToolType, CreateChatCompletionRequestArgs,
-        FunctionObjectArgs,
+    types::chat::{
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
+        ChatCompletionRequestUserMessage, ChatCompletionRequestAssistantMessage,
+        ChatCompletionRequestToolMessage, ChatCompletionTool, ChatCompletionTools, ChatCompletionToolChoiceOption,
+        CreateChatCompletionRequest,
+        FunctionObject, ChatCompletionMessageToolCalls, ChatCompletionRequestUserMessageContent,
+        ChatCompletionRequestToolMessageContent, ChatCompletionRequestAssistantMessageContent,
+        ChatCompletionRequestSystemMessageContent, StopConfiguration, ToolChoiceOptions,
     },
     Client,
 };
@@ -23,15 +25,9 @@ use std::fmt;
 use std::time::Duration;
 use tracing::{debug, instrument};
 
-// ============================================================================
-// Security Utilities
-// ============================================================================
-
-/// Sanitize API error messages to prevent leaking sensitive information
 fn sanitize_api_error(error: &str) -> String {
     let lower = error.to_lowercase();
 
-    // Don't expose authentication details
     if lower.contains("api key")
         || lower.contains("apikey")
         || lower.contains("invalid key")
@@ -41,17 +37,14 @@ fn sanitize_api_error(error: &str) -> String {
         return "API authentication error. Please check your API key configuration.".to_string();
     }
 
-    // Don't expose rate limit details that could be exploited
     if lower.contains("rate limit") || lower.contains("quota") {
         return "API rate limit exceeded. Please try again later.".to_string();
     }
 
-    // Don't expose internal server errors with details
     if lower.contains("internal") || lower.contains("server error") {
         return "API server error. Please try again later.".to_string();
     }
 
-    // For short, generic errors, return as-is
     if error.len() < 100 && !error.contains("sk-") && !error.contains("key") {
         return error.to_string();
     }
@@ -63,30 +56,28 @@ fn sanitize_api_error(error: &str) -> String {
 pub const MODELS: &[&str] = &[
     "gpt-4o",
     "gpt-4o-mini",
-    "gpt-4-turbo",
     "gpt-4",
     "gpt-3.5-turbo",
 ];
 
-/// Default OpenAI model
+/// Default model to use when none is specified
 pub const DEFAULT_MODEL: &str = "gpt-4o";
 
-/// OpenAI provider configuration
+/// Configuration for the OpenAI provider
 #[derive(Clone)]
 pub struct OpenAiConfig {
-    /// API key
+    /// API key for authentication
     pub api_key: String,
-    /// Base URL (optional, for Azure or other endpoints)
+    /// Optional custom base URL (for Azure OpenAI or proxies)
     pub base_url: Option<String>,
-    /// Organization ID (optional)
+    /// Optional organization ID
     pub org_id: Option<String>,
-    /// Default model
+    /// Default model to use for completions
     pub default_model: String,
-    /// Request timeout
+    /// Request timeout duration
     pub timeout: Duration,
 }
 
-// SECURITY: Custom Debug implementation to mask API key
 impl fmt::Debug for OpenAiConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OpenAiConfig")
@@ -100,7 +91,7 @@ impl fmt::Debug for OpenAiConfig {
 }
 
 impl OpenAiConfig {
-    /// Create a new configuration with an API key
+    /// Creates a new configuration with the given API key
     #[must_use]
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
@@ -112,7 +103,10 @@ impl OpenAiConfig {
         }
     }
 
-    /// Create configuration from environment variables
+    /// Creates configuration from environment variables
+    ///
+    /// # Errors
+    /// Returns error if `OPENAI_API_KEY` is not set
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("OPENAI_API_KEY")
             .map_err(|_| Error::NotConfigured("OPENAI_API_KEY not set".to_string()))?;
@@ -131,28 +125,28 @@ impl OpenAiConfig {
         })
     }
 
-    /// Set the base URL
+    /// Sets a custom base URL
     #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = Some(url.into());
         self
     }
 
-    /// Set the organization ID
+    /// Sets the organization ID
     #[must_use]
     pub fn with_org_id(mut self, org_id: impl Into<String>) -> Self {
         self.org_id = Some(org_id.into());
         self
     }
 
-    /// Set the default model
+    /// Sets the default model
     #[must_use]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.default_model = model.into();
         self
     }
 
-    /// Set the timeout
+    /// Sets the request timeout
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -160,14 +154,14 @@ impl OpenAiConfig {
     }
 }
 
-/// OpenAI provider
+/// OpenAI API provider for chat completions
 pub struct OpenAiProvider {
     client: Client<OpenAIConfig>,
     default_model: String,
 }
 
 impl OpenAiProvider {
-    /// Create a new OpenAI provider
+    /// Creates a new provider with the given configuration
     #[must_use]
     pub fn new(config: OpenAiConfig) -> Self {
         let mut openai_config = OpenAIConfig::new().with_api_key(&config.api_key);
@@ -188,71 +182,66 @@ impl OpenAiProvider {
         }
     }
 
-    /// Create from environment variables
+    /// Creates a provider from environment variables
+    ///
+    /// # Errors
+    /// Returns error if `OPENAI_API_KEY` is not set
     pub fn from_env() -> Result<Self> {
         let config = OpenAiConfig::from_env()?;
         Ok(Self::new(config))
     }
 
-    /// Convert our message to OpenAI format
     fn convert_message(msg: &Message) -> Result<ChatCompletionRequestMessage> {
         let message = match msg.role {
-            MessageRole::System => ChatCompletionRequestSystemMessageArgs::default()
-                .content(msg.content.clone())
-                .build()
-                .map_err(|e| Error::InvalidResponse(e.to_string()))?
-                .into(),
-            MessageRole::User => ChatCompletionRequestUserMessageArgs::default()
-                .content(msg.content.clone())
-                .build()
-                .map_err(|e| Error::InvalidResponse(e.to_string()))?
-                .into(),
-            MessageRole::Assistant => ChatCompletionRequestAssistantMessageArgs::default()
-                .content(msg.content.clone())
-                .build()
-                .map_err(|e| Error::InvalidResponse(e.to_string()))?
-                .into(),
+            MessageRole::System => ChatCompletionRequestSystemMessage {
+                content: ChatCompletionRequestSystemMessageContent::Text(msg.content.clone()),
+                name: None,
+            }.into(),
+            MessageRole::User => ChatCompletionRequestUserMessage {
+                content: ChatCompletionRequestUserMessageContent::Text(msg.content.clone()),
+                name: None,
+            }.into(),
+            MessageRole::Assistant => {
+                #[allow(deprecated)]
+                ChatCompletionRequestAssistantMessage {
+                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(msg.content.clone())),
+                    name: None,
+                    tool_calls: None,
+                    function_call: None,
+                    refusal: None,
+                    audio: None,
+                }.into()
+            }
             MessageRole::Tool => {
                 let tool_call_id = msg.tool_call_id.as_ref().ok_or_else(|| {
                     Error::InvalidResponse("Tool message missing tool_call_id".to_string())
                 })?;
-                ChatCompletionRequestToolMessageArgs::default()
-                    .content(msg.content.clone())
-                    .tool_call_id(tool_call_id)
-                    .build()
-                    .map_err(|e| Error::InvalidResponse(e.to_string()))?
-                    .into()
+                ChatCompletionRequestToolMessage {
+                    content: ChatCompletionRequestToolMessageContent::Text(msg.content.clone()),
+                    tool_call_id: tool_call_id.clone(),
+                }.into()
             }
         };
         Ok(message)
     }
 
-    /// Convert tool definition to OpenAI format
-    fn convert_tool(tool: &ToolDefinition) -> Result<ChatCompletionTool> {
-        let function = FunctionObjectArgs::default()
-            .name(&tool.name)
-            .description(&tool.description)
-            .parameters(tool.parameters.clone())
-            .build()
-            .map_err(|e| Error::InvalidResponse(e.to_string()))?;
-
-        ChatCompletionToolArgs::default()
-            .r#type(ChatCompletionToolType::Function)
-            .function(function)
-            .build()
-            .map_err(|e| Error::InvalidResponse(e.to_string()))
+    fn convert_tool(tool: &ToolDefinition) -> ChatCompletionTool {
+        ChatCompletionTool {
+            function: FunctionObject {
+                name: tool.name.clone(),
+                description: Some(tool.description.clone()),
+                parameters: Some(tool.parameters.clone()),
+                strict: None,
+            },
+        }
     }
 
-    /// Convert tool choice to OpenAI format
     fn convert_tool_choice(choice: &ToolChoice) -> ChatCompletionToolChoiceOption {
         match choice {
-            ToolChoice::Auto => ChatCompletionToolChoiceOption::Auto,
-            ToolChoice::None => ChatCompletionToolChoiceOption::None,
-            ToolChoice::Required | ToolChoice::Tool(_) => {
-                // async-openai 0.18 doesn't have Required variant
-                // Use Auto as fallback
-                ChatCompletionToolChoiceOption::Auto
-            }
+            ToolChoice::Auto => ChatCompletionToolChoiceOption::Mode(ToolChoiceOptions::Auto),
+            ToolChoice::None => ChatCompletionToolChoiceOption::Mode(ToolChoiceOptions::None),
+            ToolChoice::Required => ChatCompletionToolChoiceOption::Mode(ToolChoiceOptions::Required),
+            ToolChoice::Tool(_) => ChatCompletionToolChoiceOption::Mode(ToolChoiceOptions::Auto),
         }
     }
 }
@@ -276,7 +265,8 @@ impl LlmProvider for OpenAiProvider {
     }
 
     #[instrument(skip(self, request), fields(model = %request.model))]
-    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse> {
+    async fn complete(&self, request: CompletionRequest,
+    ) -> Result<CompletionResponse> {
         let model = if request.model.is_empty() {
             &self.default_model
         } else {
@@ -289,24 +279,14 @@ impl LlmProvider for OpenAiProvider {
             .map(Self::convert_message)
             .collect::<Result<_>>()?;
 
-        let mut builder = CreateChatCompletionRequestArgs::default();
-        builder.model(model).messages(messages);
-
-        if let Some(max_tokens) = request.max_tokens {
-            builder.max_tokens(max_tokens as u16);
-        }
-
-        if let Some(temperature) = request.temperature {
-            builder.temperature(temperature);
-        }
-
-        if let Some(stop) = &request.stop {
-            builder.stop(stop);
-        }
-
-        let openai_request = builder
-            .build()
-            .map_err(|e| Error::InvalidResponse(e.to_string()))?;
+        let openai_request = CreateChatCompletionRequest {
+            model: model.clone(),
+            messages,
+            max_completion_tokens: request.max_tokens.map(|t| t as u32),
+            temperature: request.temperature,
+            stop: request.stop.map(StopConfiguration::StringArray),
+            ..Default::default()
+        };
 
         debug!("Sending request to OpenAI");
 
@@ -315,7 +295,7 @@ impl LlmProvider for OpenAiProvider {
             .chat()
             .create(openai_request)
             .await
-            .map_err(|e| Error::Api(sanitize_api_error(&e.to_string())))?;
+            .map_err(|e: async_openai::error::OpenAIError| Error::Api(sanitize_api_error(&e.to_string())))?;
 
         let choice = response
             .choices
@@ -356,30 +336,21 @@ impl LlmProvider for OpenAiProvider {
             .map(Self::convert_message)
             .collect::<Result<_>>()?;
 
-        let tools: Vec<ChatCompletionTool> = request
+        let tools: Vec<ChatCompletionTools> = request
             .tools
             .iter()
-            .map(Self::convert_tool)
-            .collect::<Result<_>>()?;
+            .map(|tool| ChatCompletionTools::Function(Self::convert_tool(tool)))
+            .collect();
 
-        let mut builder = CreateChatCompletionRequestArgs::default();
-        builder
-            .model(model)
-            .messages(messages)
-            .tools(tools)
-            .tool_choice(Self::convert_tool_choice(&request.tool_choice));
-
-        if let Some(max_tokens) = request.request.max_tokens {
-            builder.max_tokens(max_tokens as u16);
-        }
-
-        if let Some(temperature) = request.request.temperature {
-            builder.temperature(temperature);
-        }
-
-        let openai_request = builder
-            .build()
-            .map_err(|e| Error::InvalidResponse(e.to_string()))?;
+        let openai_request = CreateChatCompletionRequest {
+            model: model.clone(),
+            messages,
+            tools: Some(tools),
+            tool_choice: Some(Self::convert_tool_choice(&request.tool_choice)),
+            max_completion_tokens: request.request.max_tokens.map(|t| t as u32),
+            temperature: request.request.temperature,
+            ..Default::default()
+        };
 
         debug!("Sending tool request to OpenAI");
 
@@ -388,7 +359,7 @@ impl LlmProvider for OpenAiProvider {
             .chat()
             .create(openai_request)
             .await
-            .map_err(|e| Error::Api(sanitize_api_error(&e.to_string())))?;
+            .map_err(|e: async_openai::error::OpenAIError| Error::Api(sanitize_api_error(&e.to_string())))?;
 
         let choice = response
             .choices
@@ -404,10 +375,15 @@ impl LlmProvider for OpenAiProvider {
             .map(|calls| {
                 calls
                     .iter()
-                    .map(|tc| ToolCall {
-                        id: tc.id.clone(),
-                        name: tc.function.name.clone(),
-                        arguments: tc.function.arguments.clone(),
+                    .filter_map(|tc| {
+                        match tc {
+                            ChatCompletionMessageToolCalls::Function(func_call) => Some(ToolCall {
+                                id: func_call.id.clone(),
+                                name: func_call.function.name.clone(),
+                                arguments: func_call.function.arguments.clone(),
+                            }),
+                            _ => None,
+                        }
                     })
                     .collect()
             })
@@ -451,8 +427,6 @@ mod tests {
         assert!(MODELS.contains(&"gpt-4o-mini"));
     }
 
-    // Security tests
-
     #[test]
     fn test_api_key_masking() {
         let masked = mask_api_key("sk-1234567890abcdefghijklmnop");
@@ -470,17 +444,14 @@ mod tests {
 
     #[test]
     fn test_sanitize_api_error() {
-        // Auth errors should be sanitized
         let sanitized = sanitize_api_error("Invalid API key: sk-1234567890");
         assert!(!sanitized.contains("sk-"));
         assert!(sanitized.contains("authentication"));
 
-        // Rate limit errors should be sanitized
         let sanitized = sanitize_api_error("Rate limit exceeded: 100 requests per minute");
         assert!(!sanitized.contains("100"));
         assert!(sanitized.contains("rate limit"));
 
-        // Short generic errors can pass through
         let sanitized = sanitize_api_error("Model not found");
         assert_eq!(sanitized, "Model not found");
     }
@@ -490,9 +461,7 @@ mod tests {
         let config = OpenAiConfig::new("sk-1234567890abcdefghijklmnop");
         let debug_str = format!("{:?}", config);
 
-        // Should not contain the full API key
         assert!(!debug_str.contains("1234567890abcdefghijkl"));
-        // Should contain masked version
         assert!(debug_str.contains("sk-1...mnop"));
     }
 }

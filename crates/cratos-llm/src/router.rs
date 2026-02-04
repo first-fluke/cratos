@@ -132,7 +132,7 @@ impl ModelTier {
             // OpenAI models
             (ModelTier::Fast, "openai") => "gpt-4o-mini",
             (ModelTier::Standard, "openai") => "gpt-4o",
-            (ModelTier::Premium, "openai") => "gpt-4-turbo",
+            (ModelTier::Premium, "openai") => "gpt-4o",
             // Anthropic models
             (ModelTier::Fast, "anthropic") => "claude-3-5-haiku-20241022",
             (ModelTier::Standard, "anthropic") => "claude-sonnet-4-20250514",
@@ -706,7 +706,7 @@ impl ModelRoutingConfig {
             simple: ModelConfig::new("anthropic", "claude-3-5-haiku-20241022"),
             general: ModelConfig::new("anthropic", "claude-sonnet-4-20250514"),
             complex: ModelConfig::new("anthropic", "claude-opus-4-20250514"),
-            fallback: Some(ModelConfig::new("openai", "gpt-4-turbo")),
+            fallback: Some(ModelConfig::new("openai", "gpt-4o-mini")),
             auto_downgrade: false,
         }
     }
@@ -768,7 +768,7 @@ impl ModelRoutingConfig {
         let complex_price = match self.complex.provider.as_str() {
             "groq" => 0.0,
             "deepseek" => 0.14,
-            "openai" => 10.00,    // gpt-4-turbo
+            "openai" => 2.50,     // gpt-4o
             "anthropic" => 15.00, // opus
             _ => 5.00,
         };
@@ -778,6 +778,45 @@ impl ModelRoutingConfig {
         let complex_cost = (complex_tokens as f64 / 1_000_000.0) * complex_price;
 
         simple_cost + general_cost + complex_cost
+    }
+}
+
+// ============================================================================
+// LlmProvider implementation for LlmRouter
+// ============================================================================
+
+#[async_trait::async_trait]
+impl LlmProvider for LlmRouter {
+    fn name(&self) -> &str {
+        "router"
+    }
+
+    fn supports_tools(&self) -> bool {
+        self.default_provider()
+            .map(|p| p.supports_tools())
+            .unwrap_or(false)
+    }
+
+    fn available_models(&self) -> Vec<String> {
+        self.providers
+            .values()
+            .flat_map(|p| p.available_models())
+            .collect()
+    }
+
+    fn default_model(&self) -> &str {
+        &self.default_provider
+    }
+
+    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse> {
+        LlmRouter::complete(self, request).await
+    }
+
+    async fn complete_with_tools(
+        &self,
+        request: ToolCompletionRequest,
+    ) -> Result<ToolCompletionResponse> {
+        LlmRouter::complete_with_tools(self, request).await
     }
 }
 
@@ -835,7 +874,7 @@ mod tests {
         // OpenAI
         assert_eq!(ModelTier::Fast.default_model("openai"), "gpt-4o-mini");
         assert_eq!(ModelTier::Standard.default_model("openai"), "gpt-4o");
-        assert_eq!(ModelTier::Premium.default_model("openai"), "gpt-4-turbo");
+        assert_eq!(ModelTier::Premium.default_model("openai"), "gpt-4o");
 
         // Anthropic
         assert_eq!(

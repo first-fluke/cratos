@@ -15,7 +15,7 @@ use teloxide::{
     prelude::*,
     types::{
         ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, Message as TelegramMessage,
-        MessageId, ParseMode,
+        MessageId, ParseMode, ReplyParameters,
     },
 };
 use tracing::{debug, error, info, instrument};
@@ -150,7 +150,7 @@ impl TelegramAdapter {
             return None;
         }
 
-        let user = msg.from()?;
+        let user = msg.from.as_ref()?;
         let chat_id = msg.chat.id.0;
         let user_id = user.id.0;
 
@@ -170,7 +170,7 @@ impl TelegramAdapter {
             if self.config.groups_mention_only {
                 let is_reply_to_bot = msg
                     .reply_to_message()
-                    .and_then(|r| r.from())
+                    .and_then(|r| r.from.as_ref())
                     .map(|u| u.username.as_deref() == Some(bot_username))
                     .unwrap_or(false);
 
@@ -209,7 +209,7 @@ impl TelegramAdapter {
                     mime_type: Some("image/jpeg".to_string()),
                     file_size: Some(largest.file.size as u64),
                     url: None,
-                    file_id: Some(largest.file.id.clone()),
+                    file_id: Some(largest.file.id.to_string()),
                 });
             }
         }
@@ -221,7 +221,7 @@ impl TelegramAdapter {
                 mime_type: doc.mime_type.as_ref().map(|m| m.to_string()),
                 file_size: Some(doc.file.size as u64),
                 url: None,
-                file_id: Some(doc.file.id.clone()),
+                file_id: Some(doc.file.id.to_string()),
             });
         }
 
@@ -322,14 +322,14 @@ impl TelegramAdapter {
                 let send_result = bot
                     .send_message(msg.chat.id, &response_text)
                     .parse_mode(ParseMode::MarkdownV2)
-                    .reply_to_message_id(msg.id)
+                    .reply_parameters(ReplyParameters::new(msg.id))
                     .await;
 
                 // Fall back to plain text if markdown fails
                 if send_result.is_err() {
                     let _ = bot
                         .send_message(msg.chat.id, &response_text)
-                        .reply_to_message_id(msg.id)
+                        .reply_parameters(ReplyParameters::new(msg.id))
                         .await;
                 }
             }
@@ -344,7 +344,7 @@ impl TelegramAdapter {
                         msg.chat.id,
                         format!("Sorry, I encountered an error: {}", user_message),
                     )
-                    .reply_to_message_id(msg.id)
+                    .reply_parameters(ReplyParameters::new(msg.id))
                     .await;
             }
         }
@@ -372,7 +372,7 @@ impl ChannelAdapter for TelegramAdapter {
 
         if let Some(reply_to) = &message.reply_to {
             if let Ok(msg_id) = reply_to.parse::<i32>() {
-                request = request.reply_to_message_id(MessageId(msg_id));
+                request = request.reply_parameters(ReplyParameters::new(MessageId(msg_id)));
             }
         }
 

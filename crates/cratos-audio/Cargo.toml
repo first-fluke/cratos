@@ -30,7 +30,7 @@ rodio = { version = "0.19", default-features = false, features = ["wav"] }
 hound = "3.5"
 
 # STT (Whisper API via OpenAI)
-async-openai.workspace = true
+async-openai = { workspace = true, features = ["audio"] }
 
 # Wake Word detection - ONNX support for future Silero VAD integration
 # Currently using energy-based VAD as fallback

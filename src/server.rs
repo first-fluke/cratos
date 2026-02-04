@@ -7,14 +7,15 @@ use axum::{routing::get, Extension, Json, Router};
 use config::{Config, Environment, File};
 use cratos_channels::{TelegramAdapter, TelegramConfig};
 use cratos_core::{
-    metrics_global, shutdown_signal_with_controller, Orchestrator, OrchestratorConfig,
-    PlannerConfig, RedisStore, SessionStore, ShutdownController,
+    metrics_global, shutdown_signal_with_controller, ApprovalManager, Orchestrator,
+    OrchestratorConfig, PlannerConfig, RedisStore, SessionStore, ShutdownController,
 };
 use cratos_llm::{
     AnthropicConfig, AnthropicProvider, DeepSeekConfig, DeepSeekProvider, EmbeddingProvider,
-    FastEmbedProvider, GlmConfig, GlmProvider, GroqConfig, GroqProvider, LlmProvider, MoonshotConfig,
-    MoonshotProvider, NovitaConfig, NovitaProvider, OllamaConfig, OllamaProvider, OpenAiConfig,
-    OpenAiProvider, OpenRouterConfig, OpenRouterProvider, SharedEmbeddingProvider,
+    FastEmbedProvider, GeminiConfig, GeminiProvider, GlmConfig, GlmProvider, GroqConfig,
+    GroqProvider, LlmProvider, LlmRouter, MoonshotConfig, MoonshotProvider, NovitaConfig,
+    NovitaProvider, OllamaConfig, OllamaProvider, OpenAiConfig, OpenAiProvider, OpenRouterConfig,
+    OpenRouterProvider, QwenConfig, QwenProvider, SharedEmbeddingProvider,
 };
 use cratos_replay::{EventStore, ExecutionSearcher, SearchEmbedder};
 use cratos_search::{IndexConfig, VectorIndex};
@@ -27,6 +28,7 @@ use tracing::{error, info, warn};
 
 /// Application configuration
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct AppConfig {
     pub server: ServerConfig,
     #[serde(default)]
@@ -55,6 +57,7 @@ pub struct RedisConfig {
 
 /// LLM configuration
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct LlmConfig {
     pub default_provider: String,
     pub openai: Option<OpenAiLlmConfig>,
@@ -64,18 +67,21 @@ pub struct LlmConfig {
 
 /// OpenAI-specific config
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct OpenAiLlmConfig {
     pub default_model: String,
 }
 
 /// Anthropic-specific config
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct AnthropicLlmConfig {
     pub default_model: String,
 }
 
 /// Routing configuration for model selection
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct RoutingConfig {
     pub classification: Option<String>,
     pub planning: Option<String>,
@@ -85,12 +91,14 @@ pub struct RoutingConfig {
 
 /// Approval configuration
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ApprovalConfig {
     pub default_mode: String,
 }
 
 /// Replay configuration
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ReplayConfig {
     pub retention_days: u32,
     pub max_events_per_execution: u32,
@@ -117,6 +125,7 @@ pub struct SlackChannelConfig {
 
 /// Vector search configuration
 #[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
 pub struct VectorSearchConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -319,112 +328,158 @@ fn load_config() -> Result<AppConfig> {
 }
 
 fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn LlmProvider>> {
-    let provider_name = &llm_config.default_provider;
-    
-    match provider_name.as_str() {
-        "openai" => {
-            let config = OpenAiConfig::from_env()
-                .context("OpenAI configured but OPENAI_API_KEY not set")?;
-            Ok(Arc::new(OpenAiProvider::new(config)))
-        }
-        "anthropic" => {
-            let config = AnthropicConfig::from_env()
-                .context("Anthropic configured but ANTHROPIC_API_KEY not set")?;
-            Ok(Arc::new(AnthropicProvider::new(config)?))
-        }
-        "groq" => {
-            let config = GroqConfig::from_env()
-                .context("Groq configured but GROQ_API_KEY not set")?;
-            Ok(Arc::new(GroqProvider::new(config)?))
-        }
-        "deepseek" => {
-            let config = DeepSeekConfig::from_env()
-                .context("DeepSeek configured but DEEPSEEK_API_KEY not set")?;
-            Ok(Arc::new(DeepSeekProvider::new(config)?))
-        }
-        "openrouter" => {
-            let config = OpenRouterConfig::from_env()
-                .context("OpenRouter configured but OPENROUTER_API_KEY not set")?;
-            Ok(Arc::new(OpenRouterProvider::new(config)?))
-        }
-        "novita" => {
-            let config = NovitaConfig::from_env()
-                .context("Novita configured but NOVITA_API_KEY not set")?;
-            Ok(Arc::new(NovitaProvider::new(config)?))
-        }
-        "ollama" => {
-            let config = OllamaConfig::from_env();
-            Ok(Arc::new(OllamaProvider::new(config)?))
-        }
-        "glm" => {
-            let config = GlmConfig::from_env()
-                .context("GLM configured but ZHIPU_API_KEY not set")?;
-            Ok(Arc::new(GlmProvider::new(config)?))
-        }
-        "moonshot" => {
-            let config = MoonshotConfig::from_env()
-                .context("Moonshot configured but MOONSHOT_API_KEY not set")?;
-            Ok(Arc::new(MoonshotProvider::new(config)?))
-        }
-        "auto" | "" => try_auto_detect_provider(),
-        other => {
-            Err(anyhow::anyhow!(
-                "Unknown LLM provider '{}'. Supported: openai, anthropic, groq, deepseek, openrouter, novita, ollama, glm, moonshot, auto",
-                other
-            ))
-        }
-    }
-}
+    let mut router = LlmRouter::new(&llm_config.default_provider);
+    let mut registered_count = 0;
+    let mut default_provider: Option<String> = None;
 
-fn try_auto_detect_provider() -> Result<Arc<dyn LlmProvider>> {
     if let Ok(config) = GroqConfig::from_env() {
-        info!("Auto-detected Groq provider (free tier)");
-        return Ok(Arc::new(GroqProvider::new(config)?));
+        if let Ok(provider) = GroqProvider::new(config) {
+            router.register("groq", Arc::new(provider));
+            registered_count += 1;
+            if default_provider.is_none() {
+                default_provider = Some("groq".to_string());
+            }
+            info!("Registered Groq provider (free tier)");
+        }
     }
     if let Ok(config) = OpenRouterConfig::from_env() {
-        info!("Auto-detected OpenRouter provider");
-        return Ok(Arc::new(OpenRouterProvider::new(config)?));
+        if let Ok(provider) = OpenRouterProvider::new(config) {
+            router.register("openrouter", Arc::new(provider));
+            registered_count += 1;
+            if default_provider.is_none() {
+                default_provider = Some("openrouter".to_string());
+            }
+            info!("Registered OpenRouter provider");
+        }
     }
     if let Ok(config) = NovitaConfig::from_env() {
-        info!("Auto-detected Novita provider (free tier)");
-        return Ok(Arc::new(NovitaProvider::new(config)?));
+        if let Ok(provider) = NovitaProvider::new(config) {
+            router.register("novita", Arc::new(provider));
+            registered_count += 1;
+            if default_provider.is_none() {
+                default_provider = Some("novita".to_string());
+            }
+            info!("Registered Novita provider (free tier)");
+        }
     }
     if let Ok(config) = DeepSeekConfig::from_env() {
-        info!("Auto-detected DeepSeek provider (low cost)");
-        return Ok(Arc::new(DeepSeekProvider::new(config)?));
+        if let Ok(provider) = DeepSeekProvider::new(config) {
+            router.register("deepseek", Arc::new(provider));
+            registered_count += 1;
+            if default_provider.is_none() {
+                default_provider = Some("deepseek".to_string());
+            }
+            info!("Registered DeepSeek provider (low cost)");
+        }
     }
     if let Ok(config) = OpenAiConfig::from_env() {
-        info!("Auto-detected OpenAI provider");
-        return Ok(Arc::new(OpenAiProvider::new(config)));
+        let provider = OpenAiProvider::new(config);
+        router.register("openai", Arc::new(provider));
+        registered_count += 1;
+        if default_provider.is_none() {
+            default_provider = Some("openai".to_string());
+        }
+        info!("Registered OpenAI provider");
     }
     if let Ok(config) = AnthropicConfig::from_env() {
-        info!("Auto-detected Anthropic provider");
-        return Ok(Arc::new(AnthropicProvider::new(config)?));
+        if let Ok(provider) = AnthropicProvider::new(config) {
+            router.register("anthropic", Arc::new(provider));
+            registered_count += 1;
+            if default_provider.is_none() {
+                default_provider = Some("anthropic".to_string());
+            }
+            info!("Registered Anthropic provider");
+        }
+    }
+    if let Ok(config) = GeminiConfig::from_env() {
+        if let Ok(provider) = GeminiProvider::new(config) {
+            router.register("gemini", Arc::new(provider));
+            registered_count += 1;
+            if default_provider.is_none() {
+                default_provider = Some("gemini".to_string());
+            }
+            info!("Registered Gemini provider");
+        }
     }
     if let Ok(config) = GlmConfig::from_env() {
-        info!("Auto-detected GLM provider");
-        return Ok(Arc::new(GlmProvider::new(config)?));
+        if let Ok(provider) = GlmProvider::new(config) {
+            router.register("glm", Arc::new(provider));
+            registered_count += 1;
+            if default_provider.is_none() {
+                default_provider = Some("glm".to_string());
+            }
+            info!("Registered GLM provider");
+        }
     }
     if let Ok(config) = MoonshotConfig::from_env() {
-        info!("Auto-detected Moonshot provider");
-        return Ok(Arc::new(MoonshotProvider::new(config)?));
+        if let Ok(provider) = MoonshotProvider::new(config) {
+            router.register("moonshot", Arc::new(provider));
+            registered_count += 1;
+            if default_provider.is_none() {
+                default_provider = Some("moonshot".to_string());
+            }
+            info!("Registered Moonshot provider");
+        }
+    }
+    if let Ok(config) = QwenConfig::from_env() {
+        if let Ok(provider) = QwenProvider::new(config) {
+            router.register("qwen", Arc::new(provider));
+            registered_count += 1;
+            if default_provider.is_none() {
+                default_provider = Some("qwen".to_string());
+            }
+            info!("Registered Qwen provider");
+        }
+    }
+    let ollama_config = OllamaConfig::from_env();
+    if let Ok(provider) = OllamaProvider::new(ollama_config) {
+        router.register("ollama", Arc::new(provider));
+        registered_count += 1;
+        info!("Registered Ollama provider (local)");
     }
 
-    Err(anyhow::anyhow!(
-        "No LLM provider configured.\n\n\
-         To fix this, run one of:\n\
-           cratos init     # Interactive setup wizard (recommended)\n\
-           cratos doctor   # Check your configuration\n\n\
-         Or manually set one of these environment variables:\n\
-           GROQ_API_KEY        # Free tier, recommended\n\
-           OPENROUTER_API_KEY  # Free tier available (use openrouter/free model)\n\
-           NOVITA_API_KEY      # Free tier\n\
-           DEEPSEEK_API_KEY    # Ultra low cost\n\
-           MOONSHOT_API_KEY    # Kimi 2.5\n\
-           ZHIPU_API_KEY    # GLM-4.7\n\
-           OPENAI_API_KEY\n\
-           ANTHROPIC_API_KEY"
-    ))
+    if registered_count == 0 {
+        return Err(anyhow::anyhow!(
+            "No LLM provider configured.\n\n\
+             To fix this, run one of:\n\
+               cratos init     # Interactive setup wizard (recommended)\n\
+               cratos doctor   # Check your configuration\n\n\
+             Or manually set one of these environment variables:\n\
+               GROQ_API_KEY        # Free tier, recommended\n\
+               OPENROUTER_API_KEY  # Free tier available\n\
+               NOVITA_API_KEY      # Free tier\n\
+               DEEPSEEK_API_KEY    # Ultra low cost\n\
+               MOONSHOT_API_KEY    # Kimi K2\n\
+               ZHIPU_API_KEY       # GLM-4.7\n\
+               OPENAI_API_KEY\n\
+               ANTHROPIC_API_KEY"
+        ));
+    }
+
+    if llm_config.default_provider == "auto" || llm_config.default_provider.is_empty() {
+        if let Some(dp) = default_provider {
+            router.set_default(&dp);
+            info!("Auto-selected default provider: {}", dp);
+        }
+    } else if router.has_provider(&llm_config.default_provider) {
+        router.set_default(&llm_config.default_provider);
+    } else {
+        warn!(
+            "Configured default provider '{}' not available, using auto-detected",
+            llm_config.default_provider
+        );
+        if let Some(dp) = default_provider {
+            router.set_default(&dp);
+        }
+    }
+
+    info!(
+        "LLM Router initialized with {} providers: {:?}",
+        registered_count,
+        router.list_providers()
+    );
+
+    Ok(Arc::new(router))
 }
 
 /// Validate configuration for production security
@@ -633,10 +688,17 @@ pub async fn run() -> Result<()> {
         .with_planner_config(PlannerConfig::default())
         .with_runner_config(RunnerConfig::default());
 
+    let approval_manager = Arc::new(ApprovalManager::new());
+    info!(
+        "Approval manager initialized (mode: {})",
+        config.approval.default_mode
+    );
+
     let orchestrator = Arc::new(
         Orchestrator::new(llm_provider, tool_registry, orchestrator_config)
-            .with_event_store(event_store)
-            .with_memory(session_store),
+            .with_event_store(event_store.clone())
+            .with_memory(session_store)
+            .with_approval_manager(approval_manager),
     );
     info!("Orchestrator initialized");
 
@@ -674,6 +736,35 @@ pub async fn run() -> Result<()> {
     if config.channels.slack.enabled {
         info!("Slack adapter enabled but not yet started (requires additional setup)");
     }
+
+    let cleanup_event_store = event_store.clone();
+    let retention_days = config.replay.retention_days;
+    let cleanup_shutdown = shutdown_controller.token();
+    tokio::spawn(async move {
+        let cleanup_interval = tokio::time::Duration::from_secs(3600);
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(cleanup_interval) => {
+                    let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
+                    match cleanup_event_store.delete_old_executions(cutoff).await {
+                        Ok(deleted) => {
+                            if deleted > 0 {
+                                info!("Cleanup: deleted {} old executions (retention: {} days)", deleted, retention_days);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Cleanup failed: {}", e);
+                        }
+                    }
+                }
+                _ = cleanup_shutdown.cancelled() => {
+                    info!("Cleanup task shutting down");
+                    break;
+                }
+            }
+        }
+    });
+    info!("Cleanup task started (retention: {} days)", retention_days);
 
     let redis_url_for_health = config.redis.url.clone();
     let app = Router::new()

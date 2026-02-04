@@ -3,6 +3,7 @@
 //! This module provides the main orchestration logic that ties together
 //! the planner, tools, memory, and replay systems.
 
+use crate::approval::SharedApprovalManager;
 use crate::error::Result;
 use crate::memory::{MemoryStore, SessionContext, SessionStore, WorkingMemory};
 use crate::planner::{Planner, PlannerConfig};
@@ -177,6 +178,7 @@ pub struct Orchestrator {
     runner: ToolRunner,
     memory: Arc<dyn SessionStore>,
     event_store: Option<Arc<dyn EventStoreTrait>>,
+    approval_manager: Option<SharedApprovalManager>,
     config: OrchestratorConfig,
 }
 
@@ -196,6 +198,7 @@ impl Orchestrator {
             runner,
             memory: Arc::new(MemoryStore::new()),
             event_store: None,
+            approval_manager: None,
             config,
         }
     }
@@ -209,6 +212,12 @@ impl Orchestrator {
     /// Set the memory store
     pub fn with_memory(mut self, memory: Arc<dyn SessionStore>) -> Self {
         self.memory = memory;
+        self
+    }
+
+    /// Set the approval manager for high-risk tool execution
+    pub fn with_approval_manager(mut self, manager: SharedApprovalManager) -> Self {
+        self.approval_manager = Some(manager);
         self
     }
 

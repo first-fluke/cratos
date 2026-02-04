@@ -112,12 +112,12 @@ pub fn default_pricing() -> HashMap<String, ModelPricing> {
     );
 
     pricing.insert(
-        "gpt-4-turbo".to_string(),
+        "gpt-4o".to_string(),
         ModelPricing {
-            model: "gpt-4-turbo".to_string(),
+            model: "gpt-4o".to_string(),
             provider: "openai".to_string(),
-            input_cost_per_million: 10.00,
-            output_cost_per_million: 30.00,
+            input_cost_per_million: 2.50,
+            output_cost_per_million: 10.00,
             context_window: 128_000,
             updated_at: now,
         },

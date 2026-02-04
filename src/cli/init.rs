@@ -2,8 +2,6 @@ use inquire::{Confirm, Password, Select};
 use std::fs;
 use std::path::Path;
 
-const ENV_EXAMPLE: &str = include_str!("../../.env.example");
-
 pub async fn run() -> anyhow::Result<()> {
     println!("🚀 Cratos Setup Wizard\n");
 

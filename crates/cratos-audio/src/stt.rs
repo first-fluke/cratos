@@ -6,7 +6,7 @@
 use crate::error::{Error, Result};
 use async_openai::{
     config::OpenAIConfig,
-    types::{AudioInput, AudioResponseFormat, CreateTranscriptionRequestArgs},
+    types::audio::{AudioInput, AudioResponseFormat, CreateTranscriptionRequestArgs},
     Client,
 };
 use tracing::{debug, info, warn};
@@ -94,7 +94,8 @@ impl SpeechToText {
 
         let response = client
             .audio()
-            .transcribe(request)
+            .transcription()
+            .create(request)
             .await
             .map_err(|e| Error::Stt(format!("Transcription failed: {}", e)))?;
 
@@ -125,7 +126,8 @@ impl SpeechToText {
 
         let response = client
             .audio()
-            .transcribe(request)
+            .transcription()
+            .create(request)
             .await
             .map_err(|e| Error::Stt(format!("Transcription failed: {}", e)))?;
 
