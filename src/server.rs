@@ -12,9 +12,9 @@ use cratos_core::{
 };
 use cratos_llm::{
     AnthropicConfig, AnthropicProvider, DeepSeekConfig, DeepSeekProvider, EmbeddingProvider,
-    FastEmbedProvider, GroqConfig, GroqProvider, LlmProvider, NovitaConfig, NovitaProvider,
-    OllamaConfig, OllamaProvider, OpenAiConfig, OpenAiProvider, OpenRouterConfig,
-    OpenRouterProvider, SharedEmbeddingProvider,
+    FastEmbedProvider, GlmConfig, GlmProvider, GroqConfig, GroqProvider, LlmProvider, MoonshotConfig,
+    MoonshotProvider, NovitaConfig, NovitaProvider, OllamaConfig, OllamaProvider, OpenAiConfig,
+    OpenAiProvider, OpenRouterConfig, OpenRouterProvider, SharedEmbeddingProvider,
 };
 use cratos_replay::{EventStore, ExecutionSearcher, SearchEmbedder};
 use cratos_search::{IndexConfig, VectorIndex};
@@ -356,10 +356,20 @@ fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn LlmProvider>> 
             let config = OllamaConfig::from_env();
             Ok(Arc::new(OllamaProvider::new(config)?))
         }
+        "glm" => {
+            let config = GlmConfig::from_env()
+                .context("GLM configured but BIGMODEL_API_KEY not set")?;
+            Ok(Arc::new(GlmProvider::new(config)?))
+        }
+        "moonshot" => {
+            let config = MoonshotConfig::from_env()
+                .context("Moonshot configured but MOONSHOT_API_KEY not set")?;
+            Ok(Arc::new(MoonshotProvider::new(config)?))
+        }
         "auto" | "" => try_auto_detect_provider(),
         other => {
             Err(anyhow::anyhow!(
-                "Unknown LLM provider '{}'. Supported: openai, anthropic, groq, deepseek, openrouter, novita, ollama, auto",
+                "Unknown LLM provider '{}'. Supported: openai, anthropic, groq, deepseek, openrouter, novita, ollama, glm, moonshot, auto",
                 other
             ))
         }
@@ -391,6 +401,14 @@ fn try_auto_detect_provider() -> Result<Arc<dyn LlmProvider>> {
         info!("Auto-detected Anthropic provider");
         return Ok(Arc::new(AnthropicProvider::new(config)?));
     }
+    if let Ok(config) = GlmConfig::from_env() {
+        info!("Auto-detected GLM provider");
+        return Ok(Arc::new(GlmProvider::new(config)?));
+    }
+    if let Ok(config) = MoonshotConfig::from_env() {
+        info!("Auto-detected Moonshot provider");
+        return Ok(Arc::new(MoonshotProvider::new(config)?));
+    }
 
     Err(anyhow::anyhow!(
         "No LLM provider configured.\n\n\
@@ -399,9 +417,11 @@ fn try_auto_detect_provider() -> Result<Arc<dyn LlmProvider>> {
            cratos doctor   # Check your configuration\n\n\
          Or manually set one of these environment variables:\n\
            GROQ_API_KEY        # Free tier, recommended\n\
-           OPENROUTER_API_KEY  # Free tier available\n\
+           OPENROUTER_API_KEY  # Free tier available (use openrouter/free model)\n\
            NOVITA_API_KEY      # Free tier\n\
            DEEPSEEK_API_KEY    # Ultra low cost\n\
+           MOONSHOT_API_KEY    # Kimi 2.5 (Chinese optimized)\n\
+           BIGMODEL_API_KEY    # GLM-4.7 (Chinese optimized)\n\
            OPENAI_API_KEY\n\
            ANTHROPIC_API_KEY"
     ))

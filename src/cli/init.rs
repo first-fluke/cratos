@@ -22,9 +22,11 @@ pub async fn run() -> anyhow::Result<()> {
 
     let llm_provider = Select::new("Select LLM provider:", vec![
         "Groq (Free tier, recommended)",
-        "OpenRouter (Free tier available)",
+        "OpenRouter (Free tier available - includes openrouter/free)",
         "Novita AI (Free tier available)",
         "DeepSeek (Ultra low cost)",
+        "Moonshot AI (Kimi 2.5 - Chinese optimized)",
+        "ZhipuAI GLM (GLM-4.7 - Chinese optimized)",
         "OpenAI (GPT-5.2)",
         "Anthropic (Claude)",
         "Ollama (Local, free)",
@@ -34,9 +36,11 @@ pub async fn run() -> anyhow::Result<()> {
 
     let api_key = match llm_provider {
         "Groq (Free tier, recommended)" => get_api_key("Groq"),
-        "OpenRouter (Free tier available)" => get_api_key("OpenRouter"),
+        "OpenRouter (Free tier available - includes openrouter/free)" => get_api_key("OpenRouter"),
         "Novita AI (Free tier available)" => get_api_key("Novita"),
         "DeepSeek (Ultra low cost)" => get_api_key("DeepSeek"),
+        "Moonshot AI (Kimi 2.5 - Chinese optimized)" => get_api_key("Moonshot"),
+        "ZhipuAI GLM (GLM-4.7 - Chinese optimized)" => get_api_key("ZhipuAI/GLM"),
         "OpenAI (GPT-5.2)" => get_api_key("OpenAI"),
         "Anthropic (Claude)" => get_api_key("Anthropic"),
         "Ollama (Local, free)" => Ok(String::new()),
@@ -121,14 +125,23 @@ fn build_env_file(
         "Groq (Free tier, recommended)" => {
             content.push_str(&format!("GROQ_API_KEY={}\n", api_key));
         }
-        "OpenRouter (Free tier available)" => {
+        "OpenRouter (Free tier available - includes openrouter/free)" => {
             content.push_str(&format!("OPENROUTER_API_KEY={}\n", api_key));
+            content.push_str("# Use 'openrouter/free' model for automatic free tier routing\n");
         }
         "Novita AI (Free tier available)" => {
             content.push_str(&format!("NOVITA_API_KEY={}\n", api_key));
         }
         "DeepSeek (Ultra low cost)" => {
             content.push_str(&format!("DEEPSEEK_API_KEY={}\n", api_key));
+        }
+        "Moonshot AI (Kimi 2.5 - Chinese optimized)" => {
+            content.push_str(&format!("MOONSHOT_API_KEY={}\n", api_key));
+            content.push_str("# Get API key from: https://platform.moonshot.cn/\n");
+        }
+        "ZhipuAI GLM (GLM-4.7 - Chinese optimized)" => {
+            content.push_str(&format!("BIGMODEL_API_KEY={}\n", api_key));
+            content.push_str("# Get API key from: https://open.bigmodel.cn/\n");
         }
         "OpenAI (GPT-5.2)" => {
             content.push_str(&format!("OPENAI_API_KEY={}\n", api_key));
