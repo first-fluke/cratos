@@ -28,7 +28,7 @@ Cratos는 **내 컴퓨터**에 설치하여, 외출 중에도 Telegram으로 PC 
 │  │  - 명령 실행 (Docker 샌드박스)                        │   │
 │  │  - Git/GitHub 작업                                   │   │
 │  │  - 웹 정보 수집                                      │   │
-│  │  - 8개 LLM 프로바이더 연동                           │   │
+│  │  - 10개 LLM 프로바이더 연동                          │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                           ↑                                 │
 │                           │ Telegram API                    │
@@ -54,12 +54,14 @@ Cratos는 **내 컴퓨터**에 설치하여, 외출 중에도 Telegram으로 PC 
 
 | 항목 | 최소 사양 | 권장 사양 |
 |------|----------|----------|
-| **OS** | macOS 10.15+, Windows 10+, Ubuntu 20.04+ | 최신 버전 |
-| **CPU** | 2코어 | 4코어 이상 |
-| **RAM** | 4GB (실행) / 8GB (빌드) | 8GB 이상 |
-| **디스크** | 5GB | 10GB 이상 |
-| **Rust** | 1.75+ | 최신 stable |
+| **OS** | macOS 12+, Windows 10+, Ubuntu 22.04+ | 최신 버전 |
+| **CPU** | 4코어 | 8코어 이상 |
+| **RAM** | 6GB (실행) / 12GB (빌드) | 16GB 이상 |
+| **디스크** | 8GB | 15GB 이상 |
+| **Rust** | 1.80+ | 최신 stable |
 | **네트워크** | 인터넷 연결 | 고정 IP 또는 DDNS |
+
+> **참고**: 임베딩(fastembed) 기능이 기본 활성화되어 있어 RAM 사용량이 높습니다. 저사양 환경에서는 `cargo build --no-default-features`로 비활성화 가능합니다.
 
 > **참고**: Docker, PostgreSQL 없이 실행 가능! 데이터는 `~/.cratos/cratos.db` (SQLite)에 자동 저장됩니다.
 
@@ -81,7 +83,7 @@ Cratos는 **내 컴퓨터**에 설치하여, 외출 중에도 Telegram으로 PC 
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # 설치 확인
-rustc --version  # 1.75+ 필요
+rustc --version  # 1.80+ 필요
 ```
 
 ### Docker 설치 (선택사항 - 샌드박스용)
