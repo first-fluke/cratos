@@ -293,7 +293,7 @@ mod tests {
                 assert_eq!(args.len(), 2);
                 assert!(env.contains_key("HOME"));
             }
-            _ => panic!("Expected Stdio transport"),
+            other => unreachable!("Expected Stdio transport, got {:?}", other),
         }
     }
 
@@ -314,7 +314,7 @@ mod tests {
                 assert_eq!(url, "https://example.com/mcp");
                 assert_eq!(api_key, Some("secret".to_string()));
             }
-            _ => panic!("Expected SSE transport"),
+            other => unreachable!("Expected SSE transport, got {:?}", other),
         }
     }
 }

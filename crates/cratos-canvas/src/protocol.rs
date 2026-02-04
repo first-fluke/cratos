@@ -274,7 +274,7 @@ mod tests {
             ClientMessage::Join { session_id } => {
                 assert_eq!(session_id, Uuid::nil());
             }
-            _ => panic!("Expected Join message"),
+            other => unreachable!("Expected Join message, got {:?}", other),
         }
     }
 
@@ -323,7 +323,7 @@ mod tests {
                 assert_eq!(chunk, "Hello ");
                 assert!(!is_complete);
             }
-            _ => panic!("Expected AiStreaming message"),
+            other => unreachable!("Expected AiStreaming message, got {:?}", other),
         }
     }
 }

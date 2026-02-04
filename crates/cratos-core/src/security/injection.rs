@@ -4,8 +4,6 @@
 //! - Pattern-based detection of malicious prompts
 //! - Input sanitization
 //! - Output validation
-//!
-//! Based on lessons learned from OpenClaw security incidents.
 
 #![forbid(unsafe_code)]
 

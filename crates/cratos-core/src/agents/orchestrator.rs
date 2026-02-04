@@ -594,10 +594,7 @@ impl AgentOrchestrator {
                 if let Err(e) = self.track_tokens(estimated_tokens) {
                     warn!(agent_id = %task.agent_id, "Token budget exceeded");
                     let mut tasks = self.active_tasks.write().await;
-                    tasks.insert(
-                        task.agent_id.clone(),
-                        TaskStatus::Failed(e.to_string()),
-                    );
+                    tasks.insert(task.agent_id.clone(), TaskStatus::Failed(e.to_string()));
                     return Err(e);
                 }
 

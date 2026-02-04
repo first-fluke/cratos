@@ -14,46 +14,18 @@
 
 use crate::error::{Error, Result};
 use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingMessage};
+use crate::util::{mask_for_logging, WHATSAPP_MESSAGE_LIMIT};
 use cratos_core::{Orchestrator, OrchestratorInput};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, warn};
 
-/// Maximum length of text to log
-const MAX_LOG_TEXT_LENGTH: usize = 50;
-
 /// Default Baileys bridge server URL
 const DEFAULT_BRIDGE_URL: &str = "http://localhost:3001";
 
 /// Default request timeout in seconds
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
-
-/// Sensitive patterns to mask
-const SENSITIVE_PATTERNS: &[&str] = &[
-    "password",
-    "secret",
-    "token",
-    "api_key",
-    "bearer",
-    "credential",
-    "private",
-];
-
-/// Mask sensitive text for logging
-fn mask_for_logging(text: &str) -> String {
-    let lower = text.to_lowercase();
-    for pattern in SENSITIVE_PATTERNS {
-        if lower.contains(pattern) {
-            return "[REDACTED]".to_string();
-        }
-    }
-    if text.len() > MAX_LOG_TEXT_LENGTH {
-        format!("{}...", &text[..MAX_LOG_TEXT_LENGTH])
-    } else {
-        text.to_string()
-    }
-}
 
 /// WhatsApp (Baileys) configuration
 #[derive(Debug, Clone, Deserialize)]
@@ -383,8 +355,8 @@ impl WhatsAppAdapter {
                 };
 
                 // WhatsApp has no strict message length limit, but split long messages
-                if response_text.len() > 4096 {
-                    for chunk in response_text.as_bytes().chunks(4096) {
+                if response_text.len() > WHATSAPP_MESSAGE_LIMIT {
+                    for chunk in response_text.as_bytes().chunks(WHATSAPP_MESSAGE_LIMIT) {
                         if let Ok(text) = std::str::from_utf8(chunk) {
                             let _ = self
                                 .send_message(&msg.from, OutgoingMessage::text(text))
@@ -538,13 +510,5 @@ mod tests {
         assert!(adapter.is_number_allowed("+14155551234"));
     }
 
-    #[test]
-    fn test_mask_for_logging() {
-        assert!(mask_for_logging("my password is test").contains("REDACTED"));
-        assert_eq!(mask_for_logging("Hello"), "Hello");
-
-        let long_text = "a".repeat(100);
-        let masked = mask_for_logging(&long_text);
-        assert!(masked.contains("..."));
-    }
+    // Note: mask_for_logging tests are in util.rs
 }

@@ -446,7 +446,7 @@ mod tests {
             CanvasBlock::Diagram { diagram_type, .. } => {
                 assert_eq!(diagram_type, DiagramType::Mermaid);
             }
-            _ => panic!("Expected Diagram block"),
+            other => unreachable!("Expected Diagram block, got {:?}", other),
         }
     }
 

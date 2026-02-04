@@ -375,7 +375,7 @@ fn default_true() -> bool {
 }
 
 fn default_timeout() -> u64 {
-    30000
+    super::DEFAULT_BROWSER_TIMEOUT_MS
 }
 
 fn default_one() -> u32 {
@@ -451,7 +451,7 @@ mod tests {
             BrowserAction::Navigate { url, .. } => {
                 assert_eq!(url, "https://example.com");
             }
-            _ => panic!("Expected Navigate action"),
+            other => unreachable!("Expected Navigate action, got {:?}", other),
         }
     }
 

@@ -12,39 +12,11 @@
 
 use crate::error::{Error, Result};
 use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingMessage};
+use crate::util::{mask_for_logging, WHATSAPP_MESSAGE_LIMIT};
 use cratos_core::{Orchestrator, OrchestratorInput};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument};
-
-/// Maximum length of text to log
-const MAX_LOG_TEXT_LENGTH: usize = 50;
-
-/// Sensitive patterns to mask
-const SENSITIVE_PATTERNS: &[&str] = &[
-    "password",
-    "secret",
-    "token",
-    "api_key",
-    "bearer",
-    "credential",
-    "private",
-];
-
-/// Mask sensitive text for logging
-fn mask_for_logging(text: &str) -> String {
-    let lower = text.to_lowercase();
-    for pattern in SENSITIVE_PATTERNS {
-        if lower.contains(pattern) {
-            return "[REDACTED]".to_string();
-        }
-    }
-    if text.len() > MAX_LOG_TEXT_LENGTH {
-        format!("{}...", &text[..MAX_LOG_TEXT_LENGTH])
-    } else {
-        text.to_string()
-    }
-}
 
 /// WhatsApp Business API configuration
 #[derive(Debug, Clone, Deserialize)]
@@ -423,9 +395,9 @@ impl WhatsAppBusinessAdapter {
                         result.response
                     };
 
-                    // WhatsApp Business API has a 4096 character limit for text messages
-                    if response_text.len() > 4096 {
-                        for chunk in response_text.as_bytes().chunks(4096) {
+                    // WhatsApp Business API has a message character limit
+                    if response_text.len() > WHATSAPP_MESSAGE_LIMIT {
+                        for chunk in response_text.as_bytes().chunks(WHATSAPP_MESSAGE_LIMIT) {
                             if let Ok(text) = std::str::from_utf8(chunk) {
                                 let _ = self
                                     .send_message(&msg.from, OutgoingMessage::text(text))

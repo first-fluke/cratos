@@ -115,7 +115,7 @@ fn default_true() -> bool {
 }
 
 fn default_timeout() -> u64 {
-    30000
+    super::DEFAULT_BROWSER_TIMEOUT_MS
 }
 
 fn default_viewport_width() -> u32 {

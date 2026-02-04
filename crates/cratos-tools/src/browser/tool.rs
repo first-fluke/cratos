@@ -346,7 +346,7 @@ impl BrowserTool {
                     timeout: input
                         .get("timeout")
                         .and_then(|v| v.as_u64())
-                        .unwrap_or(30000),
+                        .unwrap_or(super::DEFAULT_BROWSER_TIMEOUT_MS),
                     visible: input
                         .get("visible")
                         .and_then(|v| v.as_bool())
@@ -357,7 +357,7 @@ impl BrowserTool {
                 timeout: input
                     .get("timeout")
                     .and_then(|v| v.as_u64())
-                    .unwrap_or(30000),
+                    .unwrap_or(super::DEFAULT_BROWSER_TIMEOUT_MS),
             }),
             "evaluate" => {
                 let script = input
@@ -523,7 +523,7 @@ mod tests {
             BrowserAction::Navigate { url, .. } => {
                 assert_eq!(url, "https://example.com");
             }
-            _ => panic!("Expected Navigate action"),
+            other => unreachable!("Expected Navigate action, got {:?}", other),
         }
     }
 
@@ -540,7 +540,7 @@ mod tests {
             BrowserAction::Click { selector, .. } => {
                 assert_eq!(selector, "#submit-button");
             }
-            _ => panic!("Expected Click action"),
+            other => unreachable!("Expected Click action, got {:?}", other),
         }
     }
 

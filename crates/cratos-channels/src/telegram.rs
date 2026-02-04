@@ -7,6 +7,7 @@ use crate::message::{
     Attachment, AttachmentType, ChannelAdapter, ChannelType, MessageButton, NormalizedMessage,
     OutgoingMessage,
 };
+use crate::util::{mask_for_logging, sanitize_error_for_user};
 use cratos_core::{Orchestrator, OrchestratorInput};
 use std::sync::Arc;
 use teloxide::{
@@ -18,79 +19,6 @@ use teloxide::{
     },
 };
 use tracing::{debug, error, info, instrument};
-
-/// Maximum length of text to log (to prevent sensitive data exposure)
-const MAX_LOG_TEXT_LENGTH: usize = 50;
-
-/// Maximum length of error message to show to users (longer = likely internal)
-const MAX_SAFE_ERROR_LENGTH: usize = 100;
-
-/// Patterns that indicate potentially sensitive content
-const SENSITIVE_PATTERNS: &[&str] = &[
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "api_key",
-    "apikey",
-    "api-key",
-    "bearer",
-    "authorization",
-    "credential",
-    "private",
-    "ssh",
-    "-----begin",
-];
-
-/// Mask potentially sensitive text for logging
-fn mask_for_logging(text: &str) -> String {
-    let lower = text.to_lowercase();
-
-    // Check for sensitive patterns
-    for pattern in SENSITIVE_PATTERNS {
-        if lower.contains(pattern) {
-            return "[REDACTED - potentially sensitive content]".to_string();
-        }
-    }
-
-    // Truncate long messages
-    if text.len() > MAX_LOG_TEXT_LENGTH {
-        format!("{}...[truncated]", &text[..MAX_LOG_TEXT_LENGTH])
-    } else {
-        text.to_string()
-    }
-}
-
-/// Sanitize error messages to avoid exposing internal details
-fn sanitize_error_for_user(error: &str) -> String {
-    // Don't expose internal paths, stack traces, or sensitive info
-    let lower = error.to_lowercase();
-
-    if lower.contains("token")
-        || lower.contains("secret")
-        || lower.contains("password")
-        || lower.contains("unauthorized")
-        || lower.contains("forbidden")
-    {
-        return "An authentication error occurred. Please check your configuration.".to_string();
-    }
-
-    if lower.contains("connection") || lower.contains("timeout") || lower.contains("network") {
-        return "A network error occurred. Please try again later.".to_string();
-    }
-
-    if lower.contains("database") || lower.contains("sql") || lower.contains("query") {
-        return "A database error occurred. Please try again later.".to_string();
-    }
-
-    // For other errors, give a generic message
-    if error.len() > MAX_SAFE_ERROR_LENGTH || error.contains('/') || error.contains("at ") {
-        return "An internal error occurred. Please try again.".to_string();
-    }
-
-    // Short, non-sensitive errors can be shown
-    error.to_string()
-}
 
 /// Telegram bot configuration
 #[derive(Debug, Clone)]
@@ -558,50 +486,5 @@ mod tests {
         assert!(adapter.is_user_allowed(999999));
     }
 
-    #[test]
-    fn test_mask_for_logging() {
-        // Should mask sensitive content
-        assert!(mask_for_logging("my password is secret123").contains("REDACTED"));
-        assert!(mask_for_logging("API_KEY=sk-1234567890").contains("REDACTED"));
-        assert!(mask_for_logging("Bearer eyJhbGciOiJ").contains("REDACTED"));
-        assert!(mask_for_logging("-----BEGIN RSA PRIVATE KEY-----").contains("REDACTED"));
-
-        // Should truncate long messages
-        let long_msg = "a".repeat(100);
-        let masked = mask_for_logging(&long_msg);
-        assert!(masked.contains("truncated"));
-        assert!(masked.len() < long_msg.len());
-
-        // Should pass through normal short messages
-        assert_eq!(mask_for_logging("Hello, world!"), "Hello, world!");
-        assert_eq!(mask_for_logging("요약해줘"), "요약해줘");
-    }
-
-    #[test]
-    fn test_sanitize_error_for_user() {
-        // Should hide token/auth errors
-        let sanitized = sanitize_error_for_user("Invalid token: abc123");
-        assert!(!sanitized.contains("abc123"));
-        assert!(sanitized.contains("authentication"));
-
-        // Should hide database errors
-        let sanitized = sanitize_error_for_user("SQL error: SELECT * FROM users");
-        assert!(!sanitized.contains("SELECT"));
-        assert!(sanitized.contains("database"));
-
-        // Should hide paths and stack traces
-        // Note: using "config.json" instead of "secret.json" to avoid triggering auth error detection
-        let sanitized =
-            sanitize_error_for_user("Error at /home/user/.config/app/config.json line 42");
-        assert!(!sanitized.contains("/home"));
-        assert!(
-            sanitized.to_lowercase().contains("internal"),
-            "Expected 'internal' in sanitized error, got: {}",
-            sanitized
-        );
-
-        // Should pass through simple, safe errors
-        let simple = sanitize_error_for_user("File not found");
-        assert_eq!(simple, "File not found");
-    }
+    // Note: mask_for_logging and sanitize_error_for_user tests are in util.rs
 }

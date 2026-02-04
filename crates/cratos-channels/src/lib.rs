@@ -16,6 +16,7 @@ pub mod matrix;
 pub mod message;
 pub mod slack;
 pub mod telegram;
+pub mod util;
 pub mod whatsapp;
 pub mod whatsapp_business;
 

@@ -292,10 +292,7 @@ impl SkillEcosystem {
         let warnings = self.validate_portable(&portable.skill);
 
         // Check if skill already exists
-        let existing = self
-            .store
-            .get_skill_by_name(&portable.skill.name)
-            .await?;
+        let existing = self.store.get_skill_by_name(&portable.skill.name).await?;
 
         let (skill, is_new) = if let Some(mut existing) = existing {
             // Update existing skill
@@ -435,10 +432,7 @@ impl SkillEcosystem {
     }
 
     fn portable_to_skill(&self, def: &PortableSkillDef) -> Skill {
-        let category = def
-            .category
-            .parse()
-            .unwrap_or(SkillCategory::Custom);
+        let category = def.category.parse().unwrap_or(SkillCategory::Custom);
 
         let mut skill = Skill::new(&def.name, &def.description, category);
         skill.origin = SkillOrigin::UserDefined;
@@ -496,7 +490,12 @@ impl SkillEcosystem {
         skill.updated_at = Utc::now();
     }
 
-    fn create_bundle(&self, name: &str, description: &str, skills: &[Skill]) -> Result<SkillBundle> {
+    fn create_bundle(
+        &self,
+        name: &str,
+        description: &str,
+        skills: &[Skill],
+    ) -> Result<SkillBundle> {
         let skill_defs: Vec<PortableSkillDef> = skills
             .iter()
             .map(|s| {
@@ -505,8 +504,8 @@ impl SkillEcosystem {
             })
             .collect();
 
-        let bundle_content = serde_json::to_string(&skill_defs)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
+        let bundle_content =
+            serde_json::to_string(&skill_defs).map_err(|e| Error::Serialization(e.to_string()))?;
         let checksum = Self::calculate_hash(&bundle_content);
 
         Ok(SkillBundle {
@@ -526,8 +525,7 @@ impl SkillEcosystem {
     }
 
     fn calculate_checksum(skill: &PortableSkillDef) -> String {
-        let content =
-            serde_json::to_string(skill).unwrap_or_default();
+        let content = serde_json::to_string(skill).unwrap_or_default();
         Self::calculate_hash(&content)
     }
 
@@ -574,12 +572,14 @@ impl PortableSkill {
     /// Save to a file
     pub fn save_to_file(&self, path: &Path, format: ExportFormat) -> Result<()> {
         let content = match format {
-            ExportFormat::Json => serde_json::to_string(self)
-                .map_err(|e| Error::Serialization(e.to_string()))?,
+            ExportFormat::Json => {
+                serde_json::to_string(self).map_err(|e| Error::Serialization(e.to_string()))?
+            }
             ExportFormat::JsonPretty => serde_json::to_string_pretty(self)
                 .map_err(|e| Error::Serialization(e.to_string()))?,
-            ExportFormat::Yaml => serde_yaml::to_string(self)
-                .map_err(|e| Error::Serialization(e.to_string()))?,
+            ExportFormat::Yaml => {
+                serde_yaml::to_string(self).map_err(|e| Error::Serialization(e.to_string()))?
+            }
         };
 
         std::fs::write(path, content)
@@ -613,12 +613,14 @@ impl SkillBundle {
     /// Save to a file
     pub fn save_to_file(&self, path: &Path, format: ExportFormat) -> Result<()> {
         let content = match format {
-            ExportFormat::Json => serde_json::to_string(self)
-                .map_err(|e| Error::Serialization(e.to_string()))?,
+            ExportFormat::Json => {
+                serde_json::to_string(self).map_err(|e| Error::Serialization(e.to_string()))?
+            }
             ExportFormat::JsonPretty => serde_json::to_string_pretty(self)
                 .map_err(|e| Error::Serialization(e.to_string()))?,
-            ExportFormat::Yaml => serde_yaml::to_string(self)
-                .map_err(|e| Error::Serialization(e.to_string()))?,
+            ExportFormat::Yaml => {
+                serde_yaml::to_string(self).map_err(|e| Error::Serialization(e.to_string()))?
+            }
         };
 
         std::fs::write(path, content)

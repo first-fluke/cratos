@@ -661,4 +661,3 @@ async fn main() -> Result<()> {
     info!("Cratos shutdown complete");
     Ok(())
 }
-

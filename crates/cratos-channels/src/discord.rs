@@ -4,6 +4,7 @@
 
 use crate::error::{Error, Result};
 use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingMessage};
+use crate::util::{mask_for_logging, sanitize_error_for_user, DISCORD_MESSAGE_LIMIT};
 use cratos_core::{Orchestrator, OrchestratorInput};
 use serde::Deserialize;
 use serenity::all::{
@@ -14,74 +15,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, instrument};
-
-/// Maximum length of text to log (to prevent sensitive data exposure)
-const MAX_LOG_TEXT_LENGTH: usize = 50;
-
-/// Maximum length of error message to show to users (longer = likely internal)
-const MAX_SAFE_ERROR_LENGTH: usize = 100;
-
-/// Patterns that indicate potentially sensitive content
-const SENSITIVE_PATTERNS: &[&str] = &[
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "api_key",
-    "apikey",
-    "api-key",
-    "bearer",
-    "authorization",
-    "credential",
-    "private",
-    "ssh",
-    "-----begin",
-];
-
-/// Mask potentially sensitive text for logging
-fn mask_for_logging(text: &str) -> String {
-    let lower = text.to_lowercase();
-
-    for pattern in SENSITIVE_PATTERNS {
-        if lower.contains(pattern) {
-            return "[REDACTED - potentially sensitive content]".to_string();
-        }
-    }
-
-    if text.len() > MAX_LOG_TEXT_LENGTH {
-        format!("{}...[truncated]", &text[..MAX_LOG_TEXT_LENGTH])
-    } else {
-        text.to_string()
-    }
-}
-
-/// Sanitize error messages to avoid exposing internal details
-fn sanitize_error_for_user(error: &str) -> String {
-    let lower = error.to_lowercase();
-
-    if lower.contains("token")
-        || lower.contains("secret")
-        || lower.contains("password")
-        || lower.contains("unauthorized")
-        || lower.contains("forbidden")
-    {
-        return "An authentication error occurred. Please check your configuration.".to_string();
-    }
-
-    if lower.contains("connection") || lower.contains("timeout") || lower.contains("network") {
-        return "A network error occurred. Please try again later.".to_string();
-    }
-
-    if lower.contains("database") || lower.contains("sql") || lower.contains("query") {
-        return "A database error occurred. Please try again later.".to_string();
-    }
-
-    if error.len() > MAX_SAFE_ERROR_LENGTH || error.contains('/') || error.contains("at ") {
-        return "An internal error occurred. Please try again.".to_string();
-    }
-
-    error.to_string()
-}
 
 /// Discord bot configuration
 #[derive(Debug, Clone, Deserialize)]
@@ -489,10 +422,10 @@ impl EventHandler for DiscordHandler {
                     result.response
                 };
 
-                // Discord has a 2000 character limit
+                // Discord has a message character limit
                 let chunks: Vec<&str> = response_text
                     .as_bytes()
-                    .chunks(2000)
+                    .chunks(DISCORD_MESSAGE_LIMIT)
                     .filter_map(|chunk| std::str::from_utf8(chunk).ok())
                     .collect();
 
@@ -555,25 +488,5 @@ mod tests {
         assert!(adapter.is_channel_allowed(123));
     }
 
-    #[test]
-    fn test_mask_for_logging() {
-        assert!(mask_for_logging("my password is secret123").contains("REDACTED"));
-        assert!(mask_for_logging("API_KEY=sk-1234567890").contains("REDACTED"));
-
-        let long_msg = "a".repeat(100);
-        let masked = mask_for_logging(&long_msg);
-        assert!(masked.contains("truncated"));
-
-        assert_eq!(mask_for_logging("Hello, world!"), "Hello, world!");
-    }
-
-    #[test]
-    fn test_sanitize_error_for_user() {
-        let sanitized = sanitize_error_for_user("Invalid token: abc123");
-        assert!(!sanitized.contains("abc123"));
-        assert!(sanitized.contains("authentication"));
-
-        let simple = sanitize_error_for_user("File not found");
-        assert_eq!(simple, "File not found");
-    }
+    // Note: mask_for_logging and sanitize_error_for_user tests are in util.rs
 }

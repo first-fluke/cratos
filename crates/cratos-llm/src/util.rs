@@ -87,7 +87,10 @@ pub fn validate_api_key(key: &str, provider_name: &str) -> Option<String> {
         return Some(format!("{} API key is required", provider_name));
     }
     if key.len() < MIN_KEY_LENGTH_FOR_PARTIAL_DISPLAY {
-        return Some(format!("{} API key appears to be invalid (too short)", provider_name));
+        return Some(format!(
+            "{} API key appears to be invalid (too short)",
+            provider_name
+        ));
     }
     None
 }

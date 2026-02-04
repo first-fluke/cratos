@@ -283,17 +283,26 @@ impl<'a> Drop for TaskGuard<'a> {
 /// Wait for shutdown signal (Ctrl+C or SIGTERM)
 pub async fn wait_for_shutdown_signal() {
     let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to install Ctrl+C handler");
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => {}
+            Err(e) => {
+                warn!(error = %e, "Failed to install Ctrl+C handler, waiting indefinitely");
+                std::future::pending::<()>().await;
+            }
+        }
     };
 
     #[cfg(unix)]
     let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("Failed to install SIGTERM handler")
-            .recv()
-            .await;
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to install SIGTERM handler, waiting indefinitely");
+                std::future::pending::<()>().await;
+            }
+        }
     };
 
     #[cfg(not(unix))]

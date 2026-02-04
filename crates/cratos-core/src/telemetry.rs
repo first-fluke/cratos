@@ -351,7 +351,10 @@ impl Telemetry {
         let enabled = config.enabled;
 
         if enabled {
-            info!("Telemetry enabled (opt-out via {}=false)", ENV_TELEMETRY_ENABLED);
+            info!(
+                "Telemetry enabled (opt-out via {}=false)",
+                ENV_TELEMETRY_ENABLED
+            );
         } else {
             info!("Telemetry disabled");
         }
@@ -525,7 +528,10 @@ impl Telemetry {
         let endpoint = match &config.endpoint_url {
             Some(url) => url.clone(),
             None => {
-                debug!("Telemetry: {} events (no endpoint configured)", events.len());
+                debug!(
+                    "Telemetry: {} events (no endpoint configured)",
+                    events.len()
+                );
                 return;
             }
         };
@@ -684,7 +690,10 @@ mod tests {
             .await;
 
         assert_eq!(telemetry.stats.commands_executed.load(Ordering::Relaxed), 2);
-        assert_eq!(telemetry.stats.commands_succeeded.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            telemetry.stats.commands_succeeded.load(Ordering::Relaxed),
+            1
+        );
         assert!((telemetry.stats.success_rate() - 0.5).abs() < f64::EPSILON);
     }
 

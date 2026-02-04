@@ -202,7 +202,10 @@ impl MatrixAdapter {
         let room_id_str = room_id.to_string();
 
         if !self.is_room_allowed(&room_id_str) {
-            debug!("Matrix: Ignoring message from non-allowed room {}", room_id_str);
+            debug!(
+                "Matrix: Ignoring message from non-allowed room {}",
+                room_id_str
+            );
             return None;
         }
 

@@ -18,21 +18,25 @@
 #![warn(missing_docs)]
 
 pub mod anthropic;
+pub mod completion;
 pub mod cost;
 pub mod deepseek;
-pub mod util;
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
 pub mod error;
 pub mod gemini;
 pub mod glm;
 pub mod groq;
+pub mod message;
 pub mod novita;
 pub mod ollama;
 pub mod openai;
 pub mod openrouter;
 pub mod qwen;
 pub mod router;
+pub mod token;
+pub mod tools;
+pub mod util;
 
 pub use cost::{
     global_tracker, CostReport, CostTracker, ModelPricing, SavingsPotential, UsageRecord,
