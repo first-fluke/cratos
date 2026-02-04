@@ -24,12 +24,13 @@ use crate::error::{Error, Result};
 use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingMessage};
 use async_trait::async_trait;
 use matrix_sdk::{
+    room::Room,
     ruma::{
         events::room::message::{
             MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent,
             TextMessageEventContent,
         },
-        RoomId,
+        OwnedEventId, RoomId,
     },
     Client,
 };
@@ -37,6 +38,12 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
+
+/// Default device name for Matrix client
+const DEFAULT_DEVICE_NAME: &str = "Cratos Bot";
+
+/// Prefix for edit message workaround
+const EDIT_MESSAGE_PREFIX: &str = "(edit) ";
 
 /// Matrix adapter configuration
 #[derive(Debug, Clone, Deserialize)]
@@ -60,7 +67,7 @@ pub struct MatrixConfig {
 }
 
 fn default_device_name() -> String {
-    "Cratos Bot".to_string()
+    DEFAULT_DEVICE_NAME.to_string()
 }
 
 impl MatrixConfig {
@@ -86,6 +93,11 @@ impl MatrixConfig {
             device_name: default_device_name(),
             allowed_rooms,
         })
+    }
+
+    /// Check if a room is allowed
+    pub fn is_room_allowed(&self, room_id: &str) -> bool {
+        self.allowed_rooms.is_empty() || self.allowed_rooms.iter().any(|r| r == room_id)
     }
 }
 
@@ -122,14 +134,7 @@ impl MatrixAdapter {
             .await
             .map_err(|e| Error::Network(format!("Failed to create Matrix client: {e}")))?;
 
-        // Login with password
-        let username = self
-            .config
-            .user_id
-            .trim_start_matches('@')
-            .split(':')
-            .next()
-            .unwrap_or(&self.config.user_id);
+        let username = self.extract_username();
 
         client
             .matrix_auth()
@@ -140,27 +145,52 @@ impl MatrixAdapter {
 
         info!("Matrix: Logged in as {}", self.config.user_id);
 
-        // Store client
         let mut client_guard = self.client.write().await;
         *client_guard = Some(client);
 
         Ok(())
     }
 
-    /// Check if a room is allowed
-    pub fn is_room_allowed(&self, room_id: &str) -> bool {
-        if self.config.allowed_rooms.is_empty() {
-            return true;
-        }
-        self.config.allowed_rooms.iter().any(|r| r == room_id)
+    /// Extract username from user_id (e.g., "@bot:matrix.org" -> "bot")
+    fn extract_username(&self) -> &str {
+        self.config
+            .user_id
+            .trim_start_matches('@')
+            .split(':')
+            .next()
+            .unwrap_or(&self.config.user_id)
     }
 
-    /// Get the Matrix client
+    /// Check if a room is allowed
+    pub fn is_room_allowed(&self, room_id: &str) -> bool {
+        self.config.is_room_allowed(room_id)
+    }
+
+    /// Get the Matrix client (must be connected first)
     async fn get_client(&self) -> Result<Client> {
-        let client_guard = self.client.read().await;
-        client_guard
+        self.client
+            .read()
+            .await
             .clone()
             .ok_or_else(|| Error::Network("Matrix client not connected".to_string()))
+    }
+
+    /// Get a room by ID
+    async fn get_room(&self, channel_id: &str) -> Result<Room> {
+        let client = self.get_client().await?;
+
+        let room_id = <&RoomId>::try_from(channel_id)
+            .map_err(|e| Error::Network(format!("Invalid room ID: {e}")))?;
+
+        client
+            .get_room(room_id)
+            .ok_or_else(|| Error::Network(format!("Room not found: {channel_id}")))
+    }
+
+    /// Parse event ID from string
+    fn parse_event_id(message_id: &str) -> Result<OwnedEventId> {
+        OwnedEventId::try_from(message_id)
+            .map_err(|e| Error::Network(format!("Invalid event ID: {e}")))
     }
 
     /// Normalize a Matrix message
@@ -172,31 +202,24 @@ impl MatrixAdapter {
         let room_id_str = room_id.to_string();
 
         if !self.is_room_allowed(&room_id_str) {
-            debug!(
-                "Matrix: Ignoring message from non-allowed room {}",
-                room_id_str
-            );
+            debug!("Matrix: Ignoring message from non-allowed room {}", room_id_str);
             return None;
         }
 
         let text = match &event.content.msgtype {
             MessageType::Text(TextMessageEventContent { body, .. }) => body.clone(),
-            _ => return None, // Only handle text messages for now
+            _ => return None,
         };
 
-        let user_id = event.sender.to_string();
-        let event_id = event.event_id.to_string();
+        let thread_id = self.extract_thread_id(event);
 
-        // Thread ID from relates_to if available
-        let thread_id = event.content.relates_to.as_ref().and_then(|r| match r {
-            matrix_sdk::ruma::events::room::message::Relation::Thread(t) => {
-                Some(t.event_id.to_string())
-            }
-            _ => None,
-        });
-
-        let mut msg =
-            NormalizedMessage::new(ChannelType::Matrix, room_id_str, user_id, event_id, text);
+        let mut msg = NormalizedMessage::new(
+            ChannelType::Matrix,
+            room_id_str,
+            event.sender.to_string(),
+            event.event_id.to_string(),
+            text,
+        );
 
         if let Some(tid) = thread_id {
             msg = msg.with_thread(tid);
@@ -210,6 +233,16 @@ impl MatrixAdapter {
 
         Some(msg)
     }
+
+    /// Extract thread ID from event's relates_to field
+    fn extract_thread_id(&self, event: &OriginalSyncRoomMessageEvent) -> Option<String> {
+        event.content.relates_to.as_ref().and_then(|r| match r {
+            matrix_sdk::ruma::events::room::message::Relation::Thread(t) => {
+                Some(t.event_id.to_string())
+            }
+            _ => None,
+        })
+    }
 }
 
 #[async_trait]
@@ -219,23 +252,14 @@ impl ChannelAdapter for MatrixAdapter {
     }
 
     async fn send_message(&self, channel_id: &str, message: OutgoingMessage) -> Result<String> {
-        let client = self.get_client().await?;
+        let room = self.get_room(channel_id).await?;
 
-        let room_id = <&RoomId>::try_from(channel_id)
-            .map_err(|e| Error::Network(format!("Invalid room ID: {e}")))?;
-
-        let room = client
-            .get_room(room_id)
-            .ok_or_else(|| Error::Network(format!("Room not found: {channel_id}")))?;
-
-        // Build message content
         let content = if message.parse_markdown {
             RoomMessageEventContent::text_html(&message.text, &message.text)
         } else {
             RoomMessageEventContent::text_plain(&message.text)
         };
 
-        // Send message
         let response = room
             .send(content)
             .await
@@ -253,16 +277,16 @@ impl ChannelAdapter for MatrixAdapter {
         message_id: &str,
         message: OutgoingMessage,
     ) -> Result<()> {
-        // Note: Matrix message editing requires the original event, which we don't have.
-        // As a workaround, we send a new message mentioning the edit.
-        // For proper edit support, we'd need to store/retrieve original events.
+        // Matrix message editing requires the original event, which we don't store.
+        // Workaround: send a new message with edit prefix.
         warn!(
             "Matrix: Edit not fully supported, sending new message instead for {}",
             message_id
         );
 
+        let edit_text = format!("{}{}", EDIT_MESSAGE_PREFIX, message.text);
         let _ = self
-            .send_message(channel_id, OutgoingMessage::text(format!("(edit) {}", message.text)))
+            .send_message(channel_id, OutgoingMessage::text(edit_text))
             .await?;
 
         debug!("Matrix: Sent edit message for {}", message_id);
@@ -270,17 +294,8 @@ impl ChannelAdapter for MatrixAdapter {
     }
 
     async fn delete_message(&self, channel_id: &str, message_id: &str) -> Result<()> {
-        let client = self.get_client().await?;
-
-        let room_id = <&RoomId>::try_from(channel_id)
-            .map_err(|e| Error::Network(format!("Invalid room ID: {e}")))?;
-
-        let room = client
-            .get_room(room_id)
-            .ok_or_else(|| Error::Network(format!("Room not found: {channel_id}")))?;
-
-        let event_id = matrix_sdk::ruma::OwnedEventId::try_from(message_id)
-            .map_err(|e| Error::Network(format!("Invalid event ID: {e}")))?;
+        let room = self.get_room(channel_id).await?;
+        let event_id = Self::parse_event_id(message_id)?;
 
         room.redact(&event_id, None, None)
             .await
@@ -291,14 +306,7 @@ impl ChannelAdapter for MatrixAdapter {
     }
 
     async fn send_typing(&self, channel_id: &str) -> Result<()> {
-        let client = self.get_client().await?;
-
-        let room_id = <&RoomId>::try_from(channel_id)
-            .map_err(|e| Error::Network(format!("Invalid room ID: {e}")))?;
-
-        let room = client
-            .get_room(room_id)
-            .ok_or_else(|| Error::Network(format!("Room not found: {channel_id}")))?;
+        let room = self.get_room(channel_id).await?;
 
         room.typing_notice(true)
             .await
@@ -313,41 +321,43 @@ impl ChannelAdapter for MatrixAdapter {
 mod tests {
     use super::*;
 
+    fn create_test_config(allowed_rooms: Vec<String>) -> MatrixConfig {
+        MatrixConfig {
+            homeserver_url: "https://matrix.org".to_string(),
+            user_id: "@bot:matrix.org".to_string(),
+            password: "secret".to_string(),
+            device_name: "Test Bot".to_string(),
+            allowed_rooms,
+        }
+    }
+
     #[test]
     fn test_config_structure() {
-        let config = MatrixConfig {
-            homeserver_url: "https://matrix.org".to_string(),
-            user_id: "@bot:matrix.org".to_string(),
-            password: "secret".to_string(),
-            device_name: "Test Bot".to_string(),
-            allowed_rooms: vec!["!room:matrix.org".to_string()],
-        };
+        let config = create_test_config(vec!["!room:matrix.org".to_string()]);
 
         assert_eq!(config.homeserver_url, "https://matrix.org");
-        assert!(config.is_room_allowed_check("!room:matrix.org"));
-        assert!(!config.is_room_allowed_check("!other:matrix.org"));
+        assert!(config.is_room_allowed("!room:matrix.org"));
+        assert!(!config.is_room_allowed("!other:matrix.org"));
     }
 
     #[test]
-    fn test_empty_allowed_rooms() {
-        let config = MatrixConfig {
-            homeserver_url: "https://matrix.org".to_string(),
-            user_id: "@bot:matrix.org".to_string(),
-            password: "secret".to_string(),
-            device_name: "Test Bot".to_string(),
-            allowed_rooms: vec![],
-        };
+    fn test_empty_allowed_rooms_allows_all() {
+        let config = create_test_config(vec![]);
 
-        // Empty allowed_rooms means all rooms are allowed
-        assert!(config.is_room_allowed_check("!any:matrix.org"));
+        assert!(config.is_room_allowed("!any:matrix.org"));
+        assert!(config.is_room_allowed("!another:example.com"));
     }
 
-    impl MatrixConfig {
-        fn is_room_allowed_check(&self, room_id: &str) -> bool {
-            if self.allowed_rooms.is_empty() {
-                return true;
-            }
-            self.allowed_rooms.iter().any(|r| r == room_id)
-        }
+    #[test]
+    fn test_extract_username() {
+        let config = create_test_config(vec![]);
+        let adapter = MatrixAdapter::new(config).expect("Failed to create adapter");
+
+        assert_eq!(adapter.extract_username(), "bot");
+    }
+
+    #[test]
+    fn test_default_device_name() {
+        assert_eq!(default_device_name(), DEFAULT_DEVICE_NAME);
     }
 }

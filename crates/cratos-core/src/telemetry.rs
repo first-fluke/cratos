@@ -59,9 +59,39 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/// Default batch size before sending events
+const DEFAULT_BATCH_SIZE: usize = 10;
+
+/// Default flush interval in seconds (5 minutes)
+const DEFAULT_FLUSH_INTERVAL_SECS: u64 = 300;
+
+/// Maximum queue size to prevent unbounded memory growth
+const MAX_QUEUE_SIZE: usize = 1000;
+
+/// HTTP request timeout in seconds
+const HTTP_TIMEOUT_SECS: u64 = 10;
+
+/// Environment variable name for telemetry enabled flag
+const ENV_TELEMETRY_ENABLED: &str = "CRATOS_TELEMETRY_ENABLED";
+
+/// Telemetry config file name
+const CONFIG_FILE_NAME: &str = "telemetry.toml";
+
+/// Cratos data directory name
+const CRATOS_DIR_NAME: &str = ".cratos";
+
+// ============================================================================
+// Configuration
+// ============================================================================
 
 /// Telemetry configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,23 +118,21 @@ pub struct TelemetryConfig {
 }
 
 fn default_enabled() -> bool {
-    // Check environment variable first
-    std::env::var("CRATOS_TELEMETRY_ENABLED")
-        .map(|v| v.to_lowercase() != "false" && v != "0")
-        .unwrap_or(true) // Default: enabled
+    std::env::var(ENV_TELEMETRY_ENABLED)
+        .map(|v| !matches!(v.to_lowercase().as_str(), "false" | "0"))
+        .unwrap_or(true)
 }
 
 fn generate_anonymous_id() -> String {
-    // Try to load existing ID from config, otherwise generate new
     Uuid::new_v4().to_string()
 }
 
 fn default_batch_size() -> usize {
-    10
+    DEFAULT_BATCH_SIZE
 }
 
 fn default_flush_interval() -> u64 {
-    300 // 5 minutes
+    DEFAULT_FLUSH_INTERVAL_SECS
 }
 
 impl Default for TelemetryConfig {
@@ -125,22 +153,25 @@ impl TelemetryConfig {
         let config_path = Self::config_path();
 
         if config_path.exists() {
-            match std::fs::read_to_string(&config_path) {
-                Ok(content) => {
-                    if let Ok(config) = toml::from_str::<TelemetryConfig>(&content) {
-                        return config;
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to read telemetry config: {}", e);
-                }
+            if let Some(config) = Self::load_from_file(&config_path) {
+                return config;
             }
         }
 
-        // Generate default config and save
         let config = Self::default();
         let _ = config.save();
         config
+    }
+
+    /// Load config from file path
+    fn load_from_file(path: &PathBuf) -> Option<Self> {
+        match std::fs::read_to_string(path) {
+            Ok(content) => toml::from_str(&content).ok(),
+            Err(e) => {
+                warn!("Failed to read telemetry config: {}", e);
+                None
+            }
+        }
     }
 
     /// Save config to file
@@ -151,8 +182,7 @@ impl TelemetryConfig {
             std::fs::create_dir_all(parent)?;
         }
 
-        let content = toml::to_string_pretty(self)
-            .map_err(std::io::Error::other)?;
+        let content = toml::to_string_pretty(self).map_err(std::io::Error::other)?;
 
         std::fs::write(config_path, content)
     }
@@ -161,10 +191,14 @@ impl TelemetryConfig {
     fn config_path() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".cratos")
-            .join("telemetry.toml")
+            .join(CRATOS_DIR_NAME)
+            .join(CONFIG_FILE_NAME)
     }
 }
+
+// ============================================================================
+// Events
+// ============================================================================
 
 /// Telemetry event types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,7 +224,7 @@ pub enum TelemetryEvent {
 
     /// Channel used
     ChannelUsed {
-        /// Channel type (telegram, slack, etc.)
+        /// Channel type (telegram, slack, matrix, etc.)
         channel_type: String,
     },
 
@@ -228,23 +262,24 @@ pub enum TelemetryEvent {
         feature: String,
     },
 
-    /// Error occurred (no details, just category)
+    /// Error occurred (category only, no details)
     ErrorOccurred {
         /// Error category
         category: String,
     },
 }
 
-/// Telemetry event with metadata
+/// Telemetry event with metadata (internal use)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TelemetryRecord {
-    /// Event timestamp
     timestamp: DateTime<Utc>,
-    /// Anonymous ID
     anonymous_id: String,
-    /// Event data
     event: TelemetryEvent,
 }
+
+// ============================================================================
+// Statistics
+// ============================================================================
 
 /// Aggregated statistics (local only, never sent)
 #[derive(Debug, Default)]
@@ -262,7 +297,7 @@ pub struct TelemetryStats {
 }
 
 impl TelemetryStats {
-    /// Get success rate
+    /// Get command success rate (0.0 to 1.0)
     pub fn success_rate(&self) -> f64 {
         let total = self.commands_executed.load(Ordering::Relaxed);
         let succeeded = self.commands_succeeded.load(Ordering::Relaxed);
@@ -273,7 +308,34 @@ impl TelemetryStats {
             succeeded as f64 / total as f64
         }
     }
+
+    /// Update stats based on event
+    fn update(&self, event: &TelemetryEvent) {
+        match event {
+            TelemetryEvent::CommandExecuted { success, .. } => {
+                self.commands_executed.fetch_add(1, Ordering::Relaxed);
+                if *success {
+                    self.commands_succeeded.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            TelemetryEvent::LlmUsed { tokens, .. } => {
+                self.tokens_used
+                    .fetch_add(u64::from(*tokens), Ordering::Relaxed);
+            }
+            TelemetryEvent::ToolExecuted { .. } => {
+                self.tools_executed.fetch_add(1, Ordering::Relaxed);
+            }
+            TelemetryEvent::SkillUsed { .. } => {
+                self.skills_used.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => {}
+        }
+    }
 }
+
+// ============================================================================
+// Telemetry Manager
+// ============================================================================
 
 /// Telemetry manager
 pub struct Telemetry {
@@ -289,7 +351,7 @@ impl Telemetry {
         let enabled = config.enabled;
 
         if enabled {
-            info!("Telemetry enabled (opt-out via CRATOS_TELEMETRY_ENABLED=false)");
+            info!("Telemetry enabled (opt-out via {}=false)", ENV_TELEMETRY_ENABLED);
         } else {
             info!("Telemetry disabled");
         }
@@ -324,23 +386,30 @@ impl Telemetry {
             info!("Telemetry enabled");
         } else {
             info!("Telemetry disabled");
-
-            // Clear pending events
-            let mut queue = self.event_queue.write().await;
-            queue.clear();
+            self.clear_queue().await;
         }
+    }
+
+    /// Clear the event queue
+    async fn clear_queue(&self) {
+        let mut queue = self.event_queue.write().await;
+        queue.clear();
     }
 
     /// Track an event
     pub async fn track(&self, event: TelemetryEvent) {
-        // Update local stats (always, even if telemetry disabled)
-        self.update_stats(&event);
+        // Always update local stats, even if telemetry is disabled
+        self.stats.update(&event);
 
-        // Only queue if enabled
         if !self.is_enabled() {
             return;
         }
 
+        self.enqueue_event(event).await;
+    }
+
+    /// Enqueue event and flush if batch size reached
+    async fn enqueue_event(&self, event: TelemetryEvent) {
         let config = self.config.read().await;
 
         let record = TelemetryRecord {
@@ -349,16 +418,20 @@ impl Telemetry {
             event,
         };
 
-        let mut queue = self.event_queue.write().await;
-        queue.push(record);
+        let should_flush = {
+            let mut queue = self.event_queue.write().await;
+            queue.push(record);
+            queue.len() >= config.batch_size
+        };
 
-        // Flush if batch size reached
-        if queue.len() >= config.batch_size {
-            drop(queue);
-            drop(config);
+        drop(config);
+
+        if should_flush {
             self.flush().await;
         }
     }
+
+    // Convenience tracking methods
 
     /// Track app start
     pub async fn track_app_start(&self) {
@@ -437,56 +510,65 @@ impl Telemetry {
         &self.stats
     }
 
-    /// Flush pending events (send to endpoint)
+    /// Flush pending events to endpoint
     pub async fn flush(&self) {
         if !self.is_enabled() {
             return;
         }
 
-        let mut queue = self.event_queue.write().await;
-
-        if queue.is_empty() {
+        let events = self.drain_queue().await;
+        if events.is_empty() {
             return;
         }
-
-        let events: Vec<TelemetryRecord> = queue.drain(..).collect();
-        drop(queue);
 
         let config = self.config.read().await;
+        let endpoint = match &config.endpoint_url {
+            Some(url) => url.clone(),
+            None => {
+                debug!("Telemetry: {} events (no endpoint configured)", events.len());
+                return;
+            }
+        };
+        drop(config);
 
-        // If no endpoint configured, just log locally
-        if config.endpoint_url.is_none() {
-            debug!("Telemetry: {} events (no endpoint configured)", events.len());
-            return;
-        }
+        self.send_events_to_endpoint(&endpoint, events).await;
+    }
 
-        // Send to endpoint
-        let endpoint = config.endpoint_url.as_ref().unwrap();
+    /// Drain all events from queue
+    async fn drain_queue(&self) -> Vec<TelemetryRecord> {
+        let mut queue = self.event_queue.write().await;
+        queue.drain(..).collect()
+    }
 
-        match Self::send_events(endpoint, &events).await {
-            Ok(_) => {
+    /// Send events to endpoint, re-queue on failure
+    async fn send_events_to_endpoint(&self, endpoint: &str, events: Vec<TelemetryRecord>) {
+        match Self::send_http_request(endpoint, &events).await {
+            Ok(()) => {
                 debug!("Telemetry: Sent {} events", events.len());
             }
             Err(e) => {
                 warn!("Telemetry: Failed to send events: {}", e);
-                // Re-queue events on failure (with limit)
-                let mut queue = self.event_queue.write().await;
-                if queue.len() < 1000 {
-                    // Prevent unbounded growth
-                    queue.extend(events);
-                }
+                self.requeue_events(events).await;
             }
         }
     }
 
-    /// Send events to endpoint
-    async fn send_events(endpoint: &str, events: &[TelemetryRecord]) -> Result<(), String> {
+    /// Re-queue events on failure (with size limit)
+    async fn requeue_events(&self, events: Vec<TelemetryRecord>) {
+        let mut queue = self.event_queue.write().await;
+        if queue.len() < MAX_QUEUE_SIZE {
+            queue.extend(events);
+        }
+    }
+
+    /// Send HTTP request to endpoint
+    async fn send_http_request(endpoint: &str, events: &[TelemetryRecord]) -> Result<(), String> {
         let client = reqwest::Client::new();
 
         let response = client
             .post(endpoint)
             .json(events)
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -497,30 +579,6 @@ impl Telemetry {
             Err(format!("HTTP {}", response.status()))
         }
     }
-
-    /// Update local statistics
-    fn update_stats(&self, event: &TelemetryEvent) {
-        match event {
-            TelemetryEvent::CommandExecuted { success, .. } => {
-                self.stats.commands_executed.fetch_add(1, Ordering::Relaxed);
-                if *success {
-                    self.stats.commands_succeeded.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-            TelemetryEvent::LlmUsed { tokens, .. } => {
-                self.stats
-                    .tokens_used
-                    .fetch_add(*tokens as u64, Ordering::Relaxed);
-            }
-            TelemetryEvent::ToolExecuted { .. } => {
-                self.stats.tools_executed.fetch_add(1, Ordering::Relaxed);
-            }
-            TelemetryEvent::SkillUsed { .. } => {
-                self.stats.skills_used.fetch_add(1, Ordering::Relaxed);
-            }
-            _ => {}
-        }
-    }
 }
 
 impl Default for Telemetry {
@@ -528,6 +586,10 @@ impl Default for Telemetry {
         Self::with_defaults()
     }
 }
+
+// ============================================================================
+// Global Instance
+// ============================================================================
 
 /// Global telemetry instance
 static TELEMETRY: std::sync::OnceLock<Telemetry> = std::sync::OnceLock::new();
@@ -542,30 +604,36 @@ pub fn init_telemetry(config: TelemetryConfig) {
     let _ = TELEMETRY.set(Telemetry::new(config));
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn create_test_config(enabled: bool, batch_size: usize) -> TelemetryConfig {
+        TelemetryConfig {
+            enabled,
+            batch_size,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn test_default_config() {
         let config = TelemetryConfig::default();
-        // Default depends on env var, but should have valid anonymous_id
+
         assert!(!config.anonymous_id.is_empty());
-        assert_eq!(config.batch_size, 10);
-        assert_eq!(config.flush_interval_secs, 300);
+        assert_eq!(config.batch_size, DEFAULT_BATCH_SIZE);
+        assert_eq!(config.flush_interval_secs, DEFAULT_FLUSH_INTERVAL_SECS);
     }
 
     #[tokio::test]
-    async fn test_telemetry_disabled() {
-        let config = TelemetryConfig {
-            enabled: false,
-            ..Default::default()
-        };
-
-        let telemetry = Telemetry::new(config);
+    async fn test_telemetry_disabled_does_not_queue() {
+        let telemetry = Telemetry::new(create_test_config(false, DEFAULT_BATCH_SIZE));
         assert!(!telemetry.is_enabled());
 
-        // Events should not be queued when disabled
         telemetry
             .track(TelemetryEvent::CommandExecuted {
                 command: "test".to_string(),
@@ -579,14 +647,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_telemetry_enabled() {
-        let config = TelemetryConfig {
-            enabled: true,
-            batch_size: 100, // High batch size to prevent auto-flush
-            ..Default::default()
-        };
-
-        let telemetry = Telemetry::new(config);
+    async fn test_telemetry_enabled_queues_events() {
+        let telemetry = Telemetry::new(create_test_config(true, 100));
         assert!(telemetry.is_enabled());
 
         telemetry
@@ -602,13 +664,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_stats_update() {
-        let config = TelemetryConfig {
-            enabled: false, // Disabled, but stats should still update
-            ..Default::default()
-        };
-
-        let telemetry = Telemetry::new(config);
+    async fn test_stats_update_even_when_disabled() {
+        let telemetry = Telemetry::new(create_test_config(false, DEFAULT_BATCH_SIZE));
 
         telemetry
             .track(TelemetryEvent::CommandExecuted {
@@ -627,19 +684,36 @@ mod tests {
             .await;
 
         assert_eq!(telemetry.stats.commands_executed.load(Ordering::Relaxed), 2);
-        assert_eq!(
-            telemetry.stats.commands_succeeded.load(Ordering::Relaxed),
-            1
-        );
+        assert_eq!(telemetry.stats.commands_succeeded.load(Ordering::Relaxed), 1);
         assert!((telemetry.stats.success_rate() - 0.5).abs() < f64::EPSILON);
     }
 
     #[tokio::test]
-    async fn test_set_enabled() {
-        let telemetry = Telemetry::new(TelemetryConfig {
-            enabled: true,
-            ..Default::default()
-        });
+    async fn test_set_enabled_clears_queue_when_disabled() {
+        let telemetry = Telemetry::new(create_test_config(true, 100));
+
+        telemetry
+            .track(TelemetryEvent::FeatureUsed {
+                feature: "test".to_string(),
+            })
+            .await;
+
+        {
+            let queue = telemetry.event_queue.read().await;
+            assert_eq!(queue.len(), 1);
+        }
+
+        telemetry.set_enabled(false).await;
+
+        {
+            let queue = telemetry.event_queue.read().await;
+            assert!(queue.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_toggle_enabled() {
+        let telemetry = Telemetry::new(create_test_config(true, DEFAULT_BATCH_SIZE));
 
         assert!(telemetry.is_enabled());
 
