@@ -12,7 +12,12 @@ use tracing::debug;
 // ============================================================================
 
 /// Dangerous git flags that should be blocked
-#[allow(dead_code)] // Used in tests and for documentation
+///
+/// These flags can cause destructive operations or bypass safety checks:
+/// - Force push/delete flags that can overwrite history
+/// - Hooks bypass flags that skip safety validations
+/// - Mirror/prune flags that can delete remote branches
+#[cfg(test)]
 const BLOCKED_FLAGS: &[&str] = &[
     "--force",
     "-f",
@@ -29,7 +34,10 @@ const BLOCKED_FLAGS: &[&str] = &[
 ];
 
 /// Check if an argument contains blocked flags
-#[allow(dead_code)] // Used in tests and for future validation
+///
+/// Returns true if the argument matches any blocked flag exactly or as a prefix
+/// (e.g., `--force=true` matches `--force`).
+#[cfg(test)]
 fn contains_blocked_flag(arg: &str) -> bool {
     BLOCKED_FLAGS
         .iter()
