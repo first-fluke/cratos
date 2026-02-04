@@ -4,25 +4,27 @@
 
 Cratos는 Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트가 이해하고, 정보를 모으고, 실행하고, 결과를 보고하는 **Rust 기반 AI 어시스턴트**입니다.
 
-### 핵심 차별화 (vs OpenClaw)
+### 핵심 기능
 
-| 기능 | OpenClaw | Cratos |
-|------|----------|--------|
-| **Docker 불필요** | ✅ Docker 필요 | ✅ SQLite 내장, 즉시 실행 |
-| **자동 스킬 생성** | ❌ 마켓플레이스 | ✅ 사용 패턴 학습 → 자동 생성 |
-| **리플레이 (되감기)** | ❌ | ✅ 타임라인 + 재실행 + dry-run |
-| **모델 라우팅** | ❌ | ✅ 작업별 자동 선택, 70% 비용 절감 |
-| **원격 개발 E2E** | △ | ✅ Issue → PR 완전 자동화 |
-| **Tool Doctor** | ❌ | ✅ 자기 진단 + 해결 체크리스트 |
+| 기능 | 설명 |
+|------|------|
+| **경량 설치** | Docker/PostgreSQL 불필요, SQLite 내장, 단일 바이너리 |
+| **자동 스킬 생성** | 사용 패턴 학습 → 자동 스킬 생성 |
+| **리플레이 (되감기)** | 타임라인 + 재실행 + dry-run |
+| **모델 라우팅** | 작업별 자동 모델 선택, 비용 최적화 |
+| **원격 개발 E2E** | Issue → PR 완전 자동화 |
+| **Tool Doctor** | 자기 진단 + 해결 체크리스트 |
 
 ## 기술 스택
 
-- **언어**: Rust 1.75+
+- **언어**: Rust 1.80+
 - **런타임**: Tokio (비동기)
 - **웹**: Axum 0.7
 - **DB**: SQLite (sqlx, 내장), Redis (세션용, 선택)
-- **채널**: teloxide (Telegram), slack-morphism (Slack)
-- **LLM**: async-openai (OpenAI), reqwest (Anthropic)
+- **채널**: teloxide (Telegram), slack-morphism (Slack), serenity (Discord), matrix-sdk (Matrix)
+- **LLM**: async-openai (OpenAI), reqwest (Anthropic), tiktoken-rs (토큰 카운팅)
+- **임베딩/검색**: fastembed (로컬 임베딩), usearch (벡터 인덱스)
+- **오디오**: cpal, rodio (선택적)
 - **데이터**: `~/.cratos/cratos.db` (이벤트), `~/.cratos/skills.db` (스킬)
 
 ## 프로젝트 구조
@@ -38,11 +40,14 @@ cratos/
 │   └── skills/             # 5개 스킬
 ├── crates/                 # Rust workspace
 │   ├── cratos-core/        # 핵심 오케스트레이션, 보안, 자격증명
-│   ├── cratos-channels/    # 채널 어댑터 (Telegram, Slack)
+│   ├── cratos-channels/    # 채널 어댑터 (Telegram, Slack, Discord, Matrix)
 │   ├── cratos-tools/       # 도구 레지스트리, 샌드박스
-│   ├── cratos-llm/         # LLM 프로바이더 (8개)
+│   ├── cratos-llm/         # LLM 프로바이더, 임베딩
 │   ├── cratos-replay/      # 리플레이 엔진 (SQLite)
-│   └── cratos-skills/      # 자동 스킬 생성 시스템 ⭐
+│   ├── cratos-skills/      # 자동 스킬 생성 시스템 ⭐
+│   ├── cratos-search/      # 벡터 검색, 시맨틱 인덱싱
+│   ├── cratos-audio/       # 음성 제어 (STT/TTS, 선택적)
+│   └── cratos-canvas/      # 캔버스 (future)
 └── PRD.md                  # 상세 요구사항
 
 ~/.cratos/                  # 데이터 디렉토리 (자동 생성)
