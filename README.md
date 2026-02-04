@@ -4,7 +4,7 @@ Cratos is a **Rust-based AI assistant** that understands natural language comman
 
 ## Key Features
 
-- **No Docker Required**: Runs immediately with embedded SQLite (`~/.cratos/cratos.db`)
+- **Lightweight**: Runs immediately with embedded SQLite (`~/.cratos/cratos.db`)
 - **Automatic Skill Generation**: Learns usage patterns to automatically create workflow skills
 - **Multi-LLM Support**: OpenAI, Anthropic, Gemini, Ollama, GLM, Qwen, OpenRouter, Novita, Groq, DeepSeek
 - **Smart Routing**: Automatic model selection by task type reduces costs by 70%
@@ -51,7 +51,7 @@ cp .env.example .env
 vim .env
 ```
 
-### 2. Run (No Docker Required!)
+### 2. Run
 
 ```bash
 # Build and run

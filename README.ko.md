@@ -4,7 +4,7 @@ Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트가 이해�
 
 ## 주요 기능
 
-- **Docker 불필요**: 내장 SQLite로 설치 즉시 실행 (`~/.cratos/cratos.db`)
+- **경량 설치**: 내장 SQLite로 설치 즉시 실행 (`~/.cratos/cratos.db`)
 - **자동 스킬 생성**: 사용 패턴을 학습하여 자동으로 워크플로우 스킬 생성
 - **멀티 LLM 지원**: OpenAI, Anthropic, Gemini, Ollama, GLM, Qwen, OpenRouter, Novita, Groq, DeepSeek
 - **스마트 라우팅**: 작업 유형별 자동 모델 선택으로 비용 70% 절감
@@ -53,7 +53,7 @@ cp .env.example .env
 vim .env
 ```
 
-### 2. 실행 (Docker 불필요!)
+### 2. 실행
 
 ```bash
 # 빌드 및 실행
