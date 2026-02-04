@@ -26,9 +26,13 @@ tracing.workspace = true
 async-trait.workspace = true
 
 # Security - Slack request signature verification
-hmac = "0.12"
+hmac = "0.12.1"
 sha2 = "0.10"
 hex = "0.4"
+
+# Matrix support (no sqlite to avoid libsqlite3-sys conflict with sqlx)
+matrix-sdk = { version = "0.16", default-features = false, features = ["rustls-tls", "markdown"] }
+url = "2.5"
 
 [dev-dependencies]
 mockall.workspace = true

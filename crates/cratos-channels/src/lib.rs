@@ -5,12 +5,14 @@
 //! - Slack (via slack-morphism)
 //! - Discord (via serenity)
 //! - WhatsApp (via Baileys bridge or Business API)
+//! - Matrix (via matrix-sdk)
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 pub mod discord;
 pub mod error;
+pub mod matrix;
 pub mod message;
 pub mod slack;
 pub mod telegram;
@@ -37,3 +39,6 @@ pub use discord::{DiscordAdapter, DiscordConfig};
 // Re-export WhatsApp adapters
 pub use whatsapp::{WhatsAppAdapter, WhatsAppConfig};
 pub use whatsapp_business::{WhatsAppBusinessAdapter, WhatsAppBusinessConfig};
+
+// Re-export Matrix adapter
+pub use matrix::{MatrixAdapter, MatrixConfig};

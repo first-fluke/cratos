@@ -23,6 +23,7 @@ pub mod permissions;
 pub mod planner;
 pub mod security;
 pub mod shutdown;
+pub mod telemetry;
 pub mod utils;
 
 pub use approval::{ApprovalManager, ApprovalRequest, ApprovalStatus, SharedApprovalManager};
@@ -65,4 +66,9 @@ pub use agents::{
 pub use shutdown::{
     shutdown_signal_with_controller, wait_for_shutdown_signal, ShutdownController, ShutdownPhase,
     TaskGuard,
+};
+
+// Re-export telemetry module types
+pub use telemetry::{
+    global_telemetry, init_telemetry, Telemetry, TelemetryConfig, TelemetryEvent, TelemetryStats,
 };

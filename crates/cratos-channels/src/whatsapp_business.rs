@@ -584,7 +584,7 @@ mod tests {
     fn test_number_allowed() {
         let config = WhatsAppBusinessConfig::new("token", "phone_id", "business_id")
             .with_allowed_numbers(vec!["+821012345678".to_string()]);
-        let adapter = WhatsAppBusinessAdapter::new(config);
+        let adapter = WhatsAppBusinessAdapter::new(config).expect("Failed to create adapter");
 
         assert!(adapter.is_number_allowed("+821012345678"));
         assert!(adapter.is_number_allowed("821012345678"));
@@ -594,7 +594,7 @@ mod tests {
     #[test]
     fn test_empty_allowlist_allows_all() {
         let config = WhatsAppBusinessConfig::new("token", "phone_id", "business_id");
-        let adapter = WhatsAppBusinessAdapter::new(config);
+        let adapter = WhatsAppBusinessAdapter::new(config).expect("Failed to create adapter");
 
         assert!(adapter.is_number_allowed("+821012345678"));
         assert!(adapter.is_number_allowed("+14155551234"));
@@ -604,7 +604,7 @@ mod tests {
     fn test_verify_webhook() {
         let config = WhatsAppBusinessConfig::new("token", "phone_id", "business_id")
             .with_webhook_verify_token("my_verify_token");
-        let adapter = WhatsAppBusinessAdapter::new(config);
+        let adapter = WhatsAppBusinessAdapter::new(config).expect("Failed to create adapter");
 
         // Valid verification
         let result = adapter.verify_webhook("subscribe", "my_verify_token", "challenge_123");

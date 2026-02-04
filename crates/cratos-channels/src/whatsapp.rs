@@ -522,7 +522,7 @@ mod tests {
     fn test_number_allowed() {
         let config =
             WhatsAppConfig::default().with_allowed_numbers(vec!["+821012345678".to_string()]);
-        let adapter = WhatsAppAdapter::new(config);
+        let adapter = WhatsAppAdapter::new(config).expect("Failed to create adapter");
 
         assert!(adapter.is_number_allowed("+821012345678@s.whatsapp.net"));
         assert!(adapter.is_number_allowed("821012345678"));
@@ -532,7 +532,7 @@ mod tests {
     #[test]
     fn test_empty_allowlist_allows_all() {
         let config = WhatsAppConfig::default();
-        let adapter = WhatsAppAdapter::new(config);
+        let adapter = WhatsAppAdapter::new(config).expect("Failed to create adapter");
 
         assert!(adapter.is_number_allowed("+821012345678"));
         assert!(adapter.is_number_allowed("+14155551234"));
