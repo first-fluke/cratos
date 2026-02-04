@@ -355,10 +355,10 @@ Cratos는 8개 LLM 프로바이더를 지원합니다.
 
 | 작업 유형 | 선택 모델 |
 |----------|-----------|
-| 간단한 질문 | GPT-4o-mini, Qwen-Turbo |
-| 대화 | GPT-4o, Claude Sonnet |
+| 간단한 질문 | GPT-5.2-mini, Qwen-Turbo |
+| 대화 | GPT-5.2, Claude Sonnet |
 | 코드 작성 | Claude 3.5 Sonnet |
-| 복잡한 계획 | GPT-4-Turbo, Claude Opus |
+| 복잡한 계획 | GPT-5.2-turbo, Claude Opus |
 
 ### 특정 모델 지정
 
@@ -366,8 +366,8 @@ Cratos는 8개 LLM 프로바이더를 지원합니다.
 나: Claude로 이 코드 리뷰해줘
 봇: (Claude 사용하여 리뷰)
 
-나: GPT-4로 설명해줘
-봇: (GPT-4 사용하여 설명)
+나: GPT-5.2로 설명해줘
+봇: (GPT-5.2 사용하여 설명)
 
 나: 무료 모델로 요약해줘
 봇: (OpenRouter/Novita 무료 모델 사용)

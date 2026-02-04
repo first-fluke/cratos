@@ -80,7 +80,7 @@ timeout_ms = 60000
 
 [llm.deepseek]
 # DeepSeek ultra-low-cost - API key from DEEPSEEK_API_KEY env var
-# $0.14/1M input, $0.28/1M output (95%+ cheaper than GPT-4)
+# $0.14/1M input, $0.28/1M output (95%+ cheaper than GPT-5.2)
 base_url = "https://api.deepseek.com/v1"
 default_model = "deepseek-chat"
 timeout_ms = 120000

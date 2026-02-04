@@ -131,7 +131,7 @@ cratos/
 
 | 프로바이더 | 모델 | 특징 |
 |-----------|------|------|
-| **OpenAI** | GPT-4o, GPT-4o-mini | 범용, 도구 호출 우수 |
+| **OpenAI** | GPT-5.2, GPT-5.2-mini | 범용, 도구 호출 우수 |
 | **Anthropic** | Claude 3.5 Sonnet/Haiku | 코드 생성 우수 |
 | **Gemini** | Gemini 1.5 Pro/Flash | 긴 컨텍스트 |
 | **GLM** | GLM-4-9B, GLM-Z1-9B | 중국어 특화 |
@@ -153,11 +153,11 @@ cratos/
 
 | 작업 유형 | 모델 티어 | 예시 모델 |
 |----------|-----------|-----------|
-| Classification | Fast | GPT-4o-mini, Claude Haiku |
-| Summarization | Fast | GPT-4o-mini, Gemini Flash |
-| Conversation | Standard | GPT-4o, Claude Sonnet |
-| CodeGeneration | Standard | GPT-4o, Claude Sonnet |
-| Planning | Premium | GPT-4-turbo, Claude Opus |
+| Classification | Fast | GPT-5.2-mini, Claude Haiku |
+| Summarization | Fast | GPT-5.2-mini, Gemini Flash |
+| Conversation | Standard | GPT-5.2, Claude Sonnet |
+| CodeGeneration | Standard | GPT-5.2, Claude Sonnet |
+| Planning | Premium | GPT-5.2-turbo, Claude Opus |
 
 ## 보안 기능
 

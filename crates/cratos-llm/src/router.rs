@@ -108,11 +108,11 @@ impl TaskType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModelTier {
-    /// Fast, cheap models for simple tasks (GPT-4o-mini, Claude Haiku, Gemini Flash)
+    /// Fast, cheap models for simple tasks (GPT-5.2-mini, Claude Haiku, Gemini Flash)
     Fast,
-    /// Balanced models for general tasks (GPT-4o, Claude Sonnet)
+    /// Balanced models for general tasks (GPT-5.2, Claude Sonnet)
     Standard,
-    /// Premium models for complex reasoning (GPT-4, Claude Opus)
+    /// Premium models for complex reasoning (GPT-5.2, Claude Opus)
     Premium,
 }
 

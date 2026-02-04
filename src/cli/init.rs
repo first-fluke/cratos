@@ -25,7 +25,7 @@ pub async fn run() -> anyhow::Result<()> {
         "OpenRouter (Free tier available)",
         "Novita AI (Free tier available)",
         "DeepSeek (Ultra low cost)",
-        "OpenAI (GPT-4)",
+        "OpenAI (GPT-5.2)",
         "Anthropic (Claude)",
         "Ollama (Local, free)",
     ])
@@ -37,7 +37,7 @@ pub async fn run() -> anyhow::Result<()> {
         "OpenRouter (Free tier available)" => get_api_key("OpenRouter"),
         "Novita AI (Free tier available)" => get_api_key("Novita"),
         "DeepSeek (Ultra low cost)" => get_api_key("DeepSeek"),
-        "OpenAI (GPT-4)" => get_api_key("OpenAI"),
+        "OpenAI (GPT-5.2)" => get_api_key("OpenAI"),
         "Anthropic (Claude)" => get_api_key("Anthropic"),
         "Ollama (Local, free)" => Ok(String::new()),
         _ => Ok(String::new()),
@@ -130,7 +130,7 @@ fn build_env_file(
         "DeepSeek (Ultra low cost)" => {
             content.push_str(&format!("DEEPSEEK_API_KEY={}\n", api_key));
         }
-        "OpenAI (GPT-4)" => {
+        "OpenAI (GPT-5.2)" => {
             content.push_str(&format!("OPENAI_API_KEY={}\n", api_key));
         }
         "Anthropic (Claude)" => {

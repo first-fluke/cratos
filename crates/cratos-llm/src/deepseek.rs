@@ -1,7 +1,7 @@
 //! DeepSeek - Ultra-low-cost LLM provider
 //!
 //! DeepSeek provides extremely affordable models:
-//! - DeepSeek-V3: $0.14/1M input, $0.28/1M output (95%+ cheaper than GPT-4)
+//! - DeepSeek-V3: $0.14/1M input, $0.28/1M output (95%+ cheaper than GPT-5.2)
 //! - DeepSeek-Coder: Specialized for code generation
 //!
 //! Uses OpenAI-compatible API.

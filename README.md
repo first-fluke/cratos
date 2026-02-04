@@ -141,11 +141,11 @@ Automatic model selection based on task type:
 
 | Task Type | Model Tier | Example Models |
 |-----------|------------|----------------|
-| Classification | Fast | GPT-4o-mini, Claude Haiku |
-| Summarization | Fast | GPT-4o-mini, Gemini Flash |
-| Conversation | Standard | GPT-4o, Claude Sonnet |
-| CodeGeneration | Standard | GPT-4o, Claude Sonnet |
-| Planning | Premium | GPT-4-turbo, Claude Opus |
+| Classification | Fast | GPT-5.2-mini, Claude Haiku |
+| Summarization | Fast | GPT-5.2-mini, Gemini Flash |
+| Conversation | Standard | GPT-5.2, Claude Sonnet |
+| CodeGeneration | Standard | GPT-5.2, Claude Sonnet |
+| Planning | Premium | GPT-5.2-turbo, Claude Opus |
 
 ## Security Features
 

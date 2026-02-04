@@ -33,10 +33,10 @@ Cratos LLM 프로바이더 연동 전문 에이전트.
 
 | 작업 유형 | 모델 | 예상 비용 |
 |----------|------|----------|
-| 분류/짧은 요약 | Haiku / GPT-4o-mini | 낮음 |
-| 계획 수립 | Sonnet / GPT-4o | 중간 |
-| 코드 작성 | Opus / GPT-4o | 높음 |
-| 문장 다듬기 | Haiku / GPT-4o-mini | 낮음 |
+| 분류/짧은 요약 | Haiku / GPT-5.2-mini | 낮음 |
+| 계획 수립 | Sonnet / GPT-5.2 | 중간 |
+| 코드 작성 | Opus / GPT-5.2 | 높음 |
+| 문장 다듬기 | Haiku / GPT-5.2-mini | 낮음 |
 
 ## 인터페이스
 

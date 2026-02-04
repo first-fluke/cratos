@@ -155,7 +155,7 @@ Cratos가 AI 기능을 사용하려면 LLM API 키가 필요합니다.
 
 ### 💰 유료 옵션
 
-#### OpenAI (GPT-4)
+#### OpenAI (GPT-5.2)
 1. https://platform.openai.com/api-keys 접속
 2. 계정 생성 또는 로그인
 3. "Create new secret key" 클릭

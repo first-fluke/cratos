@@ -355,10 +355,10 @@ Automatically selects appropriate model based on task:
 
 | Task Type | Selected Model |
 |-----------|----------------|
-| Simple questions | GPT-4o-mini, Qwen-Turbo |
-| Conversation | GPT-4o, Claude Sonnet |
+| Simple questions | GPT-5.2-mini, Qwen-Turbo |
+| Conversation | GPT-5.2, Claude Sonnet |
 | Code writing | Claude 3.5 Sonnet |
-| Complex planning | GPT-4-Turbo, Claude Opus |
+| Complex planning | GPT-5.2-turbo, Claude Opus |
 
 ### Specify Model
 
@@ -366,8 +366,8 @@ Automatically selects appropriate model based on task:
 You: Review this code with Claude
 Bot: (reviews using Claude)
 
-You: Explain with GPT-4
-Bot: (explains using GPT-4)
+You: Explain with GPT-5.2
+Bot: (explains using GPT-5.2)
 
 You: Summarize with free model
 Bot: (uses OpenRouter/Novita free model)

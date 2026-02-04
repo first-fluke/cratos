@@ -153,7 +153,7 @@ Cratos needs LLM API keys for AI functionality.
 
 ### 💰 Paid Options
 
-#### OpenAI (GPT-4)
+#### OpenAI (GPT-5.2)
 1. Visit https://platform.openai.com/api-keys
 2. Create account or sign in
 3. Click "Create new secret key"

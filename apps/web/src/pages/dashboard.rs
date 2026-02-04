@@ -212,7 +212,7 @@ fn ModelUsageChart() -> impl IntoView {
             "Groq".to_string(),
             "DeepSeek".to_string(),
             "Claude".to_string(),
-            "GPT-4".to_string(),
+            "GPT-5.2".to_string(),
         ],
         series: vec![DataSeries {
             name: "Requests".to_string(),

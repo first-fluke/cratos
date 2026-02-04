@@ -26,20 +26,20 @@ const DEFAULT_MAX_RECORDS: usize = 10_000;
 /// Minimum cost threshold for savings recommendation (USD)
 const MIN_SAVINGS_THRESHOLD: f64 = 0.01;
 
-/// Assumed percentage of GPT-4o requests that could use mini
+/// Assumed percentage of GPT-5.2 requests that could use mini
 const GPT4O_MINI_CANDIDATE_RATIO: f64 = 0.3;
 
 /// Assumed percentage of Opus requests that could use Sonnet
 const OPUS_SONNET_CANDIDATE_RATIO: f64 = 0.5;
 
 // Model pricing constants (per 1M tokens)
-/// GPT-4o-mini input cost per 1M tokens
+/// GPT-5.2-mini input cost per 1M tokens
 const GPT4O_MINI_INPUT_COST: f64 = 0.15;
-/// GPT-4o-mini output cost per 1M tokens
+/// GPT-5.2-mini output cost per 1M tokens
 const GPT4O_MINI_OUTPUT_COST: f64 = 0.60;
-/// GPT-4o input cost per 1M tokens
+/// GPT-5.2 input cost per 1M tokens
 const GPT4O_INPUT_COST: f64 = 2.50;
-/// GPT-4o output cost per 1M tokens
+/// GPT-5.2 output cost per 1M tokens
 const GPT4O_OUTPUT_COST: f64 = 10.00;
 /// Claude Sonnet input cost per 1M tokens
 const CLAUDE_SONNET_INPUT_COST: f64 = 3.00;
@@ -541,7 +541,7 @@ impl CostTracker {
         }
     }
 
-    /// Calculate potential savings by replacing GPT-4o with GPT-4o-mini for simple tasks
+    /// Calculate potential savings by replacing GPT-5.2 with GPT-5.2-mini for simple tasks
     fn calculate_gpt4o_savings(
         &self,
         model: &str,
@@ -794,7 +794,7 @@ mod tests {
     async fn test_estimate_cost() {
         let tracker = CostTracker::new();
 
-        // GPT-4o-mini: $0.15/1M input, $0.60/1M output
+        // GPT-5.2-mini: $0.15/1M input, $0.60/1M output
         let cost = tracker
             .estimate_cost("gpt-4o-mini", 1_000_000, 1_000_000)
             .await;

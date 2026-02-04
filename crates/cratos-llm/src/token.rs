@@ -20,7 +20,7 @@ static TOKENIZER: LazyLock<CoreBPE> = LazyLock::new(|| {
 
 /// Token counter for estimating message token usage
 ///
-/// Uses tiktoken's cl100k_base encoding (GPT-4, Claude 3, etc.)
+/// Uses tiktoken's cl100k_base encoding (GPT-5.2, Claude 3, etc.)
 /// for accurate token estimation across modern LLMs.
 ///
 /// This is a zero-cost wrapper around the global tokenizer instance.
@@ -31,7 +31,7 @@ impl TokenCounter {
     /// Create a new token counter
     ///
     /// Uses cl100k_base encoding which is compatible with:
-    /// - OpenAI GPT-4, GPT-4o, GPT-3.5-turbo
+    /// - OpenAI GPT-4, GPT-5.2, GPT-3.5-turbo
     /// - Anthropic Claude 3.x (approximate)
     /// - Most modern LLMs
     #[must_use]
