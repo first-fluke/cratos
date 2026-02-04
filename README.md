@@ -119,19 +119,19 @@ Default settings are in `config/default.toml`. Create `config/local.toml` to cus
 
 | Provider | Models | Features |
 |----------|--------|----------|
-| **OpenAI** | GPT-4o, GPT-4o-mini | General purpose, excellent tool calling |
-| **Anthropic** | Claude 3.5 Sonnet/Haiku | Excellent code generation |
-| **Gemini** | Gemini 1.5 Pro/Flash | Long context |
-| **GLM** | GLM-4-9B, GLM-Z1-9B | Chinese optimized |
-| **Qwen** | Qwen-Turbo/Plus/Max | Multilingual, coding |
-| **DeepSeek** | DeepSeek-V3, DeepSeek-R1 | Ultra low cost ($0.14/1M tokens) |
+| **OpenAI** | GPT-5.2, GPT-5.1, GPT-5 | Latest generation, coding |
+| **Anthropic** | Claude Sonnet 4.5, Claude Haiku 4.5, Claude Opus 4.5 | Excellent code generation |
+| **Gemini** | Gemini 3 Pro, Gemini 3 Flash, Gemini 2.5 Pro | Long context, multimodal |
+| **GLM** | GLM-4.7, GLM-4-Plus, GLM-4-Air | Chinese optimized |
+| **Qwen** | Qwen3-Max, Qwen3-Plus, Qwen3-Flash, Qwen3-Coder | Multilingual, coding, reasoning |
+| **DeepSeek** | DeepSeek-V3.2, DeepSeek-R1 | Ultra low cost, reasoning |
 
 ### Free/Low-Cost Providers
 
 | Provider | Models | Limits |
 |----------|--------|--------|
-| **OpenRouter** | Qwen3-32B, Llama 3.2, Gemma 2 | 1000/day |
-| **Novita** | Qwen2.5-7B, GLM-4-9B, Llama 3.2 | Free signup |
+| **OpenRouter** | Qwen3-Max, Llama 3.3 70B, Gemma 3 27B | 1000/day |
+| **Novita** | Qwen3-Plus, GLM-4-9B, Llama 3.3 70B | Free signup |
 | **Groq** | Llama 3.3 70B, Mixtral 8x7B | Free, ultra-fast inference |
 | **Ollama** | All local models | Unlimited (hardware dependent) |
 
