@@ -13,6 +13,7 @@ use crate::router::{
     CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage, ToolCall,
     ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
+use crate::util::mask_api_key;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -71,14 +72,6 @@ fn sanitize_api_error(error: &str) -> String {
     }
 
     "An API error occurred. Please try again.".to_string()
-}
-
-/// Mask API key for safe display
-fn mask_api_key(key: &str) -> String {
-    if key.len() <= 8 {
-        return "****".to_string();
-    }
-    format!("{}...{}", &key[..4], &key[key.len() - 4..])
 }
 
 // ============================================================================
@@ -217,7 +210,7 @@ struct NovitaFunctionCall {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Fields used by serde for JSON deserialization
 struct NovitaResponse {
     id: String,
     model: String,
@@ -226,7 +219,7 @@ struct NovitaResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Fields used by serde for JSON deserialization
 struct NovitaChoice {
     index: u32,
     message: NovitaMessage,
@@ -246,7 +239,7 @@ struct NovitaError {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Fields used by serde for JSON deserialization
 struct NovitaErrorDetail {
     message: String,
     code: Option<String>,
@@ -514,6 +507,7 @@ impl LlmProvider for NovitaProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::mask_api_key;
 
     #[test]
     fn test_config_builder() {

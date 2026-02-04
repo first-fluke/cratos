@@ -11,6 +11,7 @@ use crate::router::{
     CompletionRequest, CompletionResponse, LlmProvider, Message, TokenUsage, ToolCall, ToolChoice,
     ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
+use crate::util::mask_api_key;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -49,14 +50,6 @@ impl fmt::Debug for DeepSeekConfig {
             .field("timeout", &self.timeout)
             .finish()
     }
-}
-
-/// Mask API key for safe display
-fn mask_api_key(key: &str) -> String {
-    if key.len() <= 8 {
-        return "****".to_string();
-    }
-    format!("{}...{}", &key[..4], &key[key.len() - 4..])
 }
 
 /// Sanitize API error messages
@@ -443,6 +436,7 @@ impl LlmProvider for DeepSeekProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::mask_api_key;
 
     #[test]
     fn test_config_builder() {

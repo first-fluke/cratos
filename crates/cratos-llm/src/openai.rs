@@ -7,6 +7,7 @@ use crate::router::{
     CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage, ToolCall,
     ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
+use crate::util::mask_api_key;
 use async_openai::{
     config::OpenAIConfig,
     types::{
@@ -56,14 +57,6 @@ fn sanitize_api_error(error: &str) -> String {
     }
 
     "An API error occurred. Please try again.".to_string()
-}
-
-/// Mask API key for safe display (show first/last 4 chars)
-fn mask_api_key(key: &str) -> String {
-    if key.len() <= 8 {
-        return "****".to_string();
-    }
-    format!("{}...{}", &key[..4], &key[key.len() - 4..])
 }
 
 /// Available OpenAI models
@@ -439,6 +432,7 @@ impl LlmProvider for OpenAiProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::mask_api_key;
 
     #[test]
     fn test_config_builder() {

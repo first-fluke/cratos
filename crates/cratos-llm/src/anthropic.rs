@@ -7,6 +7,7 @@ use crate::router::{
     CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage, ToolCall,
     ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
+use crate::util::mask_api_key;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -17,7 +18,7 @@ use tracing::{debug, instrument};
 // Security Utilities
 // ============================================================================
 
-/// Sanitize API error messages to prevent leaking sensitive information
+/// Sanitize Anthropic API error messages to prevent leaking sensitive information
 fn sanitize_api_error(error: &str) -> String {
     let lower = error.to_lowercase();
 
@@ -48,14 +49,6 @@ fn sanitize_api_error(error: &str) -> String {
     }
 
     "An API error occurred. Please try again.".to_string()
-}
-
-/// Mask API key for safe display
-fn mask_api_key(key: &str) -> String {
-    if key.len() <= 8 {
-        return "****".to_string();
-    }
-    format!("{}...{}", &key[..4], &key[key.len() - 4..])
 }
 
 /// Anthropic API version
@@ -147,7 +140,7 @@ enum AnthropicToolChoice {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Fields used by serde for JSON deserialization
 struct AnthropicResponse {
     id: String,
     model: String,

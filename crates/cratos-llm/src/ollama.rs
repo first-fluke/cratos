@@ -125,7 +125,7 @@ struct OllamaFunctionCall {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Fields used by serde for JSON deserialization
 struct OllamaChatResponse {
     model: String,
     message: OllamaResponseMessage,
@@ -141,7 +141,7 @@ struct OllamaChatResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Fields used by serde for JSON deserialization
 struct OllamaResponseMessage {
     role: String,
     content: String,

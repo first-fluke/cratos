@@ -20,6 +20,7 @@
 pub mod anthropic;
 pub mod cost;
 pub mod deepseek;
+pub mod util;
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
 pub mod error;
