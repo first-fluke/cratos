@@ -25,8 +25,8 @@ pub async fn run() -> anyhow::Result<()> {
         "OpenRouter (Free tier available - includes openrouter/free)",
         "Novita AI (Free tier available)",
         "DeepSeek (Ultra low cost)",
-        "Moonshot AI (Kimi 2.5 - Chinese optimized)",
-        "ZhipuAI GLM (GLM-4.7 - Chinese optimized)",
+        "Moonshot AI (Kimi 2.5)",
+        "ZhipuAI GLM (GLM-4.7)",
         "OpenAI (GPT-5.2)",
         "Anthropic (Claude)",
         "Ollama (Local, free)",
@@ -39,8 +39,8 @@ pub async fn run() -> anyhow::Result<()> {
         "OpenRouter (Free tier available - includes openrouter/free)" => get_api_key("OpenRouter"),
         "Novita AI (Free tier available)" => get_api_key("Novita"),
         "DeepSeek (Ultra low cost)" => get_api_key("DeepSeek"),
-        "Moonshot AI (Kimi 2.5 - Chinese optimized)" => get_api_key("Moonshot"),
-        "ZhipuAI GLM (GLM-4.7 - Chinese optimized)" => get_api_key("ZhipuAI/GLM"),
+        "Moonshot AI (Kimi 2.5)" => get_api_key("Moonshot"),
+        "ZhipuAI GLM (GLM-4.7)" => get_api_key("ZhipuAI/GLM"),
         "OpenAI (GPT-5.2)" => get_api_key("OpenAI"),
         "Anthropic (Claude)" => get_api_key("Anthropic"),
         "Ollama (Local, free)" => Ok(String::new()),
@@ -135,12 +135,12 @@ fn build_env_file(
         "DeepSeek (Ultra low cost)" => {
             content.push_str(&format!("DEEPSEEK_API_KEY={}\n", api_key));
         }
-        "Moonshot AI (Kimi 2.5 - Chinese optimized)" => {
+        "Moonshot AI (Kimi 2.5)" => {
             content.push_str(&format!("MOONSHOT_API_KEY={}\n", api_key));
             content.push_str("# Get API key from: https://platform.moonshot.cn/\n");
         }
-        "ZhipuAI GLM (GLM-4.7 - Chinese optimized)" => {
-            content.push_str(&format!("BIGMODEL_API_KEY={}\n", api_key));
+        "ZhipuAI GLM (GLM-4.7)" => {
+            content.push_str(&format!("ZHIPU_API_KEY={}\n", api_key));
             content.push_str("# Get API key from: https://open.bigmodel.cn/\n");
         }
         "OpenAI (GPT-5.2)" => {

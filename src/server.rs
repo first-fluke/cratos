@@ -358,7 +358,7 @@ fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn LlmProvider>> 
         }
         "glm" => {
             let config = GlmConfig::from_env()
-                .context("GLM configured but BIGMODEL_API_KEY not set")?;
+                .context("GLM configured but ZHIPU_API_KEY not set")?;
             Ok(Arc::new(GlmProvider::new(config)?))
         }
         "moonshot" => {
@@ -420,8 +420,8 @@ fn try_auto_detect_provider() -> Result<Arc<dyn LlmProvider>> {
            OPENROUTER_API_KEY  # Free tier available (use openrouter/free model)\n\
            NOVITA_API_KEY      # Free tier\n\
            DEEPSEEK_API_KEY    # Ultra low cost\n\
-           MOONSHOT_API_KEY    # Kimi 2.5 (Chinese optimized)\n\
-           BIGMODEL_API_KEY    # GLM-4.7 (Chinese optimized)\n\
+           MOONSHOT_API_KEY    # Kimi 2.5\n\
+           ZHIPU_API_KEY    # GLM-4.7\n\
            OPENAI_API_KEY\n\
            ANTHROPIC_API_KEY"
     ))

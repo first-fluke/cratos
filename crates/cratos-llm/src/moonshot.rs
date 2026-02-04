@@ -1,13 +1,10 @@
 //! Moonshot AI - Kimi Provider
 //!
 //! This module implements the Moonshot AI provider for Kimi models.
-//! Moonshot AI provides high-quality Chinese and multilingual LLMs.
 //!
 //! Supported models:
 //! - kimi-k2-5 (Latest, recommended)
 //! - kimi-k2
-//! - kimi-v1.5
-//! - kimi-v1
 //!
 //! API Documentation: https://platform.moonshot.cn/docs
 
@@ -30,8 +27,6 @@ pub const BASE_URL: &str = "https://api.moonshot.cn/v1";
 pub const MODELS: &[&str] = &[
     "kimi-k2-5",
     "kimi-k2",
-    "kimi-v1.5",
-    "kimi-v1",
 ];
 
 /// Default model

@@ -30,15 +30,7 @@ pub const BASE_URL: &str = "https://open.bigmodel.cn/api/paas/v4";
 /// Available GLM models
 pub const MODELS: &[&str] = &[
     "glm-4.7",
-    "glm-4.7-air",
-    "glm-4.7-airx",
     "glm-4.7-flash",
-    "glm-4-9b",
-    "glm-4-0520",
-    "glm-4-plus",
-    "glm-4-flash",
-    "glm-z1-9b",    // Thinking model
-    "glm-z1-flash", // Fast thinking
 ];
 
 /// Default model
@@ -114,9 +106,9 @@ impl GlmConfig {
 
     /// Create from environment variables
     pub fn from_env() -> Result<Self> {
-        let api_key = std::env::var("BIGMODEL_API_KEY")
+        let api_key = std::env::var("ZHIPU_API_KEY")
             .or_else(|_| std::env::var("GLM_API_KEY"))
-            .map_err(|_| Error::NotConfigured("BIGMODEL_API_KEY not set".to_string()))?;
+            .map_err(|_| Error::NotConfigured("ZHIPU_API_KEY not set".to_string()))?;
 
         let base_url = std::env::var("BIGMODEL_BASE_URL").unwrap_or_else(|_| BASE_URL.to_string());
         let default_model =

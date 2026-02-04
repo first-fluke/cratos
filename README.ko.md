@@ -114,7 +114,7 @@ cratos/
 | `OPENAI_API_KEY` | OpenAI API 키 | |
 | `ANTHROPIC_API_KEY` | Anthropic API 키 | |
 | `GOOGLE_API_KEY` | Google Gemini API 키 | |
-| `BIGMODEL_API_KEY` | ZhipuAI GLM API 키 | |
+| `ZHIPU_API_KEY` | ZhipuAI GLM API 키 | |
 | `DASHSCOPE_API_KEY` | Alibaba Qwen API 키 | |
 | `OPENROUTER_API_KEY` | OpenRouter API 키 | |
 | `NOVITA_API_KEY` | Novita AI API 키 (무료) | |

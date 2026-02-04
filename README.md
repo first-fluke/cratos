@@ -102,7 +102,7 @@ cratos/
 | `OPENAI_API_KEY` | OpenAI API key | |
 | `ANTHROPIC_API_KEY` | Anthropic API key | |
 | `GOOGLE_API_KEY` | Google Gemini API key | |
-| `BIGMODEL_API_KEY` | ZhipuAI GLM API key | |
+| `ZHIPU_API_KEY` | ZhipuAI GLM API key | |
 | `DASHSCOPE_API_KEY` | Alibaba Qwen API key | |
 | `OPENROUTER_API_KEY` | OpenRouter API key | |
 | `NOVITA_API_KEY` | Novita AI API key (free) | |
@@ -122,7 +122,7 @@ Default settings are in `config/default.toml`. Create `config/local.toml` to cus
 | **OpenAI** | GPT-5.2, GPT-5.1, GPT-5 | Latest generation, coding |
 | **Anthropic** | Claude Sonnet 4.5, Claude Haiku 4.5, Claude Opus 4.5 | Excellent code generation |
 | **Gemini** | Gemini 3 Pro, Gemini 3 Flash, Gemini 2.5 Pro | Long context, multimodal |
-| **GLM** | GLM-4.7, GLM-4-Plus, GLM-4-Air | Chinese optimized |
+| **GLM** | GLM-4.7, GLM-4-Flash | ZhipuAI models |
 | **Qwen** | Qwen3-Max, Qwen3-Plus, Qwen3-Flash, Qwen3-Coder | Multilingual, coding, reasoning |
 | **DeepSeek** | DeepSeek-V3.2, DeepSeek-R1 | Ultra low cost, reasoning |
 

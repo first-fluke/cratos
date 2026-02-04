@@ -247,7 +247,7 @@ OPENAI_API_KEY=sk-proj-your-key-here
 ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 
 # Paid: ZhipuAI GLM
-BIGMODEL_API_KEY=your-bigmodel-key-here
+ZHIPU_API_KEY=your-bigmodel-key-here
 
 # Paid: Alibaba Qwen
 DASHSCOPE_API_KEY=your-dashscope-key-here
