@@ -11,6 +11,46 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/// Default cost per 1M input tokens (USD) for unknown models
+const DEFAULT_INPUT_COST_PER_MILLION: f64 = 5.0;
+
+/// Default cost per 1M output tokens (USD) for unknown models
+const DEFAULT_OUTPUT_COST_PER_MILLION: f64 = 15.0;
+
+/// Maximum records to keep in memory by default
+const DEFAULT_MAX_RECORDS: usize = 10_000;
+
+/// Minimum cost threshold for savings recommendation (USD)
+const MIN_SAVINGS_THRESHOLD: f64 = 0.01;
+
+/// Assumed percentage of GPT-4o requests that could use mini
+const GPT4O_MINI_CANDIDATE_RATIO: f64 = 0.3;
+
+/// Assumed percentage of Opus requests that could use Sonnet
+const OPUS_SONNET_CANDIDATE_RATIO: f64 = 0.5;
+
+// Model pricing constants (per 1M tokens)
+/// GPT-4o-mini input cost per 1M tokens
+const GPT4O_MINI_INPUT_COST: f64 = 0.15;
+/// GPT-4o-mini output cost per 1M tokens
+const GPT4O_MINI_OUTPUT_COST: f64 = 0.60;
+/// GPT-4o input cost per 1M tokens
+const GPT4O_INPUT_COST: f64 = 2.50;
+/// GPT-4o output cost per 1M tokens
+const GPT4O_OUTPUT_COST: f64 = 10.00;
+/// Claude Sonnet input cost per 1M tokens
+const CLAUDE_SONNET_INPUT_COST: f64 = 3.00;
+/// Claude Sonnet output cost per 1M tokens
+const CLAUDE_SONNET_OUTPUT_COST: f64 = 15.00;
+/// Claude Opus input cost per 1M tokens
+const CLAUDE_OPUS_INPUT_COST: f64 = 15.00;
+/// Claude Opus output cost per 1M tokens
+const CLAUDE_OPUS_OUTPUT_COST: f64 = 75.00;
+
+// ============================================================================
 // Cost Models
 // ============================================================================
 
@@ -284,7 +324,7 @@ impl CostTracker {
             pricing: RwLock::new(default_pricing()),
             records: RwLock::new(Vec::new()),
             next_id: AtomicU64::new(1),
-            max_records: 10_000,
+            max_records: DEFAULT_MAX_RECORDS,
         }
     }
 
@@ -314,10 +354,8 @@ impl CostTracker {
             pricing.calculate_cost(input_tokens, output_tokens)
         } else {
             // Default estimate for unknown models
-            let default_input = 5.0; // $5 per 1M input tokens
-            let default_output = 15.0; // $15 per 1M output tokens
-            (input_tokens as f64 / 1_000_000.0) * default_input
-                + (output_tokens as f64 / 1_000_000.0) * default_output
+            (input_tokens as f64 / 1_000_000.0) * DEFAULT_INPUT_COST_PER_MILLION
+                + (output_tokens as f64 / 1_000_000.0) * DEFAULT_OUTPUT_COST_PER_MILLION
         }
     }
 
@@ -475,52 +513,91 @@ impl CostTracker {
     }
 
     fn calculate_savings_potential(&self, stats: &UsageStats) -> Option<SavingsPotential> {
-        // Check if expensive models could be replaced with cheaper ones
         let mut potential_savings = 0.0;
         let mut recommendations = Vec::new();
 
         for (model, model_stats) in &stats.by_model {
-            // Check if premium model could use cheaper alternative for some tasks
-            if model.contains("gpt-4o") && !model.contains("mini") {
-                // Assume 30% of GPT-4o requests could use mini
-                let mini_cost_per_million = 0.15 + 0.60; // input + output
-                let current_cost_per_million = 2.50 + 10.00;
-                let tokens = model_stats.input_tokens + model_stats.output_tokens;
-                let current_cost = (tokens as f64 / 1_000_000.0) * current_cost_per_million;
-                let mini_cost = (tokens as f64 / 1_000_000.0) * mini_cost_per_million * 0.3;
-                let savings = current_cost * 0.3 - mini_cost;
-                if savings > 0.01 {
-                    potential_savings += savings;
-                    recommendations.push(format!(
-                        "Consider using gpt-4o-mini for simple tasks (est. ${:.2} savings)",
-                        savings
-                    ));
-                }
+            if let Some((savings, recommendation)) =
+                self.calculate_gpt4o_savings(model, model_stats)
+            {
+                potential_savings += savings;
+                recommendations.push(recommendation);
             }
 
-            if model.contains("opus") {
-                // Assume 50% of Opus requests could use Sonnet
-                let sonnet_cost_per_million = 3.00 + 15.00;
-                let current_cost_per_million = 15.00 + 75.00;
-                let tokens = model_stats.input_tokens + model_stats.output_tokens;
-                let current_cost = (tokens as f64 / 1_000_000.0) * current_cost_per_million;
-                let sonnet_cost = (tokens as f64 / 1_000_000.0) * sonnet_cost_per_million * 0.5;
-                let savings = current_cost * 0.5 - sonnet_cost;
-                if savings > 0.01 {
-                    potential_savings += savings;
-                    recommendations.push(format!(
-                        "Consider using Claude Sonnet for routine tasks (est. ${:.2} savings)",
-                        savings
-                    ));
-                }
+            if let Some((savings, recommendation)) = self.calculate_opus_savings(model, model_stats)
+            {
+                potential_savings += savings;
+                recommendations.push(recommendation);
             }
         }
 
-        if potential_savings > 0.01 {
+        if potential_savings > MIN_SAVINGS_THRESHOLD {
             Some(SavingsPotential {
                 estimated_savings: potential_savings,
                 recommendations,
             })
+        } else {
+            None
+        }
+    }
+
+    /// Calculate potential savings by replacing GPT-4o with GPT-4o-mini for simple tasks
+    fn calculate_gpt4o_savings(
+        &self,
+        model: &str,
+        model_stats: &ModelStats,
+    ) -> Option<(f64, String)> {
+        if !model.contains("gpt-4o") || model.contains("mini") {
+            return None;
+        }
+
+        let mini_cost_per_million = GPT4O_MINI_INPUT_COST + GPT4O_MINI_OUTPUT_COST;
+        let current_cost_per_million = GPT4O_INPUT_COST + GPT4O_OUTPUT_COST;
+        let tokens = model_stats.input_tokens + model_stats.output_tokens;
+        let current_cost = (tokens as f64 / 1_000_000.0) * current_cost_per_million;
+        let mini_cost =
+            (tokens as f64 / 1_000_000.0) * mini_cost_per_million * GPT4O_MINI_CANDIDATE_RATIO;
+        let savings = current_cost * GPT4O_MINI_CANDIDATE_RATIO - mini_cost;
+
+        if savings > MIN_SAVINGS_THRESHOLD {
+            Some((
+                savings,
+                format!(
+                    "Consider using gpt-4o-mini for simple tasks (est. ${:.2} savings)",
+                    savings
+                ),
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Calculate potential savings by replacing Claude Opus with Sonnet for routine tasks
+    fn calculate_opus_savings(
+        &self,
+        model: &str,
+        model_stats: &ModelStats,
+    ) -> Option<(f64, String)> {
+        if !model.contains("opus") {
+            return None;
+        }
+
+        let sonnet_cost_per_million = CLAUDE_SONNET_INPUT_COST + CLAUDE_SONNET_OUTPUT_COST;
+        let current_cost_per_million = CLAUDE_OPUS_INPUT_COST + CLAUDE_OPUS_OUTPUT_COST;
+        let tokens = model_stats.input_tokens + model_stats.output_tokens;
+        let current_cost = (tokens as f64 / 1_000_000.0) * current_cost_per_million;
+        let sonnet_cost =
+            (tokens as f64 / 1_000_000.0) * sonnet_cost_per_million * OPUS_SONNET_CANDIDATE_RATIO;
+        let savings = current_cost * OPUS_SONNET_CANDIDATE_RATIO - sonnet_cost;
+
+        if savings > MIN_SAVINGS_THRESHOLD {
+            Some((
+                savings,
+                format!(
+                    "Consider using Claude Sonnet for routine tasks (est. ${:.2} savings)",
+                    savings
+                ),
+            ))
         } else {
             None
         }
