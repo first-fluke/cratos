@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use subtle::ConstantTimeEq;
 use thiserror::Error;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // ============================================================================

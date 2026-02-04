@@ -149,6 +149,15 @@ Automatic model selection based on task type:
 
 ## Security Features
 
+> **Security-first by design** — Built from the ground up with security as a core principle, not an afterthought.
+
+- **Memory-safe foundation**: Written in Rust with `#![forbid(unsafe_code)]` — no buffer overflows, no use-after-free
+- **Zero plaintext secrets**: All credentials encrypted via OS keychain (Keychain, Secret Service, Credential Manager)
+- **Default isolation**: Sandbox enabled by default with network blocked, not opt-in
+- **Built-in threat detection**: 20+ prompt injection patterns detected and blocked automatically
+- **Tool risk classification**: Every tool has explicit risk levels with appropriate safeguards
+- **Input/output validation**: All user inputs and LLM outputs are validated before execution
+
 ### Docker Sandbox
 
 Dangerous tools run in isolated Docker containers:

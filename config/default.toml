@@ -33,9 +33,10 @@ port = 8080
 url = "redis://localhost:63791"
 
 [llm]
-# Default provider changed to "groq" for FREE tier access
-# Set to "deepseek" for low-cost, or "anthropic"/"openai" for premium quality
-default_provider = "groq"
+# Auto-detect provider from environment variables
+# Priority: groq (free) > openrouter > novita > deepseek > openai > anthropic
+# Or explicitly set: "openai", "anthropic", "groq", "deepseek", "openrouter", "novita", "ollama"
+default_provider = "auto"
 
 # ============================================================================
 # Model Routing Configuration (Cost Optimization)
