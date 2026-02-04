@@ -237,7 +237,12 @@ impl Default for SandboxConfig {
 // ============================================================================
 
 /// Docker sandbox for isolated tool execution
-#[allow(dead_code)]
+///
+/// This struct provides Docker-based sandboxing for executing untrusted tools
+/// in an isolated environment. Currently a work-in-progress feature.
+///
+/// TODO: Complete Docker sandbox implementation
+#[allow(dead_code)] // Work-in-progress feature
 pub struct DockerSandbox {
     config: SandboxConfig,
     /// Container ID if running

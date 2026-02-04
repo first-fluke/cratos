@@ -8,11 +8,11 @@ use std::path::Path;
 use tracing::info;
 
 /// Silero VAD model sample rate
-#[allow(dead_code)]
+#[allow(dead_code)] // Reserved for Silero VAD implementation
 const SILERO_SAMPLE_RATE: u32 = 16000;
 
 /// Window size for VAD (512 samples = 32ms at 16kHz)
-#[allow(dead_code)]
+#[allow(dead_code)] // Reserved for Silero VAD implementation
 const WINDOW_SIZE: usize = 512;
 
 /// Wake word detector using Silero VAD

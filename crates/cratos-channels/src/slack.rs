@@ -152,7 +152,9 @@ impl SlackAdapter {
     }
 
     /// Get the app token (for socket mode)
-    #[allow(dead_code)]
+    ///
+    /// Note: Currently unused but required for future Socket Mode implementation.
+    #[allow(dead_code)] // Reserved for Socket Mode feature
     fn app_token(&self) -> SlackApiToken {
         SlackApiToken::new(self.config.app_token.clone().into())
     }
@@ -439,7 +441,9 @@ impl SlackAdapter {
     }
 
     /// Build Slack blocks from buttons
-    #[allow(dead_code)]
+    ///
+    /// Note: Currently unused but reserved for interactive message support.
+    #[allow(dead_code)] // Reserved for interactive messages feature
     fn build_blocks(text: &str, buttons: &[MessageButton]) -> Vec<SlackBlock> {
         let mut blocks = vec![SlackBlock::Section(SlackSectionBlock::new().with_text(
             SlackBlockText::MarkDown(SlackBlockMarkDownText::new(text.to_string())),
