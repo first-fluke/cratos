@@ -120,7 +120,17 @@ impl McpConnection {
             // Expand environment variable references
             let expanded = if value.starts_with("${") && value.ends_with('}') {
                 let var_name = &value[2..value.len() - 1];
-                std::env::var(var_name).unwrap_or_default()
+                match std::env::var(var_name) {
+                    Ok(val) => val,
+                    Err(_) => {
+                        warn!(
+                            var = %var_name,
+                            key = %key,
+                            "Environment variable not found, using empty string"
+                        );
+                        String::new()
+                    }
+                }
             } else {
                 value.clone()
             };
@@ -157,6 +167,8 @@ impl McpConnection {
 
                         match serde_json::from_str::<McpResponse>(&line) {
                             Ok(response) => {
+                                // Recover from poisoned mutex to ensure responses are delivered
+                                // even if another thread panicked while holding the lock
                                 let mut pending = pending.lock().unwrap_or_else(|e| e.into_inner());
                                 if let Some(sender) = pending.remove(&response.id) {
                                     let _ = sender.send(response);

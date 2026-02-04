@@ -442,9 +442,17 @@ impl Orchestrator {
             )
             .await;
 
-            // Parse arguments
+            // Parse arguments, fallback to empty object if malformed
             let input: serde_json::Value =
-                serde_json::from_str(&call.arguments).unwrap_or_else(|_| serde_json::json!({}));
+                serde_json::from_str(&call.arguments).unwrap_or_else(|e| {
+                    warn!(
+                        tool = %call.name,
+                        error = %e,
+                        arguments = %call.arguments,
+                        "Failed to parse tool arguments, using empty object"
+                    );
+                    serde_json::json!({})
+                });
 
             let start = std::time::Instant::now();
             let result = self.runner.execute(&call.name, input.clone()).await;
