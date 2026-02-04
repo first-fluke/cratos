@@ -127,6 +127,11 @@ serde.workspace = true
 redis.workspace = true
 async-trait.workspace = true
 
+clap = { version = "4", features = ["derive"] }
+inquire = "0.9"
+dirs.workspace = true
+reqwest.workspace = true
+
 [dev-dependencies]
 tokio-test.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
