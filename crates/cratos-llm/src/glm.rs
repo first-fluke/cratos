@@ -29,6 +29,10 @@ pub const BASE_URL: &str = "https://open.bigmodel.cn/api/paas/v4";
 
 /// Available GLM models
 pub const MODELS: &[&str] = &[
+    "glm-4.7",
+    "glm-4.7-air",
+    "glm-4.7-airx",
+    "glm-4.7-flash",
     "glm-4-9b",
     "glm-4-0520",
     "glm-4-plus",
@@ -38,7 +42,7 @@ pub const MODELS: &[&str] = &[
 ];
 
 /// Default model
-pub const DEFAULT_MODEL: &str = "glm-4-9b";
+pub const DEFAULT_MODEL: &str = "glm-4.7";
 
 // ============================================================================
 // Security Utilities

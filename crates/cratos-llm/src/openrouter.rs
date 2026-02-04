@@ -30,10 +30,15 @@ pub const BASE_URL: &str = "https://openrouter.ai/api/v1";
 
 /// Popular OpenRouter models (subset)
 pub const MODELS: &[&str] = &[
-    // Free models
+    // Free Models Router (Recommended - auto-selects best free model)
+    "openrouter/free",
+    // Individual free models
     "qwen/qwen3-32b:free",
     "meta-llama/llama-3.2-3b-instruct:free",
     "google/gemma-2-9b-it:free",
+    "stepfun/step-3.5-flash:free",
+    "arcee-ai/trinity-large-preview:free",
+    "upstage/solar-pro-3:free",
     // OpenAI
     "openai/gpt-4o",
     "openai/gpt-4o-mini",
@@ -51,8 +56,8 @@ pub const MODELS: &[&str] = &[
     "mistralai/mixtral-8x22b-instruct",
 ];
 
-/// Default model (free tier)
-pub const DEFAULT_MODEL: &str = "qwen/qwen3-32b:free";
+/// Default model (free tier router - auto-selects best free model)
+pub const DEFAULT_MODEL: &str = "openrouter/free";
 
 // ============================================================================
 // Security Utilities
