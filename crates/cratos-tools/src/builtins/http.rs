@@ -5,9 +5,25 @@ use crate::registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolResult}
 use std::collections::HashSet;
 use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::LazyLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 use url::Url;
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/// Default HTTP request timeout in seconds
+const HTTP_TIMEOUT_SECS: u64 = 30;
+
+/// Default HTTP port
+const DEFAULT_HTTP_PORT: u16 = 80;
+
+/// Link-local IPv4 range first octet (169.254.x.x)
+const LINK_LOCAL_IPV4_FIRST_OCTET: u8 = 169;
+
+/// Link-local IPv4 range second octet (169.254.x.x)
+const LINK_LOCAL_IPV4_SECOND_OCTET: u8 = 254;
 
 /// Blocked hosts for SSRF protection
 static BLOCKED_HOSTS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
@@ -103,7 +119,8 @@ fn is_private_ip(ip: &IpAddr) -> bool {
                 || ipv4.is_documentation()
                 || ipv4.is_unspecified()
                 // 169.254.x.x (link-local)
-                || (ipv4.octets()[0] == 169 && ipv4.octets()[1] == 254)
+                || (ipv4.octets()[0] == LINK_LOCAL_IPV4_FIRST_OCTET
+                    && ipv4.octets()[1] == LINK_LOCAL_IPV4_SECOND_OCTET)
         }
         IpAddr::V6(ipv6) => ipv6.is_loopback() || ipv6.is_unspecified(),
     }
@@ -126,7 +143,7 @@ fn validate_resolved_ips(url: &Url) -> Result<()> {
         return Ok(());
     }
 
-    let port = url.port_or_known_default().unwrap_or(80);
+    let port = url.port_or_known_default().unwrap_or(DEFAULT_HTTP_PORT);
     let socket_addr = format!("{}:{}", host, port);
 
     // Resolve DNS and check all returned IPs
@@ -181,7 +198,7 @@ impl HttpGetTool {
     #[must_use]
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
             .build()
             .expect("Failed to create HTTP client");
 
@@ -303,7 +320,7 @@ impl HttpPostTool {
     #[must_use]
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
             .build()
             .expect("Failed to create HTTP client");
 
