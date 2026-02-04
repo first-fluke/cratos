@@ -95,6 +95,18 @@ pub enum Error {
     /// Includes semantic search errors and other internal failures.
     #[error("internal error: {0}")]
     Internal(String),
+
+    /// Resource not found (generic).
+    ///
+    /// Used for ecosystem operations when a resource is not found.
+    #[error("not found: {0}")]
+    NotFound(String),
+
+    /// Parse error.
+    ///
+    /// Occurs when parsing skill files (JSON/YAML) fails.
+    #[error("parse error: {0}")]
+    Parse(String),
 }
 
 impl Error {

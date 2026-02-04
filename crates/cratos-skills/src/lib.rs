@@ -129,6 +129,7 @@
 #![warn(missing_docs)]
 
 pub mod analyzer;
+pub mod ecosystem;
 pub mod error;
 pub mod executor;
 pub mod generator;
@@ -152,6 +153,12 @@ pub use skill::{
     SkillTrigger,
 };
 pub use store::SkillStore;
+
+// Re-export ecosystem types for skill sharing
+pub use ecosystem::{
+    ExportFormat, ExportInfo, ImportResult, PortableSkill, PortableSkillDef, PortableStep,
+    PortableTrigger, SkillBundle, SkillEcosystem,
+};
 
 // Re-export unified protocol types
 pub use protocol::{
