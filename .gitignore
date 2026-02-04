@@ -40,3 +40,5 @@ coverage/
 # Planning documents (local only)
 PRD.md
 pre_prd.md
+
+.opencode/mimic/
