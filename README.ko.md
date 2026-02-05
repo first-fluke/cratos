@@ -13,6 +13,7 @@ Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트가 이해�
 - **도구 시스템**: 파일, HTTP, Git, GitHub, 명령 실행 등 11개 빌트인 도구
 - **채널 어댑터**: Telegram, Slack, Discord, Matrix 지원
 - **보안 강화**: Docker 샌드박스, 자격증명 암호화, 프롬프트 인젝션 방어
+- **올림푸스 OS**: 신화 기반 3-레이어 에이전트 조직 체계 (Pantheon/Decrees/Chronicles)
 
 ## 시스템 요구사항
 
@@ -22,7 +23,7 @@ Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트가 이해�
 | **CPU** | 1코어 | 1코어 | 2코어 이상 |
 | **RAM** | 256MB (실행) / 2GB (빌드) | 1GB (실행) / 4GB (빌드) | 4GB 이상 |
 | **디스크** | 100MB | 1GB | 5GB 이상 |
-| **Rust** | 1.80+ | 1.80+ | 최신 stable |
+| **Rust** | 1.88+ | 1.88+ | 최신 stable |
 | **Docker** | - | 선택사항 | 최신 버전 |
 
 > ¹ **최저 사양**: 임베딩 비활성화 시 (`cargo build --no-default-features`). 시맨틱 검색 불가.
@@ -93,12 +94,16 @@ cratos/
 │   ├── cratos-search/    # 벡터 검색, 시맨틱 인덱싱
 │   ├── cratos-audio/     # 음성 제어 (STT/TTS, 선택적)
 │   └── cratos-canvas/    # 캔버스 (future)
-├── config/               # 설정 파일
+├── config/
+│   ├── default.toml      # 기본 설정
+│   ├── pantheon/         # 페르소나 TOML 파일 (5개 코어 페르소나)
+│   └── decrees/          # 율법, 계급, 개발 규칙
 └── src/main.rs           # 애플리케이션 진입점
 
 ~/.cratos/                # 데이터 디렉토리 (자동 생성)
 ├── cratos.db             # SQLite 메인 DB (이벤트, 실행 기록)
-└── skills.db             # SQLite 스킬 DB (스킬, 패턴)
+├── skills.db             # SQLite 스킬 DB (스킬, 패턴)
+└── chronicles/           # 페르소나별 전공 기록
 ```
 
 ## 설정
@@ -158,6 +163,59 @@ cratos/
 | Conversation | Standard | GPT-5.2, Claude Sonnet |
 | CodeGeneration | Standard | GPT-5.2, Claude Sonnet |
 | Planning | Premium | GPT-5.2-turbo, Claude Opus |
+
+## 올림푸스 OS (에이전트 조직 체계)
+
+신화 기반 3-레이어 에이전트 조직 시스템:
+
+| Layer | 이름 | 목적 |
+|-------|------|------|
+| WHO | **Pantheon** | 에이전트 페르소나 (Cratos, Athena, Sindri, Heimdall, Mimir) |
+| HOW | **Decrees** | 율법, 계급, 개발 규칙 |
+| WHAT | **Chronicles** | 전공 기록 및 평가 |
+
+### 코어 페르소나
+
+| 역할 | 이름 | 도메인 |
+|------|------|--------|
+| Orchestrator | **Cratos** | 최고 통솔자 (Lv255) |
+| PM | **Athena** | 전략, 기획 (Lv3) |
+| DEV | **Sindri** | 개발, 구현 (Lv1) |
+| QA | **Heimdall** | 품질, 보안 (Lv2) |
+| RESEARCHER | **Mimir** | 리서치, 분석 (Lv4) |
+
+### @mention 라우팅
+
+@mention으로 특정 페르소나에게 작업 지시:
+
+```
+@athena 이번 스프린트 계획해줘     # PM - 전략
+@sindri API 구현해줘              # DEV - 개발
+@heimdall 보안 리뷰해줘           # QA - 품질
+@mimir 이 기술 조사해줘           # RESEARCHER - 분석
+@cratos 상황 정리해줘             # Orchestrator
+```
+
+응답 형식: `[Persona LvN] 율법 제N조에 의거하여...`
+
+### CLI 명령어
+
+```bash
+# Pantheon (페르소나)
+cratos pantheon list              # 페르소나 목록
+cratos pantheon show sindri       # 페르소나 상세 보기
+
+# Decrees (규약)
+cratos decrees show laws          # 율법 보기
+cratos decrees show ranks         # 계급 체계 보기
+cratos decrees validate           # 규칙 준수 검증
+
+# Chronicles (전공 기록)
+cratos chronicle list             # 전공 기록 목록
+cratos chronicle show sindri      # 개별 기록 보기
+cratos chronicle log "메시지"     # 기록 추가
+cratos chronicle promote sindri   # 승급 요청
+```
 
 ## 보안 기능
 

@@ -61,7 +61,7 @@
 name = "cratos-{crate}"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.88"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

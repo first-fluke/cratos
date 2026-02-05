@@ -15,7 +15,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.88"
 license = "MIT"
 authors = ["Cratos Team"]
 repository = "https://github.com/cratos/cratos"
@@ -25,7 +25,7 @@ repository = "https://github.com/cratos/cratos"
 tokio = { version = "1.35", features = ["full"] }
 
 # Web framework
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.7", features = ["macros", "ws"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 
@@ -132,6 +132,9 @@ clap = { version = "4", features = ["derive"] }
 inquire = "0.9"
 dirs.workspace = true
 reqwest.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+futures-util = "0.3"
 
 [dev-dependencies]
 tokio-test.workspace = true

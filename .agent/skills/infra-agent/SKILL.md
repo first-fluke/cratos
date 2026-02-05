@@ -32,7 +32,7 @@ Cratos 인프라 및 배포 자동화 전문 에이전트.
 
 ```dockerfile
 # 빌드 스테이지
-FROM rust:1.75 AS builder
+FROM rust:1.93 AS builder
 WORKDIR /app
 COPY . .
 RUN cargo build --release

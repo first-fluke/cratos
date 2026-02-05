@@ -33,7 +33,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.88"
 license = "MIT"
 
 [workspace.dependencies]
@@ -99,7 +99,7 @@ EOF
 ```bash
 # Dockerfile
 cat > Dockerfile << 'EOF'
-FROM rust:1.75 AS builder
+FROM rust:1.93 AS builder
 WORKDIR /app
 COPY . .
 RUN cargo build --release

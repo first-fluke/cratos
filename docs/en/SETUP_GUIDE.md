@@ -58,7 +58,7 @@ Cratos is an AI assistant that runs on **your computer**, allowing you to remote
 | **CPU** | 2 cores | 4+ cores |
 | **RAM** | 4GB (runtime) / 8GB (build) | 8GB+ |
 | **Disk** | 5GB | 10GB+ |
-| **Rust** | 1.80+ | Latest stable |
+| **Rust** | 1.88+ | Latest stable |
 | **Network** | Internet connection | Static IP or DDNS |
 
 > **Note**: No Docker or PostgreSQL required! Data is automatically stored in `~/.cratos/cratos.db` (SQLite).
@@ -81,7 +81,7 @@ Cratos is an AI assistant that runs on **your computer**, allowing you to remote
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Verify installation
-rustc --version  # Requires 1.80+
+rustc --version  # Requires 1.88+
 ```
 
 ### Installing Docker (Optional - for Sandbox)

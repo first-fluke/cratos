@@ -6,7 +6,7 @@
 # syntax=docker/dockerfile:1.4
 
 # 1. Chef 스테이지 (의존성 캐싱)
-FROM rust:1.75-bookworm AS chef
+FROM rust:1.93-bookworm AS chef
 RUN cargo install cargo-chef
 WORKDIR /app
 

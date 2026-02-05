@@ -17,7 +17,7 @@ Cratos는 Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트�
 
 ## 기술 스택
 
-- **언어**: Rust 1.80+
+- **언어**: Rust 1.88+
 - **런타임**: Tokio (비동기)
 - **웹**: Axum 0.7
 - **DB**: SQLite (sqlx, 내장), Redis (세션용, 선택)
@@ -38,13 +38,17 @@ cratos/
 │   ├── agents/             # 4개 에이전트
 │   ├── commands/           # 3개 슬래시 명령어
 │   └── skills/             # 5개 스킬
+├── config/
+│   ├── default.toml        # 기본 설정
+│   ├── pantheon/           # 페르소나 TOML (5개 코어)
+│   └── decrees/            # 율법, 계급, 개발 규칙
 ├── crates/                 # Rust workspace
 │   ├── cratos-core/        # 핵심 오케스트레이션, 보안, 자격증명
 │   ├── cratos-channels/    # 채널 어댑터 (Telegram, Slack, Discord, Matrix)
 │   ├── cratos-tools/       # 도구 레지스트리, 샌드박스
 │   ├── cratos-llm/         # LLM 프로바이더, 임베딩
 │   ├── cratos-replay/      # 리플레이 엔진 (SQLite)
-│   ├── cratos-skills/      # 자동 스킬 생성 시스템 ⭐
+│   ├── cratos-skills/      # 자동 스킬 생성 시스템
 │   ├── cratos-search/      # 벡터 검색, 시맨틱 인덱싱
 │   ├── cratos-audio/       # 음성 제어 (STT/TTS, 선택적)
 │   └── cratos-canvas/      # 캔버스 (future)
@@ -52,7 +56,8 @@ cratos/
 
 ~/.cratos/                  # 데이터 디렉토리 (자동 생성)
 ├── cratos.db               # SQLite: 이벤트, 실행 기록
-└── skills.db               # SQLite: 스킬, 패턴
+├── skills.db               # SQLite: 스킬, 패턴
+└── chronicles/             # 페르소나별 전공 기록
 ```
 
 ## 주요 명령어
@@ -62,6 +67,50 @@ cratos/
 | `/cratos-setup` | 프로젝트 초기 설정 |
 | `/develop` | 원격 개발지시 (Issue → PR) |
 | `/replay` | 실행 기록 조회/재실행 |
+
+## 올림푸스 OS
+
+그리스/북유럽 신화 기반 3-레이어 에이전트 조직 체계:
+
+| Layer | 이름 | 목적 |
+|-------|------|------|
+| WHO | **Pantheon** | 에이전트 페르소나 |
+| HOW | **Decrees** | 율법, 계급, 개발 규칙 |
+| WHAT | **Chronicles** | 전공 기록 및 평가 |
+
+### 페르소나 시스템
+
+| 역할 | 이름 | 도메인 |
+|------|------|--------|
+| Orchestrator | Cratos | 전체 통솔 (Lv255) |
+| PM | Athena | 전략, 기획 (Lv3) |
+| DEV | Sindri | 개발, 구현 (Lv1) |
+| QA | Heimdall | 품질, 보안 (Lv2) |
+| RESEARCHER | Mimir | 리서치 (Lv4) |
+
+### @mention 라우팅
+
+```
+@athena 이번 스프린트 계획해줘     # PM
+@sindri API 구현해줘              # DEV
+@heimdall 보안 리뷰해줘           # QA
+@mimir 이 기술 조사해줘           # RESEARCHER
+@cratos 상황 정리해줘             # Orchestrator
+```
+
+### CLI 명령어 (Olympus OS)
+
+| 명령어 | 설명 |
+|--------|------|
+| `cratos pantheon list` | 페르소나 목록 |
+| `cratos pantheon show <name>` | 페르소나 상세 |
+| `cratos decrees show laws` | 율법 보기 |
+| `cratos decrees show ranks` | 계급 체계 |
+| `cratos decrees validate` | 규칙 검증 |
+| `cratos chronicle list` | 전공 기록 목록 |
+| `cratos chronicle show <name>` | 개별 기록 |
+| `cratos chronicle log "msg"` | 기록 추가 |
+| `cratos chronicle promote <name>` | 승급 요청 |
 
 ## 스킬 목록
 
@@ -78,6 +127,7 @@ cratos/
 | pm-agent | 계획 수립 |
 | commit | Git 커밋/PR |
 | orchestrator | 멀티-에이전트 실행 |
+| config | 설정 변경 (LLM, 언어, WoL 등) |
 
 ## 코딩 규칙
 

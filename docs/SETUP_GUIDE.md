@@ -58,7 +58,7 @@ Cratos는 **내 컴퓨터**에 설치하여, 외출 중에도 Telegram으로 PC 
 | **CPU** | 1코어 | 1코어 | 2코어 이상 |
 | **RAM** | 256MB (실행) / 2GB (빌드) | 1GB (실행) / 4GB (빌드) | 4GB 이상 |
 | **디스크** | 100MB | 1GB | 5GB 이상 |
-| **Rust** | 1.80+ | 1.80+ | 최신 stable |
+| **Rust** | 1.88+ | 1.88+ | 최신 stable |
 | **네트워크** | 인터넷 연결 | 인터넷 연결 | 고정 IP 또는 DDNS |
 
 > ¹ **최저 사양**: 임베딩 비활성화 시 (`cargo build --no-default-features`). 시맨틱 검색 기능 사용 불가.
@@ -83,7 +83,7 @@ Cratos는 **내 컴퓨터**에 설치하여, 외출 중에도 Telegram으로 PC 
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # 설치 확인
-rustc --version  # 1.80+ 필요
+rustc --version  # 1.88+ 필요
 ```
 
 ### Docker 설치 (선택사항 - 샌드박스용)

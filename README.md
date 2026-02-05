@@ -13,6 +13,7 @@ Cratos is a **Rust-based AI assistant** that understands natural language comman
 - **Tool System**: 11 built-in tools (file, HTTP, Git, GitHub, command execution)
 - **Channel Adapters**: Telegram, Slack, Discord, Matrix support
 - **Security**: Docker sandbox, credential encryption, prompt injection defense
+- **Olympus OS**: Mythology-based 3-layer agent organization (Pantheon/Decrees/Chronicles)
 
 ## System Requirements
 
@@ -22,7 +23,7 @@ Cratos is a **Rust-based AI assistant** that understands natural language comman
 | **CPU** | 1 core | 1 core | 2+ cores |
 | **RAM** | 256MB (runtime) / 2GB (build) | 1GB (runtime) / 4GB (build) | 4GB+ |
 | **Disk** | 100MB | 1GB | 5GB+ |
-| **Rust** | 1.80+ | 1.80+ | Latest stable |
+| **Rust** | 1.88+ | 1.88+ | Latest stable |
 | **Docker** | - | Optional | Latest |
 
 > ¹ **Minimum**: With embeddings disabled (`cargo build --no-default-features`). Semantic search unavailable.
@@ -81,12 +82,16 @@ cratos/
 │   ├── cratos-search/    # Vector search, semantic indexing
 │   ├── cratos-audio/     # Voice control (STT/TTS, optional)
 │   └── cratos-canvas/    # Canvas (future)
-├── config/               # Configuration files
+├── config/
+│   ├── default.toml      # Default configuration
+│   ├── pantheon/         # Persona TOML files (5 core personas)
+│   └── decrees/          # Laws, ranks, development rules
 └── src/main.rs           # Application entry point
 
 ~/.cratos/                # Data directory (auto-created)
 ├── cratos.db             # SQLite main DB (events, execution history)
-└── skills.db             # SQLite skills DB (skills, patterns)
+├── skills.db             # SQLite skills DB (skills, patterns)
+└── chronicles/           # Achievement records per persona
 ```
 
 ## Configuration
@@ -146,6 +151,59 @@ Automatic model selection based on task type:
 | Conversation | Standard | GPT-5.2, Claude Sonnet |
 | CodeGeneration | Standard | GPT-5.2, Claude Sonnet |
 | Planning | Premium | GPT-5.2-turbo, Claude Opus |
+
+## Olympus OS (Agent Organization)
+
+Cratos features a mythology-based 3-layer agent organization system:
+
+| Layer | Name | Purpose |
+|-------|------|---------|
+| WHO | **Pantheon** | Agent personas (Cratos, Athena, Sindri, Heimdall, Mimir) |
+| HOW | **Decrees** | Laws, ranks, development rules |
+| WHAT | **Chronicles** | Achievement records and evaluations |
+
+### Core Personas
+
+| Role | Name | Domain |
+|------|------|--------|
+| Orchestrator | **Cratos** | Supreme commander (Lv255) |
+| PM | **Athena** | Strategy, planning (Lv3) |
+| DEV | **Sindri** | Development, implementation (Lv1) |
+| QA | **Heimdall** | Quality, security (Lv2) |
+| RESEARCHER | **Mimir** | Research, analysis (Lv4) |
+
+### @mention Routing
+
+Route tasks to specific personas using @mentions:
+
+```
+@athena Plan this sprint          # PM - Strategy
+@sindri Implement the API         # DEV - Development
+@heimdall Review security         # QA - Quality
+@mimir Research this technology   # RESEARCHER - Analysis
+@cratos Summarize the situation   # Orchestrator
+```
+
+Response format: `[Persona LvN] Per Laws Article N...`
+
+### CLI Commands
+
+```bash
+# Pantheon (Personas)
+cratos pantheon list              # List personas
+cratos pantheon show sindri       # Show persona details
+
+# Decrees (Rules)
+cratos decrees show laws          # Show laws
+cratos decrees show ranks         # Show rank system
+cratos decrees validate           # Validate rule compliance
+
+# Chronicles (Achievement Records)
+cratos chronicle list             # List achievement records
+cratos chronicle show sindri      # Show individual record
+cratos chronicle log "message"    # Add log entry
+cratos chronicle promote sindri   # Request promotion
+```
 
 ## Security Features
 
