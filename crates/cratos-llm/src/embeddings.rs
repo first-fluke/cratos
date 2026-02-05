@@ -63,7 +63,7 @@ pub trait EmbeddingProvider: Send + Sync {
 /// - **High Quality**: Competitive with OpenAI embeddings
 #[cfg(feature = "embeddings")]
 pub struct FastEmbedProvider {
-    model: std::sync::Arc<fastembed::TextEmbedding>,
+    model: std::sync::Arc<std::sync::Mutex<fastembed::TextEmbedding>>,
     model_name: String,
     dimensions: usize,
 }
@@ -116,7 +116,7 @@ impl FastEmbedProvider {
         );
 
         Ok(Self {
-            model: std::sync::Arc::new(text_embedding),
+            model: std::sync::Arc::new(std::sync::Mutex::new(text_embedding)),
             model_name,
             dimensions,
         })
@@ -138,7 +138,7 @@ impl FastEmbedProvider {
             .map_err(|e| Error::Provider(format!("Failed to initialize FastEmbed: {}", e)))?;
 
         Ok(Self {
-            model: std::sync::Arc::new(text_embedding),
+            model: std::sync::Arc::new(std::sync::Mutex::new(text_embedding)),
             model_name: "NomicEmbedTextV15".to_string(),
             dimensions: 768,
         })
@@ -155,7 +155,10 @@ impl EmbeddingProvider for FastEmbedProvider {
 
         // Run embedding in blocking task (fastembed is synchronous)
         let embedding = tokio::task::spawn_blocking(move || {
-            model
+            let mut guard = model
+                .lock()
+                .map_err(|e| Error::Provider(format!("Mutex lock failed: {}", e)))?;
+            guard
                 .embed(vec![text], None)
                 .map_err(|e| Error::Provider(format!("Embedding failed: {}", e)))
         })
@@ -182,7 +185,10 @@ impl EmbeddingProvider for FastEmbedProvider {
 
         // Run batch embedding in blocking task
         let embeddings = tokio::task::spawn_blocking(move || {
-            model
+            let mut guard = model
+                .lock()
+                .map_err(|e| Error::Provider(format!("Mutex lock failed: {}", e)))?;
+            guard
                 .embed(texts, None)
                 .map_err(|e| Error::Provider(format!("Batch embedding failed: {}", e)))
         })
