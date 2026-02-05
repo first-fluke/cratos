@@ -1,0 +1,50 @@
+# Build artifacts
+target/
+debug/
+release/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Local configuration
+.env
+.env.local
+*.local.toml
+config/local.toml
+config/production.toml
+
+# Documentation artifacts
+docs/build/
+
+# Test and development
+tests/fixtures/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Claude Code
+.claude/
+
+# Agent files
+.agent/
+
+# MCP config (contains local paths)
+.mcp.json
+
+# Serena
+.serena/
