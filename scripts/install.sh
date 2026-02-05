@@ -227,7 +227,18 @@ build_from_source() {
     cd "$SRC_DIR/cratos"
 
     info "Compiling (this may take a few minutes)..."
-    cargo build --release 2>&1 | tail -5
+    info "You'll see build progress below:"
+    echo ""
+    echo "  ────────────────────────────────────────────────────"
+    cargo build --release
+    BUILD_STATUS=$?
+    echo "  ────────────────────────────────────────────────────"
+    echo ""
+
+    if [ $BUILD_STATUS -ne 0 ]; then
+        error "Build failed with status $BUILD_STATUS"
+        return 1
+    fi
 
     if [ -f "target/release/$BINARY_NAME" ]; then
         cp "target/release/$BINARY_NAME" "$TMP_DIR/$BINARY_NAME"
