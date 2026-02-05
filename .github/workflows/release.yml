@@ -11,6 +11,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false  # Don't cancel release builds
+
 env:
   CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
