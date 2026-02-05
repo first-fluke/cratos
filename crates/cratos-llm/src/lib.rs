@@ -73,5 +73,5 @@ pub use siliconflow::{SiliconFlowConfig, SiliconFlowProvider};
 // Re-export embeddings (when feature is enabled)
 #[cfg(feature = "embeddings")]
 pub use embeddings::{
-    default_embedding_provider, EmbeddingProvider, FastEmbedProvider, SharedEmbeddingProvider,
+    default_embedding_provider, EmbeddingProvider, SharedEmbeddingProvider, TractEmbeddingProvider,
 };

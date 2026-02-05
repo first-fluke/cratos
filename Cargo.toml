@@ -71,8 +71,10 @@ tokio-test = "0.4"
 regex = "1.10"
 dirs = "5.0"
 
-# Embeddings & Vector Search
-fastembed = "5"
+# Embeddings & Vector Search (tract = pure Rust, no C++ linking issues)
+tract-onnx = "0.22"
+tokenizers = { version = "0.22", default-features = false, features = ["http", "fancy-regex"] }
+hf-hub = { version = "0.4", default-features = false, features = ["rustls-tls"] }
 usearch = "2"
 
 # Internal crates

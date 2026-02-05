@@ -13,10 +13,10 @@ use cratos_core::{
 };
 use cratos_llm::{
     AnthropicConfig, AnthropicProvider, DeepSeekConfig, DeepSeekProvider, EmbeddingProvider,
-    FastEmbedProvider, GeminiConfig, GeminiProvider, GlmConfig, GlmProvider, GroqConfig,
-    GroqProvider, LlmProvider, LlmRouter, MoonshotConfig, MoonshotProvider, NovitaConfig,
-    NovitaProvider, OllamaConfig, OllamaProvider, OpenAiConfig, OpenAiProvider, OpenRouterConfig,
-    OpenRouterProvider, QwenConfig, QwenProvider, SharedEmbeddingProvider,
+    GeminiConfig, GeminiProvider, GlmConfig, GlmProvider, GroqConfig, GroqProvider, LlmProvider,
+    LlmRouter, MoonshotConfig, MoonshotProvider, NovitaConfig, NovitaProvider, OllamaConfig,
+    OllamaProvider, OpenAiConfig, OpenAiProvider, OpenRouterConfig, OpenRouterProvider, QwenConfig,
+    QwenProvider, SharedEmbeddingProvider, TractEmbeddingProvider,
 };
 use cratos_replay::{EventStore, ExecutionSearcher, SearchEmbedder};
 use cratos_search::{IndexConfig, VectorIndex};
@@ -596,7 +596,7 @@ pub async fn run() -> Result<()> {
     );
 
     let embedding_provider: Option<SharedEmbeddingProvider> = if config.vector_search.enabled {
-        match FastEmbedProvider::new() {
+        match TractEmbeddingProvider::new() {
             Ok(provider) => {
                 info!(
                     "Embedding provider initialized: {} ({} dimensions)",

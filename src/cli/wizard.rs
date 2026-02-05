@@ -610,7 +610,9 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
     } else {
         print_header(&format!("{} - {}", texts.step3_title, provider.name));
 
-        let instructions = texts.step3_instructions.replace("{url}", provider.signup_url);
+        let instructions = texts
+            .step3_instructions
+            .replace("{url}", provider.signup_url);
         println!("{}", instructions);
         println!();
 

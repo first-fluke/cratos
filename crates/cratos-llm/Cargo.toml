@@ -22,12 +22,14 @@ async-trait.workspace = true
 lazy_static = "1.4"
 tiktoken-rs = "0.9"
 
-# Optional: Embeddings
-fastembed = { workspace = true, optional = true }
+# Optional: Embeddings (tract = pure Rust ONNX runtime)
+tract-onnx = { workspace = true, optional = true }
+tokenizers = { workspace = true, optional = true }
+hf-hub = { workspace = true, optional = true }
 
 [features]
 default = []
-embeddings = ["fastembed"]
+embeddings = ["tract-onnx", "tokenizers", "hf-hub"]
 
 [dev-dependencies]
 mockall.workspace = true
