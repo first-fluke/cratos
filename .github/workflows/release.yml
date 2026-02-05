@@ -24,21 +24,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS Universal (build both from ARM runner)
+          # macOS Apple Silicon
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
             ext: ""
+          # macOS Intel (cross-compile from ARM)
           - target: x86_64-apple-darwin
             os: macos-latest
             archive: tar.gz
             ext: ""
-            cross: true
           # Linux x64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             archive: tar.gz
             ext: ""
+          # Windows x64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+            ext: ".exe"
 
     steps:
       - name: Checkout repository
@@ -81,6 +86,17 @@ jobs:
           cp "target/${BUILD_TARGET}/release/cratos${BIN_EXT}" "dist/cratos${BIN_EXT}"
           cd dist
           tar -czvf "cratos-${BUILD_TARGET}.tar.gz" "cratos${BIN_EXT}"
+
+      - name: Create archive (Windows)
+        if: matrix.archive == 'zip'
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          BIN_EXT: ${{ matrix.ext }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item "target/$env:BUILD_TARGET/release/cratos$env:BIN_EXT" dist/
+          Compress-Archive -Path "dist/cratos$env:BIN_EXT" -DestinationPath "dist/cratos-$env:BUILD_TARGET.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
