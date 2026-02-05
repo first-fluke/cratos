@@ -121,10 +121,7 @@ async fn list_executions(
     let filtered: Vec<_> = executions
         .into_iter()
         .filter(|e| {
-            query
-                .channel
-                .as_ref()
-                .is_none_or(|c| &e.channel_type == c)
+            query.channel.as_ref().is_none_or(|c| &e.channel_type == c)
                 && query.status.as_ref().is_none_or(|s| &e.status == s)
         })
         .take(query.limit as usize)
