@@ -11,13 +11,13 @@ use crate::util::mask_api_key;
 use async_openai::{
     config::OpenAIConfig,
     types::chat::{
-        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
-        ChatCompletionRequestUserMessage, ChatCompletionRequestAssistantMessage,
-        ChatCompletionRequestToolMessage, ChatCompletionTool, ChatCompletionTools, ChatCompletionToolChoiceOption,
-        CreateChatCompletionRequest,
-        FunctionObject, ChatCompletionMessageToolCalls, ChatCompletionRequestUserMessageContent,
-        ChatCompletionRequestToolMessageContent, ChatCompletionRequestAssistantMessageContent,
-        ChatCompletionRequestSystemMessageContent, StopConfiguration, ToolChoiceOptions,
+        ChatCompletionMessageToolCalls, ChatCompletionRequestAssistantMessage,
+        ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
+        ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
+        ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
+        ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+        ChatCompletionTool, ChatCompletionToolChoiceOption, ChatCompletionTools,
+        CreateChatCompletionRequest, FunctionObject, StopConfiguration, ToolChoiceOptions,
     },
     Client,
 };
@@ -52,8 +52,18 @@ fn sanitize_api_error(error: &str) -> String {
     "An API error occurred. Please try again.".to_string()
 }
 
-/// Available OpenAI models
+/// Available OpenAI models (2026)
+///
+/// GPT-5 family pricing:
+/// - gpt-5-nano: $0.05/$0.40 per 1M tokens (32K context)
+/// - gpt-5.2: $2.50/$10.00 per 1M tokens (128K context)
+/// - gpt-5-ultra: $10.00/$30.00 per 1M tokens (256K context)
 pub const MODELS: &[&str] = &[
+    // GPT-5 family (2026)
+    "gpt-5-ultra",
+    "gpt-5.2",
+    "gpt-5-nano",
+    // GPT-4o family (legacy, still available)
     "gpt-4o",
     "gpt-4o-mini",
     "gpt-4",
@@ -196,21 +206,27 @@ impl OpenAiProvider {
             MessageRole::System => ChatCompletionRequestSystemMessage {
                 content: ChatCompletionRequestSystemMessageContent::Text(msg.content.clone()),
                 name: None,
-            }.into(),
+            }
+            .into(),
             MessageRole::User => ChatCompletionRequestUserMessage {
                 content: ChatCompletionRequestUserMessageContent::Text(msg.content.clone()),
                 name: None,
-            }.into(),
-            MessageRole::Assistant => {
+            }
+            .into(),
+            MessageRole::Assistant =>
+            {
                 #[allow(deprecated)]
                 ChatCompletionRequestAssistantMessage {
-                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(msg.content.clone())),
+                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                        msg.content.clone(),
+                    )),
                     name: None,
                     tool_calls: None,
                     function_call: None,
                     refusal: None,
                     audio: None,
-                }.into()
+                }
+                .into()
             }
             MessageRole::Tool => {
                 let tool_call_id = msg.tool_call_id.as_ref().ok_or_else(|| {
@@ -219,7 +235,8 @@ impl OpenAiProvider {
                 ChatCompletionRequestToolMessage {
                     content: ChatCompletionRequestToolMessageContent::Text(msg.content.clone()),
                     tool_call_id: tool_call_id.clone(),
-                }.into()
+                }
+                .into()
             }
         };
         Ok(message)
@@ -240,7 +257,9 @@ impl OpenAiProvider {
         match choice {
             ToolChoice::Auto => ChatCompletionToolChoiceOption::Mode(ToolChoiceOptions::Auto),
             ToolChoice::None => ChatCompletionToolChoiceOption::Mode(ToolChoiceOptions::None),
-            ToolChoice::Required => ChatCompletionToolChoiceOption::Mode(ToolChoiceOptions::Required),
+            ToolChoice::Required => {
+                ChatCompletionToolChoiceOption::Mode(ToolChoiceOptions::Required)
+            }
             ToolChoice::Tool(_) => ChatCompletionToolChoiceOption::Mode(ToolChoiceOptions::Auto),
         }
     }
@@ -265,8 +284,7 @@ impl LlmProvider for OpenAiProvider {
     }
 
     #[instrument(skip(self, request), fields(model = %request.model))]
-    async fn complete(&self, request: CompletionRequest,
-    ) -> Result<CompletionResponse> {
+    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse> {
         let model = if request.model.is_empty() {
             &self.default_model
         } else {
@@ -282,7 +300,7 @@ impl LlmProvider for OpenAiProvider {
         let openai_request = CreateChatCompletionRequest {
             model: model.clone(),
             messages,
-            max_completion_tokens: request.max_tokens.map(|t| t as u32),
+            max_completion_tokens: request.max_tokens,
             temperature: request.temperature,
             stop: request.stop.map(StopConfiguration::StringArray),
             ..Default::default()
@@ -290,12 +308,9 @@ impl LlmProvider for OpenAiProvider {
 
         debug!("Sending request to OpenAI");
 
-        let response = self
-            .client
-            .chat()
-            .create(openai_request)
-            .await
-            .map_err(|e: async_openai::error::OpenAIError| Error::Api(sanitize_api_error(&e.to_string())))?;
+        let response = self.client.chat().create(openai_request).await.map_err(
+            |e: async_openai::error::OpenAIError| Error::Api(sanitize_api_error(&e.to_string())),
+        )?;
 
         let choice = response
             .choices
@@ -347,19 +362,16 @@ impl LlmProvider for OpenAiProvider {
             messages,
             tools: Some(tools),
             tool_choice: Some(Self::convert_tool_choice(&request.tool_choice)),
-            max_completion_tokens: request.request.max_tokens.map(|t| t as u32),
+            max_completion_tokens: request.request.max_tokens,
             temperature: request.request.temperature,
             ..Default::default()
         };
 
         debug!("Sending tool request to OpenAI");
 
-        let response = self
-            .client
-            .chat()
-            .create(openai_request)
-            .await
-            .map_err(|e: async_openai::error::OpenAIError| Error::Api(sanitize_api_error(&e.to_string())))?;
+        let response = self.client.chat().create(openai_request).await.map_err(
+            |e: async_openai::error::OpenAIError| Error::Api(sanitize_api_error(&e.to_string())),
+        )?;
 
         let choice = response
             .choices
@@ -375,15 +387,13 @@ impl LlmProvider for OpenAiProvider {
             .map(|calls| {
                 calls
                     .iter()
-                    .filter_map(|tc| {
-                        match tc {
-                            ChatCompletionMessageToolCalls::Function(func_call) => Some(ToolCall {
-                                id: func_call.id.clone(),
-                                name: func_call.function.name.clone(),
-                                arguments: func_call.function.arguments.clone(),
-                            }),
-                            _ => None,
-                        }
+                    .filter_map(|tc| match tc {
+                        ChatCompletionMessageToolCalls::Function(func_call) => Some(ToolCall {
+                            id: func_call.id.clone(),
+                            name: func_call.function.name.clone(),
+                            arguments: func_call.function.arguments.clone(),
+                        }),
+                        _ => None,
                     })
                     .collect()
             })

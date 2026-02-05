@@ -54,17 +54,27 @@ fn sanitize_api_error(error: &str) -> String {
 /// Anthropic API version
 const API_VERSION: &str = "2023-06-01";
 
-/// Available Anthropic models
+/// Available Anthropic models (2026)
+///
+/// Claude 4 family pricing:
+/// - claude-3-5-haiku: $0.25/$1.25 per 1M tokens (fast, cheap)
+/// - claude-sonnet-4: $3.00/$15.00 per 1M tokens (balanced)
+/// - claude-opus-4.5: $15.00/$75.00 per 1M tokens (highest quality)
 pub const MODELS: &[&str] = &[
+    // Claude 4 family (2026)
+    "claude-opus-4-20250514",
+    "claude-sonnet-4-20250514",
+    // Claude 3.5 family (still available)
     "claude-3-5-sonnet-20241022",
     "claude-3-5-haiku-20241022",
+    // Claude 3 family (legacy)
     "claude-3-opus-20240229",
     "claude-3-sonnet-20240229",
     "claude-3-haiku-20240307",
 ];
 
-/// Default Anthropic model
-pub const DEFAULT_MODEL: &str = "claude-3-5-sonnet-20241022";
+/// Default Anthropic model (Claude Sonnet 4 - best balance)
+pub const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 
 /// Default API base URL
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";

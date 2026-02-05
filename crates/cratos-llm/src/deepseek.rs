@@ -21,10 +21,24 @@ use tracing::{debug, instrument};
 /// DeepSeek API base URL
 pub const DEEPSEEK_API_BASE: &str = "https://api.deepseek.com/v1";
 
-/// Available DeepSeek models
-pub const MODELS: &[&str] = &["deepseek-chat", "deepseek-coder", "deepseek-reasoner"];
+/// Available DeepSeek models (2026)
+///
+/// DeepSeek pricing (ultra-low-cost leader):
+/// - deepseek-r1-distill-llama-70b: $0.03/$0.09 per 1M tokens (cheapest!)
+/// - deepseek-chat (V3): $0.14/$0.28 per 1M tokens
+/// - deepseek-reasoner (R1): $0.55/$2.19 per 1M tokens
+pub const MODELS: &[&str] = &[
+    // DeepSeek R1 Distill (cheapest, 2026)
+    "deepseek-r1-distill-llama-70b",
+    "deepseek-r1-distill-qwen-32b",
+    // DeepSeek V3 (general purpose)
+    "deepseek-chat",
+    "deepseek-coder",
+    // DeepSeek R1 (reasoning)
+    "deepseek-reasoner",
+];
 
-/// Default DeepSeek model
+/// Default DeepSeek model (V3 Chat - best balance)
 pub const DEFAULT_MODEL: &str = "deepseek-chat";
 
 /// DeepSeek provider configuration

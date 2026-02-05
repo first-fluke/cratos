@@ -27,8 +27,23 @@ use tracing::{debug, instrument};
 /// DashScope API base URL (OpenAI compatible)
 pub const BASE_URL: &str = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
-/// Available Qwen models
+/// Available Qwen models (2026)
+///
+/// Qwen 3 family pricing (Alibaba):
+/// - qwen3-8b: $0.06/$0.09 per 1M tokens (cheapest)
+/// - qwen3-32b: $0.20/$0.30 per 1M tokens (balanced)
+/// - qwen-turbo: ~$0.002 per 1K tokens (fast)
+/// - qwen-max: ~$0.02 per 1K tokens (best quality)
 pub const MODELS: &[&str] = &[
+    // Qwen 3 family (2026)
+    "qwen3-8b",
+    "qwen3-32b",
+    "qwen3-235b-a22b", // MoE 235B total, 22B active
+    // Qwen 2.5 family (still available)
+    "qwen2.5-72b-instruct",
+    "qwen2.5-32b-instruct",
+    "qwen2.5-7b-instruct",
+    // DashScope API models
     "qwen-turbo",
     "qwen-turbo-latest",
     "qwen-plus",
@@ -40,7 +55,7 @@ pub const MODELS: &[&str] = &[
     "qwen-coder-plus",
 ];
 
-/// Default model
+/// Default model (Qwen-Turbo - fast and cheap)
 pub const DEFAULT_MODEL: &str = "qwen-turbo";
 
 // ============================================================================

@@ -21,17 +21,27 @@ use tracing::{debug, instrument};
 /// Groq API base URL
 pub const GROQ_API_BASE: &str = "https://api.groq.com/openai/v1";
 
-/// Available Groq models
+/// Available Groq models (2026)
+///
+/// Groq provides FREE access to high-quality models with rate limits.
+/// Llama 4 family (2026):
+/// - llama-4-scout: MoE 17B active / 109B total (FREE)
+/// - llama-4-maverick: MoE 17B active / 400B total (FREE)
 pub const MODELS: &[&str] = &[
+    // Llama 4 family (2026, FREE)
+    "llama-4-maverick-17b-128e-instruct",
+    "llama-4-scout-17b-16e-instruct",
+    // Llama 3.3 family (still available, FREE)
     "llama-3.3-70b-versatile",
     "llama-3.1-70b-versatile",
     "llama-3.1-8b-instant",
+    // Other models
     "mixtral-8x7b-32768",
     "gemma2-9b-it",
 ];
 
-/// Default Groq model (free, fast, capable)
-pub const DEFAULT_MODEL: &str = "llama-3.3-70b-versatile";
+/// Default Groq model (Llama 4 Scout - free, fast, capable)
+pub const DEFAULT_MODEL: &str = "llama-4-scout-17b-16e-instruct";
 
 /// Groq provider configuration
 #[derive(Clone)]

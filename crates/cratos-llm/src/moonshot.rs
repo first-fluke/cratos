@@ -24,10 +24,7 @@ use tracing::{debug, instrument};
 pub const BASE_URL: &str = "https://api.moonshot.cn/v1";
 
 /// Available Kimi models
-pub const MODELS: &[&str] = &[
-    "kimi-k2-5",
-    "kimi-k2",
-];
+pub const MODELS: &[&str] = &["kimi-k2-5", "kimi-k2"];
 
 /// Default model
 pub const DEFAULT_MODEL: &str = "kimi-k2-5";

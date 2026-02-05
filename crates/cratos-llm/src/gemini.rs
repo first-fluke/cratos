@@ -54,16 +54,26 @@ fn sanitize_api_error(error: &str) -> String {
     "An API error occurred. Please try again.".to_string()
 }
 
-/// Available Gemini models
+/// Available Gemini models (2026)
+///
+/// Gemini 3 family pricing:
+/// - gemini-3-flash: $0.50/$3.00 per 1M tokens (fastest, 2M context)
+/// - gemini-3-pro: $2.00/$12.00 per 1M tokens (1M context)
 pub const MODELS: &[&str] = &[
+    // Gemini 3 family (2026)
+    "gemini-3-pro",
+    "gemini-3-flash",
+    // Gemini 2 family (still available)
+    "gemini-2.0-flash",
+    "gemini-2.0-pro",
+    // Gemini 1.5 family (legacy)
     "gemini-1.5-pro",
     "gemini-1.5-flash",
     "gemini-1.5-flash-8b",
-    "gemini-2.0-flash-exp",
 ];
 
-/// Default Gemini model
-pub const DEFAULT_MODEL: &str = "gemini-1.5-flash";
+/// Default Gemini model (Gemini 3 Flash - best speed/cost)
+pub const DEFAULT_MODEL: &str = "gemini-3-flash";
 
 /// Default API base URL
 const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
