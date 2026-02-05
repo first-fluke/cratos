@@ -75,10 +75,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.target }}-
 
-      - name: Build release binary
+      - name: Build release binary (Unix)
+        if: runner.os != 'Windows'
         env:
           BUILD_TARGET: ${{ matrix.target }}
         run: cargo build --release --target "$BUILD_TARGET"
+
+      - name: Build release binary (Windows)
+        if: runner.os == 'Windows'
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        shell: pwsh
+        run: cargo build --release --target $env:BUILD_TARGET
 
       - name: Create archive (Unix)
         if: matrix.archive == 'tar.gz'
