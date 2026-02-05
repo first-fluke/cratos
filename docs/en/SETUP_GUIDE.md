@@ -28,7 +28,7 @@ Cratos is an AI assistant that runs on **your computer**, allowing you to remote
 │  │  - Command execution (Docker sandbox)                │   │
 │  │  - Git/GitHub operations                             │   │
 │  │  - Web information gathering                         │   │
-│  │  - 8 LLM provider integrations                       │   │
+│  │  - 13 LLM provider integrations                      │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                           ↑                                 │
 │                           │ Telegram API                    │

@@ -30,8 +30,6 @@ Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트가 이해�
 >
 > **참고**: PostgreSQL, Docker 없이 실행 가능합니다. 데이터는 `~/.cratos/cratos.db` (SQLite)에 저장됩니다.
 
-> **참고**: PostgreSQL, Docker 없이 실행 가능합니다. 데이터는 `~/.cratos/cratos.db` (SQLite)에 저장됩니다.
-
 ### Ollama 로컬 LLM 사용 시 (추가)
 
 | 모델 | RAM | VRAM (GPU) |

@@ -349,7 +349,7 @@ Bot: Created "deploy" skill.
 
 ## 8. LLM Model Selection
 
-Cratos supports 8 LLM providers.
+Cratos supports 13 LLM providers.
 
 ### Auto Routing (Default)
 
