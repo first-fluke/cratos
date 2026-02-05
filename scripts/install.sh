@@ -6,6 +6,7 @@
 #   CRATOS_INSTALL_DIR - Installation directory (default: /usr/local/bin or ~/.local/bin)
 #   CRATOS_VERSION     - Version to install (default: latest)
 #   CRATOS_NO_WIZARD   - Skip running wizard after install (default: false)
+#   CRATOS_BUILD_FROM_SOURCE - Force build from source (default: false)
 
 set -e
 
@@ -36,6 +37,10 @@ warn() {
 error() {
     printf "${RED}[ERROR]${NC} %s\n" "$1"
     exit 1
+}
+
+error_no_exit() {
+    printf "${RED}[ERROR]${NC} %s\n" "$1"
 }
 
 # Detect OS
@@ -78,25 +83,27 @@ get_target() {
 # Get latest version from GitHub
 get_latest_version() {
     if command -v curl > /dev/null 2>&1; then
-        curl -sSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/'
+        curl -sSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/'
     elif command -v wget > /dev/null 2>&1; then
-        wget -qO- "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/'
+        wget -qO- "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/'
     else
-        error "Neither curl nor wget found. Please install one of them."
+        echo ""
     fi
 }
 
-# Download file
+# Download file (returns 0 on success, 1 on failure)
 download() {
     URL="$1"
     DEST="$2"
 
     if command -v curl > /dev/null 2>&1; then
-        curl -sSL "$URL" -o "$DEST"
+        curl -fsSL "$URL" -o "$DEST" 2>/dev/null
+        return $?
     elif command -v wget > /dev/null 2>&1; then
-        wget -q "$URL" -O "$DEST"
+        wget -q "$URL" -O "$DEST" 2>/dev/null
+        return $?
     else
-        error "Neither curl nor wget found."
+        return 1
     fi
 }
 
@@ -158,6 +165,102 @@ add_to_path() {
     fi
 }
 
+# Check if Rust is installed
+check_rust() {
+    if command -v cargo > /dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Install Rust
+install_rust() {
+    info "Installing Rust..."
+    if command -v curl > /dev/null 2>&1; then
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    elif command -v wget > /dev/null 2>&1; then
+        wget -qO- https://sh.rustup.rs | sh -s -- -y
+    else
+        error "Cannot install Rust: neither curl nor wget found."
+    fi
+
+    # Source cargo env
+    if [ -f "$HOME/.cargo/env" ]; then
+        . "$HOME/.cargo/env"
+    fi
+}
+
+# Build from source
+build_from_source() {
+    info "Building from source..."
+
+    # Check/install Rust
+    if ! check_rust; then
+        warn "Rust not found. Installing Rust first..."
+        install_rust
+
+        if ! check_rust; then
+            error "Failed to install Rust. Please install manually: https://rustup.rs"
+        fi
+    fi
+
+    # Create temp directory for source
+    SRC_DIR=$(mktemp -d)
+    trap "rm -rf $SRC_DIR" EXIT
+
+    info "Cloning repository..."
+    if command -v git > /dev/null 2>&1; then
+        git clone --depth 1 "https://github.com/$REPO.git" "$SRC_DIR/cratos" 2>/dev/null || {
+            error "Failed to clone repository."
+        }
+    else
+        # Download as tarball if git not available
+        info "Git not found, downloading source tarball..."
+        download "https://github.com/$REPO/archive/refs/heads/main.tar.gz" "$SRC_DIR/source.tar.gz" || {
+            error "Failed to download source."
+        }
+        tar -xzf "$SRC_DIR/source.tar.gz" -C "$SRC_DIR"
+        mv "$SRC_DIR/cratos-main" "$SRC_DIR/cratos"
+    fi
+
+    cd "$SRC_DIR/cratos"
+
+    info "Compiling (this may take a few minutes)..."
+    cargo build --release 2>&1 | tail -5
+
+    if [ -f "target/release/$BINARY_NAME" ]; then
+        cp "target/release/$BINARY_NAME" "$TMP_DIR/$BINARY_NAME"
+        success "Build completed!"
+        return 0
+    else
+        error "Build failed."
+        return 1
+    fi
+}
+
+# Try to download prebuilt binary
+try_download_binary() {
+    TARGET="$1"
+    VERSION="$2"
+    TMP_DIR="$3"
+
+    ARCHIVE_NAME="cratos-${TARGET}.tar.gz"
+    DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/$ARCHIVE_NAME"
+
+    info "Downloading from: $DOWNLOAD_URL"
+
+    if download "$DOWNLOAD_URL" "$TMP_DIR/$ARCHIVE_NAME"; then
+        info "Extracting archive..."
+        tar -xzf "$TMP_DIR/$ARCHIVE_NAME" -C "$TMP_DIR" 2>/dev/null
+        if [ -f "$TMP_DIR/$BINARY_NAME" ]; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
 # Main installation
 main() {
     echo ""
@@ -173,18 +276,6 @@ main() {
     TARGET=$(get_target)
     info "Detected platform: $TARGET"
 
-    # Get version
-    if [ -n "$CRATOS_VERSION" ]; then
-        VERSION="$CRATOS_VERSION"
-    else
-        info "Fetching latest version..."
-        VERSION=$(get_latest_version)
-        if [ -z "$VERSION" ]; then
-            error "Failed to fetch latest version. Please specify CRATOS_VERSION."
-        fi
-    fi
-    info "Installing version: $VERSION"
-
     # Get installation directory
     INSTALL_DIR=$(get_install_dir)
     info "Installation directory: $INSTALL_DIR"
@@ -193,28 +284,63 @@ main() {
     TMP_DIR=$(mktemp -d)
     trap "rm -rf $TMP_DIR" EXIT
 
-    # Download binary
-    ARCHIVE_NAME="cratos-${TARGET}.tar.gz"
-    DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/$ARCHIVE_NAME"
-    info "Downloading from: $DOWNLOAD_URL"
+    BINARY_READY=false
 
-    download "$DOWNLOAD_URL" "$TMP_DIR/$ARCHIVE_NAME" || {
-        error "Failed to download. Check if the release exists at: https://github.com/$REPO/releases"
-    }
-
-    # Extract
-    info "Extracting archive..."
-    tar -xzf "$TMP_DIR/$ARCHIVE_NAME" -C "$TMP_DIR"
-
-    # Install
-    info "Installing to $INSTALL_DIR..."
-    if [ -w "$INSTALL_DIR" ]; then
-        mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/"
-        chmod +x "$INSTALL_DIR/$BINARY_NAME"
+    # Check if forced to build from source
+    if [ -n "$CRATOS_BUILD_FROM_SOURCE" ]; then
+        info "Building from source (forced)..."
+        build_from_source
+        BINARY_READY=true
     else
-        warn "Elevated permissions required. Using sudo..."
-        sudo mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/"
-        sudo chmod +x "$INSTALL_DIR/$BINARY_NAME"
+        # Try to get version and download prebuilt binary
+        if [ -n "$CRATOS_VERSION" ]; then
+            VERSION="$CRATOS_VERSION"
+        else
+            info "Fetching latest version..."
+            VERSION=$(get_latest_version)
+        fi
+
+        if [ -n "$VERSION" ]; then
+            info "Found version: $VERSION"
+            if try_download_binary "$TARGET" "$VERSION" "$TMP_DIR"; then
+                BINARY_READY=true
+            else
+                warn "Failed to download prebuilt binary."
+            fi
+        else
+            warn "No releases found."
+        fi
+
+        # Fallback to building from source
+        if [ "$BINARY_READY" = false ]; then
+            warn "Falling back to building from source..."
+            echo ""
+            echo "  This will:"
+            echo "    1. Install Rust (if not present)"
+            echo "    2. Clone the repository"
+            echo "    3. Compile Cratos"
+            echo ""
+            echo "  This may take 5-10 minutes."
+            echo ""
+
+            build_from_source
+            BINARY_READY=true
+        fi
+    fi
+
+    # Install binary
+    if [ "$BINARY_READY" = true ] && [ -f "$TMP_DIR/$BINARY_NAME" ]; then
+        info "Installing to $INSTALL_DIR..."
+        if [ -w "$INSTALL_DIR" ]; then
+            mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/"
+            chmod +x "$INSTALL_DIR/$BINARY_NAME"
+        else
+            warn "Elevated permissions required. Using sudo..."
+            sudo mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/"
+            sudo chmod +x "$INSTALL_DIR/$BINARY_NAME"
+        fi
+    else
+        error "No binary to install."
     fi
 
     # Verify installation
