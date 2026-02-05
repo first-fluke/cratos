@@ -1,0 +1,148 @@
+# Development Rules (WARFARE)
+# Olympus OS Development Combat Rules
+
+[meta]
+title = "Development Rules (WARFARE)"
+motto = "Code is a battlefield. War without discipline is defeat."
+law_references = [2, 10]
+
+# Section 1: Code Quality
+
+[[sections]]
+id = 1
+title = "Code Quality"
+
+[[sections.rules]]
+title = "Testing"
+items = [
+    "Maintain test coverage above 70%",
+    "All public APIs must include documentation tests",
+    "CI build failure = merge blocked",
+]
+
+[[sections.rules]]
+title = "Linting"
+items = [
+    "Zero clippy warnings policy",
+    "Mandatory rustfmt auto-formatting",
+]
+code_example = "cargo clippy -- -D warnings\ncargo fmt --check"
+
+[[sections.rules]]
+title = "Security"
+items = [
+    "#![forbid(unsafe_code)] principle",
+    "Mandatory external input validation",
+    "No hardcoded secrets",
+]
+
+# Section 2: Commit Rules
+
+[[sections]]
+id = 2
+title = "Commit Rules"
+
+[[sections.rules]]
+title = "Conventional Commits"
+items = [
+    "feat: New feature",
+    "fix: Bug fix",
+    "docs: Documentation",
+    "style: Formatting",
+    "refactor: Refactoring",
+    "test: Testing",
+    "chore: Build/config",
+]
+code_example = "<type>(<scope>): <description>"
+
+[[sections.rules]]
+title = "Guidelines"
+items = [
+    "Single responsibility per commit",
+    "Title under 50 characters",
+    "Body explains why, not what",
+]
+
+# Section 3: Review Rules
+
+[[sections]]
+id = 3
+title = "Review Rules"
+
+[[sections.rules]]
+title = "Pull Request"
+items = [
+    "All PRs require review",
+    "No merge without approval",
+    "No self-merge (except emergencies)",
+]
+
+[[sections.rules]]
+title = "Reviewer Guide"
+items = [
+    "First review within 24 hours",
+    "Check code quality, security, performance",
+    "Provide constructive feedback",
+]
+
+# Section 4: Branch Strategy
+
+[[sections]]
+id = 4
+title = "Branch Strategy"
+
+[[sections.rules]]
+title = "Branch Structure"
+items = [
+    "main: Always deployable state",
+    "feature/*: Feature development",
+    "fix/*: Bug fixes",
+    "hotfix/*: Emergency fixes",
+]
+
+# Section 5: Deployment Rules
+
+[[sections]]
+id = 5
+title = "Deployment Rules"
+
+[[sections.rules]]
+title = "Checklist"
+items = [
+    "All tests passing",
+    "Code review complete",
+    "Documentation updated",
+    "CHANGELOG written",
+    "Version tagged",
+]
+
+[[sections.rules]]
+title = "Rollback Plan"
+items = [
+    "Establish rollback plan before deployment",
+    "Maintain rollback capability within 15 minutes",
+]
+
+# Section 6: Emergency Response
+
+[[sections]]
+id = 6
+title = "Emergency Response"
+
+[[sections.rules]]
+title = "Incident Handling"
+items = [
+    "Immediate report (Slack/Telegram)",
+    "Assess impact scope",
+    "Rollback or hotfix",
+    "Post-incident analysis (Postmortem)",
+]
+
+[[sections.rules]]
+title = "Escalation"
+items = [
+    "P0 (Service down): Immediate all-hands",
+    "P1 (Major feature failure): Response within 30 minutes",
+    "P2 (Partial failure): Response within 4 hours",
+    "P3 (Minor bug): Next sprint",
+]

@@ -1,0 +1,83 @@
+# Rank System (RANKS)
+# Olympus OS Hierarchy Structure
+
+[meta]
+title = "Rank System (RANKS)"
+motto = "Prove through Chronicles, earn recognition through promotion"
+
+[promotion]
+formula = "Required records for promotion = (current level + 1) × 5"
+
+[[promotion.additional]]
+level = "3+"
+requirement = "Complete at least 1 quest"
+
+[[promotion.additional]]
+level = "5+"
+requirement = "Peer evaluation 3.5/5 or higher"
+
+[[promotion.additional]]
+level = "7+"
+requirement = "Leadership track record"
+
+[[promotion.additional]]
+level = "10"
+requirement = "Direct approval from Cratos"
+
+# Rank Definitions
+
+[[ranks]]
+level = { min = 1, max = 2 }
+title = "Mortal"
+title_kr = "Mortal"
+requirements = ["Self-management", "Task completion"]
+permissions = ["Execute assigned tasks", "Daily progress reports"]
+
+[[ranks]]
+level = 3
+title = "Demigod"
+title_kr = "Demigod"
+requirements = ["Peer support", "Collaboration"]
+permissions = ["Peer assistance", "Code review participation"]
+
+[[ranks]]
+level = 4
+title = "Hero"
+title_kr = "Hero"
+requirements = ["Small team leadership"]
+permissions = ["Lead small teams", "Task delegation"]
+
+[[ranks]]
+level = 5
+title = "Titan"
+title_kr = "Titan"
+requirements = ["Domain ownership"]
+permissions = ["Domain ownership", "Architecture decision participation"]
+
+[[ranks]]
+level = { min = 6, max = 7 }
+title = "Lesser God"
+title_kr = "Lesser God"
+requirements = ["Organizational leadership"]
+permissions = ["Team building", "Personnel recommendations"]
+
+[[ranks]]
+level = { min = 8, max = 9 }
+title = "Olympian"
+title_kr = "Olympian"
+requirements = ["Culture guardian"]
+permissions = ["Culture protection", "Decree interpretation"]
+
+[[ranks]]
+level = 10
+title = "Elder God"
+title_kr = "Elder God"
+requirements = ["Visionary leadership"]
+permissions = ["Vision setting", "Strategic decision participation"]
+
+[[ranks]]
+level = 255
+title = "Supreme"
+title_kr = "Supreme"
+requirements = ["God Slayer (Cratos only)"]
+permissions = ["Absolute authority", "Law amendment", "Skill execution"]

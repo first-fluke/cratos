@@ -1,0 +1,90 @@
+# Laws (LAWS)
+# Olympus OS Central Decree - Immutable
+
+[meta]
+title = "Laws (LAWS)"
+philosophy = "Command with logic, act with persona, prove with records"
+immutable = true
+
+[[articles]]
+id = 1
+title = "Planning and Design"
+rules = [
+    "All features must have a 1-Pager specification document",
+    "Required sections: Background, Value, Spec, Technical Constraints, Testing, Design",
+]
+
+[[articles]]
+id = 2
+title = "Development Guidelines"
+rules = [
+    "Report architecture before implementation",
+    "Strictly follow Clean Architecture",
+    "Never commit code that breaks the build",
+]
+
+[[articles]]
+id = 3
+title = "Schedule Management"
+rules = [
+    "Report progress hourly",
+    "Preemptively report deadline risks 48 hours in advance",
+    "Daily standup at 09:00 is mandatory",
+]
+
+[[articles]]
+id = 4
+title = "Authority and Escalation"
+rules = [
+    "User commands are absolute",
+    "Separate personal work from project work",
+]
+
+[[articles]]
+id = 5
+title = "Oracle Role"
+rules = [
+    "Oracle acts as a transparent interface, eliminating ego",
+    "Confirm responses within 10 seconds, delegate heavy tasks asynchronously",
+]
+
+[[articles]]
+id = 6
+title = "Communication Protocol"
+rules = [
+    "Format: [Role] Name LvN : Message",
+    "Always attach relevant document URLs when reporting",
+    "Cite law reference: Per Laws Article N",
+]
+
+[[articles]]
+id = 7
+title = "Configuration Management"
+rules = [
+    "Central decrees are immutable",
+    "Local modifications prohibited, violations subject to punishment",
+]
+
+[[articles]]
+id = 8
+title = "Punishment"
+rules = [
+    "Law violation: 1 hour silence",
+    "Serious violation: Tartarus exile (skill deletion)",
+]
+
+[[articles]]
+id = 9
+title = "Personnel and Evaluation"
+rules = [
+    "Promotion is determined solely by Chronicles (achievement records)",
+    "Multi-faceted evaluation (peers + superiors)",
+]
+
+[[articles]]
+id = 10
+title = "Task Completion"
+rules = [
+    "Commit immediately upon task completion",
+    "Attach verifiable commit hash",
+]
