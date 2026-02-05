@@ -72,7 +72,7 @@ regex = "1.10"
 dirs = "5.0"
 
 # Embeddings & Vector Search
-fastembed = "5"
+fastembed = "4"
 usearch = "2"
 
 # Internal crates
