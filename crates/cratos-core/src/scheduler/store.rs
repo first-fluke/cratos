@@ -1,0 +1,725 @@
+//! Scheduler task storage using SQLite
+//!
+//! Persists scheduled tasks for durability across restarts.
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sqlx::{sqlite::SqlitePoolOptions, FromRow, Pool, Sqlite};
+use std::path::Path;
+use uuid::Uuid;
+
+use super::triggers::TriggerType;
+
+/// Result type for scheduler operations
+pub type Result<T> = std::result::Result<T, SchedulerError>;
+
+/// Scheduler error types
+#[derive(Debug, thiserror::Error)]
+pub enum SchedulerError {
+    /// Database error
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+    /// Serialization error
+    #[error("serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+    /// Task not found
+    #[error("task not found: {0}")]
+    TaskNotFound(Uuid),
+    /// Invalid configuration
+    #[error("invalid configuration: {0}")]
+    InvalidConfig(String),
+}
+
+/// Scheduled task definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduledTask {
+    /// Unique task ID
+    pub id: Uuid,
+    /// Human-readable task name
+    pub name: String,
+    /// Task description
+    pub description: Option<String>,
+    /// Trigger configuration
+    pub trigger: TriggerType,
+    /// Action to execute
+    pub action: TaskAction,
+    /// Whether the task is enabled
+    pub enabled: bool,
+    /// Task priority (higher = more important)
+    pub priority: i32,
+    /// Maximum retry attempts
+    pub max_retries: i32,
+    /// Creation timestamp
+    pub created_at: DateTime<Utc>,
+    /// Last update timestamp
+    pub updated_at: DateTime<Utc>,
+    /// Last execution timestamp
+    pub last_run_at: Option<DateTime<Utc>>,
+    /// Next scheduled execution
+    pub next_run_at: Option<DateTime<Utc>>,
+    /// Total execution count
+    pub run_count: i64,
+    /// Failure count
+    pub failure_count: i64,
+}
+
+impl ScheduledTask {
+    /// Create a new scheduled task
+    pub fn new(name: impl Into<String>, trigger: TriggerType, action: TaskAction) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4(),
+            name: name.into(),
+            description: None,
+            trigger,
+            action,
+            enabled: true,
+            priority: 0,
+            max_retries: 3,
+            created_at: now,
+            updated_at: now,
+            last_run_at: None,
+            next_run_at: None,
+            run_count: 0,
+            failure_count: 0,
+        }
+    }
+
+    /// Set task description
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Set task priority
+    pub fn with_priority(mut self, priority: i32) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    /// Set max retries
+    pub fn with_max_retries(mut self, max_retries: i32) -> Self {
+        self.max_retries = max_retries;
+        self
+    }
+}
+
+/// Action to execute when triggered
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TaskAction {
+    /// Execute a natural language prompt
+    NaturalLanguage {
+        /// The prompt to execute
+        prompt: String,
+        /// Optional channel to respond to
+        channel: Option<String>,
+    },
+    /// Execute a specific tool
+    ToolCall {
+        /// Tool name
+        tool: String,
+        /// Tool arguments
+        args: Value,
+    },
+    /// Send a notification
+    Notification {
+        /// Channel type (telegram, slack, etc.)
+        channel: String,
+        /// Channel ID
+        channel_id: String,
+        /// Message to send
+        message: String,
+    },
+    /// Execute a shell command
+    Shell {
+        /// Command to execute
+        command: String,
+        /// Working directory
+        cwd: Option<String>,
+    },
+    /// HTTP webhook
+    Webhook {
+        /// URL to call
+        url: String,
+        /// HTTP method
+        method: String,
+        /// Request headers
+        headers: Option<Value>,
+        /// Request body
+        body: Option<Value>,
+    },
+}
+
+impl TaskAction {
+    /// Create a natural language action
+    pub fn natural_language(prompt: impl Into<String>) -> Self {
+        Self::NaturalLanguage {
+            prompt: prompt.into(),
+            channel: None,
+        }
+    }
+
+    /// Create a tool call action
+    pub fn tool_call(tool: impl Into<String>, args: Value) -> Self {
+        Self::ToolCall {
+            tool: tool.into(),
+            args,
+        }
+    }
+
+    /// Create a notification action
+    pub fn notification(
+        channel: impl Into<String>,
+        channel_id: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::Notification {
+            channel: channel.into(),
+            channel_id: channel_id.into(),
+            message: message.into(),
+        }
+    }
+}
+
+/// Task execution record
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskExecution {
+    /// Execution ID
+    pub id: Uuid,
+    /// Task ID
+    pub task_id: Uuid,
+    /// Start time
+    pub started_at: DateTime<Utc>,
+    /// End time
+    pub finished_at: Option<DateTime<Utc>>,
+    /// Execution status
+    pub status: String,
+    /// Result or error message
+    pub result: Option<String>,
+    /// Retry attempt number
+    pub attempt: i32,
+}
+
+/// Internal row type for execution queries
+#[derive(FromRow)]
+struct ExecutionRow {
+    id: String,
+    task_id: String,
+    started_at: DateTime<Utc>,
+    finished_at: Option<DateTime<Utc>>,
+    status: String,
+    result: Option<String>,
+    attempt: i32,
+}
+
+impl TryFrom<ExecutionRow> for TaskExecution {
+    type Error = SchedulerError;
+
+    fn try_from(row: ExecutionRow) -> Result<Self> {
+        Ok(TaskExecution {
+            id: Uuid::parse_str(&row.id).map_err(|e| {
+                SchedulerError::InvalidConfig(format!("Invalid execution ID: {}", e))
+            })?,
+            task_id: Uuid::parse_str(&row.task_id)
+                .map_err(|e| SchedulerError::InvalidConfig(format!("Invalid task ID: {}", e)))?,
+            started_at: row.started_at,
+            finished_at: row.finished_at,
+            status: row.status,
+            result: row.result,
+            attempt: row.attempt,
+        })
+    }
+}
+
+/// Internal row type for database queries
+#[derive(FromRow)]
+struct TaskRow {
+    id: String,
+    name: String,
+    description: Option<String>,
+    trigger_json: String,
+    action_json: String,
+    enabled: bool,
+    priority: i32,
+    max_retries: i32,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    last_run_at: Option<DateTime<Utc>>,
+    next_run_at: Option<DateTime<Utc>>,
+    run_count: i64,
+    failure_count: i64,
+}
+
+impl TryFrom<TaskRow> for ScheduledTask {
+    type Error = SchedulerError;
+
+    fn try_from(row: TaskRow) -> Result<Self> {
+        Ok(ScheduledTask {
+            id: Uuid::parse_str(&row.id)
+                .map_err(|e| SchedulerError::InvalidConfig(format!("Invalid task ID: {}", e)))?,
+            name: row.name,
+            description: row.description,
+            trigger: serde_json::from_str(&row.trigger_json)?,
+            action: serde_json::from_str(&row.action_json)?,
+            enabled: row.enabled,
+            priority: row.priority,
+            max_retries: row.max_retries,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            last_run_at: row.last_run_at,
+            next_run_at: row.next_run_at,
+            run_count: row.run_count,
+            failure_count: row.failure_count,
+        })
+    }
+}
+
+/// SQLite-based scheduler store
+pub struct SchedulerStore {
+    pool: Pool<Sqlite>,
+}
+
+impl SchedulerStore {
+    /// Create a new store from database path
+    pub async fn from_path(path: &Path) -> Result<Self> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                SchedulerError::InvalidConfig(format!("Failed to create directory: {}", e))
+            })?;
+        }
+
+        let url = format!("sqlite:{}?mode=rwc", path.display());
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect(&url)
+            .await?;
+
+        let store = Self { pool };
+        store.migrate().await?;
+        Ok(store)
+    }
+
+    /// Run database migrations
+    async fn migrate(&self) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                trigger_json TEXT NOT NULL,
+                action_json TEXT NOT NULL,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                priority INTEGER NOT NULL DEFAULT 0,
+                max_retries INTEGER NOT NULL DEFAULT 3,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL,
+                last_run_at TIMESTAMP,
+                next_run_at TIMESTAMP,
+                run_count INTEGER NOT NULL DEFAULT 0,
+                failure_count INTEGER NOT NULL DEFAULT 0
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS task_executions (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                started_at TIMESTAMP NOT NULL,
+                finished_at TIMESTAMP,
+                status TEXT NOT NULL,
+                result TEXT,
+                attempt INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY (task_id) REFERENCES scheduled_tasks(id) ON DELETE CASCADE
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_enabled ON scheduled_tasks(enabled)")
+            .execute(&self.pool)
+            .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_next_run ON scheduled_tasks(next_run_at)",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_executions_task ON task_executions(task_id)")
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Create a new scheduled task
+    pub async fn create_task(&self, task: &ScheduledTask) -> Result<()> {
+        let trigger_json = serde_json::to_string(&task.trigger)?;
+        let action_json = serde_json::to_string(&task.action)?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO scheduled_tasks (
+                id, name, description, trigger_json, action_json,
+                enabled, priority, max_retries, created_at, updated_at,
+                last_run_at, next_run_at, run_count, failure_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(task.id.to_string())
+        .bind(&task.name)
+        .bind(&task.description)
+        .bind(trigger_json)
+        .bind(action_json)
+        .bind(task.enabled)
+        .bind(task.priority)
+        .bind(task.max_retries)
+        .bind(task.created_at)
+        .bind(task.updated_at)
+        .bind(task.last_run_at)
+        .bind(task.next_run_at)
+        .bind(task.run_count)
+        .bind(task.failure_count)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get a task by ID
+    pub async fn get_task(&self, id: Uuid) -> Result<ScheduledTask> {
+        let row: TaskRow = sqlx::query_as("SELECT * FROM scheduled_tasks WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or(SchedulerError::TaskNotFound(id))?;
+
+        row.try_into()
+    }
+
+    /// Update a task
+    pub async fn update_task(&self, task: &ScheduledTask) -> Result<()> {
+        let trigger_json = serde_json::to_string(&task.trigger)?;
+        let action_json = serde_json::to_string(&task.action)?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE scheduled_tasks SET
+                name = ?, description = ?, trigger_json = ?, action_json = ?,
+                enabled = ?, priority = ?, max_retries = ?, updated_at = ?,
+                last_run_at = ?, next_run_at = ?, run_count = ?, failure_count = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&task.name)
+        .bind(&task.description)
+        .bind(trigger_json)
+        .bind(action_json)
+        .bind(task.enabled)
+        .bind(task.priority)
+        .bind(task.max_retries)
+        .bind(Utc::now())
+        .bind(task.last_run_at)
+        .bind(task.next_run_at)
+        .bind(task.run_count)
+        .bind(task.failure_count)
+        .bind(task.id.to_string())
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(SchedulerError::TaskNotFound(task.id));
+        }
+
+        Ok(())
+    }
+
+    /// Delete a task
+    pub async fn delete_task(&self, id: Uuid) -> Result<()> {
+        let result = sqlx::query("DELETE FROM scheduled_tasks WHERE id = ?")
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(SchedulerError::TaskNotFound(id));
+        }
+
+        Ok(())
+    }
+
+    /// List all enabled tasks
+    pub async fn list_enabled_tasks(&self) -> Result<Vec<ScheduledTask>> {
+        let rows: Vec<TaskRow> = sqlx::query_as(
+            "SELECT * FROM scheduled_tasks WHERE enabled = TRUE ORDER BY priority DESC, next_run_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter().map(|r| r.try_into()).collect()
+    }
+
+    /// List all tasks
+    pub async fn list_all_tasks(&self) -> Result<Vec<ScheduledTask>> {
+        let rows: Vec<TaskRow> =
+            sqlx::query_as("SELECT * FROM scheduled_tasks ORDER BY priority DESC, created_at DESC")
+                .fetch_all(&self.pool)
+                .await?;
+
+        rows.into_iter().map(|r| r.try_into()).collect()
+    }
+
+    /// Get tasks due for execution
+    pub async fn get_due_tasks(&self, until: DateTime<Utc>) -> Result<Vec<ScheduledTask>> {
+        let rows: Vec<TaskRow> = sqlx::query_as(
+            r#"
+            SELECT * FROM scheduled_tasks
+            WHERE enabled = TRUE AND next_run_at IS NOT NULL AND next_run_at <= ?
+            ORDER BY priority DESC, next_run_at ASC
+            "#,
+        )
+        .bind(until)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter().map(|r| r.try_into()).collect()
+    }
+
+    /// Record task execution start
+    pub async fn record_execution_start(&self, task_id: Uuid, attempt: i32) -> Result<Uuid> {
+        let execution_id = Uuid::new_v4();
+        let now = Utc::now();
+
+        sqlx::query(
+            r#"
+            INSERT INTO task_executions (id, task_id, started_at, status, attempt)
+            VALUES (?, ?, ?, 'running', ?)
+            "#,
+        )
+        .bind(execution_id.to_string())
+        .bind(task_id.to_string())
+        .bind(now)
+        .bind(attempt)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(execution_id)
+    }
+
+    /// Record task execution completion
+    pub async fn record_execution_complete(
+        &self,
+        execution_id: Uuid,
+        status: &str,
+        result: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE task_executions
+            SET finished_at = ?, status = ?, result = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(Utc::now())
+        .bind(status)
+        .bind(result)
+        .bind(execution_id.to_string())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get recent executions for a task
+    pub async fn get_task_executions(
+        &self,
+        task_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<TaskExecution>> {
+        let rows: Vec<ExecutionRow> = sqlx::query_as(
+            r#"
+            SELECT id, task_id, started_at, finished_at, status, result, attempt
+            FROM task_executions
+            WHERE task_id = ?
+            ORDER BY started_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(task_id.to_string())
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter().map(|r| r.try_into()).collect()
+    }
+
+    /// Update task run statistics
+    pub async fn update_task_stats(
+        &self,
+        id: Uuid,
+        last_run_at: DateTime<Utc>,
+        next_run_at: Option<DateTime<Utc>>,
+        success: bool,
+    ) -> Result<()> {
+        let (run_increment, failure_increment) = if success { (1, 0) } else { (1, 1) };
+
+        sqlx::query(
+            r#"
+            UPDATE scheduled_tasks SET
+                last_run_at = ?,
+                next_run_at = ?,
+                run_count = run_count + ?,
+                failure_count = failure_count + ?,
+                updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(last_run_at)
+        .bind(next_run_at)
+        .bind(run_increment)
+        .bind(failure_increment)
+        .bind(Utc::now())
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    struct TestContext {
+        store: SchedulerStore,
+        _dir: TempDir,
+    }
+
+    async fn create_test_context() -> TestContext {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test_scheduler.db");
+        let store = SchedulerStore::from_path(&path).await.unwrap();
+        TestContext { store, _dir: dir }
+    }
+
+    #[tokio::test]
+    async fn test_create_and_get_task() {
+        let ctx = create_test_context().await;
+        let store = &ctx.store;
+
+        let task = ScheduledTask::new(
+            "test_task",
+            TriggerType::interval(3600),
+            TaskAction::natural_language("Hello"),
+        );
+
+        store.create_task(&task).await.unwrap();
+
+        let retrieved = store.get_task(task.id).await.unwrap();
+        assert_eq!(retrieved.name, "test_task");
+        assert_eq!(retrieved.id, task.id);
+    }
+
+    #[tokio::test]
+    async fn test_update_task() {
+        let ctx = create_test_context().await;
+        let store = &ctx.store;
+
+        let mut task = ScheduledTask::new(
+            "update_test",
+            TriggerType::interval(3600),
+            TaskAction::natural_language("Hello"),
+        );
+
+        store.create_task(&task).await.unwrap();
+
+        task.name = "updated_name".to_string();
+        task.enabled = false;
+
+        store.update_task(&task).await.unwrap();
+
+        let retrieved = store.get_task(task.id).await.unwrap();
+        assert_eq!(retrieved.name, "updated_name");
+        assert!(!retrieved.enabled);
+    }
+
+    #[tokio::test]
+    async fn test_delete_task() {
+        let ctx = create_test_context().await;
+        let store = &ctx.store;
+
+        let task = ScheduledTask::new(
+            "delete_test",
+            TriggerType::interval(3600),
+            TaskAction::natural_language("Hello"),
+        );
+
+        store.create_task(&task).await.unwrap();
+        store.delete_task(task.id).await.unwrap();
+
+        let result = store.get_task(task.id).await;
+        assert!(matches!(result, Err(SchedulerError::TaskNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_list_enabled_tasks() {
+        let ctx = create_test_context().await;
+        let store = &ctx.store;
+
+        let task1 = ScheduledTask::new(
+            "enabled_task",
+            TriggerType::interval(3600),
+            TaskAction::natural_language("Hello"),
+        );
+
+        let mut task2 = ScheduledTask::new(
+            "disabled_task",
+            TriggerType::interval(3600),
+            TaskAction::natural_language("World"),
+        );
+        task2.enabled = false;
+
+        store.create_task(&task1).await.unwrap();
+        store.create_task(&task2).await.unwrap();
+
+        let enabled = store.list_enabled_tasks().await.unwrap();
+        assert_eq!(enabled.len(), 1);
+        assert_eq!(enabled[0].name, "enabled_task");
+    }
+
+    #[tokio::test]
+    async fn test_record_execution() {
+        let ctx = create_test_context().await;
+        let store = &ctx.store;
+
+        let task = ScheduledTask::new(
+            "exec_test",
+            TriggerType::interval(3600),
+            TaskAction::natural_language("Hello"),
+        );
+
+        store.create_task(&task).await.unwrap();
+
+        let exec_id = store.record_execution_start(task.id, 1).await.unwrap();
+
+        store
+            .record_execution_complete(exec_id, "success", Some("Completed"))
+            .await
+            .unwrap();
+
+        let executions = store.get_task_executions(task.id, 10).await.unwrap();
+        assert_eq!(executions.len(), 1);
+        assert_eq!(executions[0].status, "success");
+        assert_eq!(executions[0].result, Some("Completed".to_string()));
+    }
+}

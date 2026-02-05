@@ -9,18 +9,25 @@
 //! - Utils: Retry logic, circuit breaker, and other utilities
 //! - Credentials: Secure credential storage
 //! - Security: Prompt injection defense
+//! - Pantheon: Persona preset system (Olympus OS)
+//! - Chronicles: Achievement tracking system (Olympus OS)
+//! - Decrees: Laws and rules system (Olympus OS)
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 pub mod agents;
 pub mod approval;
+pub mod chronicles;
 pub mod credentials;
+pub mod decrees;
 pub mod error;
 pub mod memory;
 pub mod orchestrator;
+pub mod pantheon;
 pub mod permissions;
 pub mod planner;
+pub mod scheduler;
 pub mod security;
 pub mod shutdown;
 pub mod telemetry;
@@ -30,7 +37,7 @@ pub use approval::{ApprovalManager, ApprovalRequest, ApprovalStatus, SharedAppro
 pub use credentials::{
     get_api_key, Credential, CredentialBackend, CredentialError, CredentialStore, SecureString,
 };
-pub use error::{Error, Result};
+pub use error::{format_error_for_chat, format_error_for_cli, Error, Result, UserFriendlyError};
 pub use memory::{
     MemoryStore, RedisStore, SessionBackend, SessionBackendConfig, SessionContext, SessionStore,
     SqliteStore, ToolExecution, WorkingMemory,
@@ -71,4 +78,24 @@ pub use shutdown::{
 // Re-export telemetry module types
 pub use telemetry::{
     global_telemetry, init_telemetry, Telemetry, TelemetryConfig, TelemetryEvent, TelemetryStats,
+};
+
+// Re-export pantheon module types (Olympus OS)
+pub use pantheon::{
+    Domain, PersonaInfo, PersonaLevel, PersonaLoader, PersonaPreset, PersonaPrinciples,
+    PersonaSkills, PersonaTraits,
+};
+
+// Re-export chronicles module types (Olympus OS)
+pub use chronicles::{Chronicle, ChronicleEntry, ChronicleStatus, ChronicleStore, Judgment, Quest};
+
+// Re-export decrees module types (Olympus OS)
+pub use decrees::{Article, DecreeLoader, Laws, Rank, RankLevel, Ranks, Warfare, WarfareSection};
+
+// Re-export scheduler module types
+pub use scheduler::{
+    Comparison, CronTrigger, FileEvent, FileTrigger, IntervalTrigger, OneTimeTrigger,
+    ScheduledTask, SchedulerConfig, SchedulerEngine, SchedulerEngineBuilder, SchedulerError,
+    SchedulerResult, SchedulerStore, SystemMetric, SystemTrigger, TaskAction, TaskExecution,
+    TriggerType,
 };

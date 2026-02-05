@@ -34,6 +34,9 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Credential security
 # keyring = "3.0"     # OS keychain (enable when needed)
 zeroize = { version = "1.8", features = ["derive"] }  # Cryptographic memory wiping
+
+# Scheduler
+tokio-cron-scheduler = "0.13"  # Cron scheduling (disabled for now, using simplified impl)
 subtle = "2.5"  # Constant-time comparison for secrets
 aes-gcm = "0.10"    # AES-256-GCM encryption for EncryptedFile backend
 rand = "0.8"        # Secure random nonce generation
