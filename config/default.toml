@@ -305,3 +305,98 @@ max_message_size_kb = 1024
 [canvas.ai_streaming]
 enabled = true
 chunk_size = 20                # Characters per streaming chunk
+
+# ============================================================================
+# Wake-on-LAN Configuration
+# ============================================================================
+
+[wol]
+enabled = true
+default_port = 9               # Standard WoL port
+broadcast_address = "255.255.255.255"
+
+# Named devices for convenience (optional)
+# Use with: "Wake up my desktop" or "wol:desktop"
+# [wol.devices]
+# desktop = "AA:BB:CC:DD:EE:FF"
+# server = "11:22:33:44:55:66"
+# nas = "00:11:22:33:44:55"
+
+# ============================================================================
+# MCP (Model Context Protocol) Server Configuration
+# ============================================================================
+# MCP enables Claude to interact with external tools and data sources.
+# Server definitions are in .mcp.json at the project root.
+# Configure per-server settings here.
+
+[mcp]
+# Global MCP enable/disable
+enabled = true
+# Auto-start configured servers on startup
+auto_start = true
+
+# Notion MCP server
+# Requires: NOTION_API_KEY environment variable
+# Get key from: https://developers.notion.com/
+[mcp.servers.notion]
+enabled = false
+# Optional: limit to specific databases
+# allowed_databases = []
+
+# Obsidian MCP server (via filesystem server)
+# Requires: OBSIDIAN_VAULT_PATH environment variable
+[mcp.servers.obsidian]
+enabled = false
+vault_path = "~/Documents/Obsidian/MyVault"
+# File types to index for semantic search
+# index_extensions = ["md", "txt"]
+
+# Playwright browser automation
+[mcp.servers.playwright]
+enabled = true
+
+# Filesystem access
+[mcp.servers.filesystem]
+enabled = true
+# Root path for filesystem access
+root = "~/cratos-workspace"
+
+# ============================================================================
+# ProactiveScheduler Configuration (24/7 Task Automation)
+# ============================================================================
+# Enables automated task execution based on time, events, or conditions.
+# Tasks are persisted in SQLite and survive restarts.
+
+[scheduler]
+# Enable the scheduler
+enabled = true
+# Check interval in seconds (how often to look for due tasks)
+check_interval_secs = 60
+# Default retry delay for failed tasks (seconds)
+retry_delay_secs = 30
+# Maximum concurrent task executions
+max_concurrent = 10
+# Enable execution logging
+logging_enabled = true
+
+# Example scheduled tasks (uncomment to use)
+# [[scheduler.tasks]]
+# name = "daily_backup_reminder"
+# description = "Send daily backup reminder at 9 AM"
+# trigger = { type = "cron", expression = "0 9 * * *" }
+# action = { type = "notification", channel = "telegram", channel_id = "YOUR_CHAT_ID", message = "Time to backup!" }
+# enabled = true
+
+# [[scheduler.tasks]]
+# name = "hourly_health_check"
+# description = "Check system health every hour"
+# trigger = { type = "interval", seconds = 3600 }
+# action = { type = "natural_language", prompt = "Check system health and report any issues" }
+# enabled = true
+
+# [[scheduler.tasks]]
+# name = "cpu_alert"
+# description = "Alert when CPU usage is high for 5 minutes"
+# trigger = { type = "system", metric = "cpu_usage", threshold = 90.0, comparison = "greater_than", duration_secs = 300 }
+# action = { type = "notification", channel = "telegram", channel_id = "YOUR_CHAT_ID", message = "CPU usage is critically high!" }
+# enabled = true

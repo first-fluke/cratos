@@ -12,9 +12,11 @@ Now that you've installed Cratos, let's remotely control your PC via Telegram!
 6. [Replay (Rewind)](#6-replay-rewind)
 7. [Auto Skills](#7-auto-skills)
 8. [LLM Model Selection](#8-llm-model-selection)
-9. [Security Features](#9-security-features)
-10. [Approval Settings](#10-approval-settings)
-11. [Effective Usage Tips](#11-effective-usage-tips)
+9. [Configuration](#9-configuration)
+10. [Security Features](#10-security-features)
+11. [Approval Settings](#11-approval-settings)
+12. [Effective Usage Tips](#12-effective-usage-tips)
+13. [Olympus OS (Persona System)](#13-olympus-os-persona-system)
 
 ---
 
@@ -388,7 +390,84 @@ Bot: This month's usage:
 
 ---
 
-## 9. Security Features
+## 9. Configuration
+
+Change Cratos settings using natural language.
+
+### Change LLM Model
+
+```
+You: Change the model to Claude
+Bot: LLM Model → claude-sonnet-4
+
+You: Set it to GPT-4o
+Bot: LLM Model → gpt-4o
+
+You: What's the current model?
+Bot: LLM Model: claude-sonnet-4
+    Available: gpt-4o, claude-sonnet-4, deepseek-chat, llama-3.3-70b, gemini-2.0-flash
+```
+
+### Language Settings
+
+```
+You: Set language to Korean
+Bot: Language → ko
+
+You: Change to English
+Bot: Language → en
+```
+
+### Change Persona
+
+```
+You: Change persona to Sindri
+Bot: Persona → sindri
+
+You: What personas are available?
+Bot: Persona options: cratos, sindri, athena, heimdall, mimir
+```
+
+### Register WoL Device
+
+Register remote PCs to wake them via Wake-on-LAN.
+
+```
+You: Register my-pc for WoL
+Bot: To register 'my-pc', I need the MAC address.
+
+    **How to find MAC address:**
+    Windows: cmd → ipconfig /all → Physical Address
+    Mac: System Settings → Network → Hardware
+
+    Please provide the MAC address. (e.g., AA:BB:CC:DD:EE:FF)
+
+You: AA:BB:CC:DD:EE:FF
+Bot: 'my-pc' device registered! Now you can say 'wake up my-pc'.
+```
+
+### Manage WoL Devices
+
+```
+You: Show registered WoL devices
+Bot: 2 WoL devices registered:
+    - my-pc: AA:BB:CC:DD:EE:FF
+    - server: 11:22:33:44:55:66
+
+You: Delete my-pc
+Bot: 'my-pc' device deleted.
+```
+
+### Reset Settings
+
+```
+You: Reset language settings
+Bot: Language reset → en
+```
+
+---
+
+## 10. Security Features
 
 Cratos provides several built-in security features.
 
@@ -424,7 +503,7 @@ Dangerous commands run in isolated environment:
 
 ---
 
-## 10. Approval Settings
+## 11. Approval Settings
 
 Configure how actions are approved.
 
@@ -455,7 +534,7 @@ The following actions require approval in `risky_only` mode:
 
 ---
 
-## 11. Effective Usage Tips
+## 12. Effective Usage Tips
 
 ### DO: Be Specific
 
@@ -508,6 +587,114 @@ You: /status            # System status
 You: /history           # Recent action history
 You: /cancel            # Cancel current action
 You: /approve           # Approve pending action
+```
+
+---
+
+## 13. Olympus OS (Persona System)
+
+Cratos provides a mythology-based 3-layer agent organization system.
+
+### Overview
+
+| Layer | Name | Purpose |
+|-------|------|---------|
+| WHO | **Pantheon** | Agent personas |
+| HOW | **Decrees** | Laws, ranks, development rules |
+| WHAT | **Chronicles** | Achievement records and evaluations |
+
+### Invoke Personas with @mention
+
+You can directly invoke specific personas:
+
+```
+You: @sindri Fix this bug
+Bot: [Sindri Lv1] Per Laws Article 2, starting bug fix...
+
+You: @athena Plan the next sprint
+Bot: [Athena Lv3] I will create the sprint plan...
+
+You: @heimdall Review security
+Bot: [Heimdall Lv2] Starting security review...
+
+You: @mimir Research this technology
+Bot: [Mimir Lv4] I will conduct the research...
+```
+
+### Persona List
+
+| Role | Name | Domain |
+|------|------|--------|
+| Orchestrator | **Cratos** | Supreme commander (Lv255) |
+| PM | **Athena** | Strategy, planning (Lv3) |
+| DEV | **Sindri** | Development, implementation (Lv1) |
+| QA | **Heimdall** | Quality, security (Lv2) |
+| RESEARCHER | **Mimir** | Research (Lv4) |
+
+### Manage Personas
+
+```
+You: cratos pantheon list
+Bot: Olympus Pantheon
+
+    SUPREME:
+      cratos     Lv255  God Slayer
+
+    ROLES:
+      athena     Lv3    Strategist (PM)
+      sindri     Lv1    Forge Master (DEV)
+      heimdall   Lv2    Guardian (QA)
+      mimir      Lv4    Sage (RESEARCHER)
+
+You: cratos pantheon show sindri
+Bot: Persona: Sindri (Forge Master)
+    Domain: DEV
+    Level: Lv1 Mortal
+
+    Traits:
+      - Near-obsessive dedication to quality
+      - Philosophy: Elegant code keeps the system alive
+
+    Principles:
+      1. Report architecture before implementation
+      2. Strictly follow Clean Architecture
+      3. Maintain test coverage above 70%
+```
+
+### Check Laws
+
+```
+You: cratos decrees show laws
+Bot: Laws (10 Articles)
+
+    Article 1: Planning and Design
+    Article 2: Development Guidelines
+    Article 3: Schedule Management
+    Article 4: Authority and Escalation
+    Article 5: Oracle Role
+    Article 6: Communication Protocol
+    Article 7: Configuration Management
+    Article 8: Punishment
+    Article 9: Personnel and Evaluation
+    Article 10: Task Completion
+```
+
+### Check Chronicles
+
+```
+You: cratos chronicle show sindri
+Bot: Chronicle: Sindri Lv1
+
+    Current Quests:
+      - [ ] Implement REST API
+      - [x] Database schema design
+
+    Recent Log:
+      2026-02-05  Completed auth module (Laws Art.2)
+      2026-02-04  Technical spec documentation (Laws Art.1)
+
+You: cratos chronicle log "Completed API endpoint implementation"
+Bot: Log entry added to Sindri's chronicle.
 ```
 
 ---

@@ -12,9 +12,11 @@ Cratos를 설치했다면, 이제 Telegram에서 내 PC를 원격 조종해봅�
 6. [되감기 (리플레이)](#6-되감기-리플레이)
 7. [자동 스킬](#7-자동-스킬)
 8. [LLM 모델 선택](#8-llm-모델-선택)
-9. [보안 기능](#9-보안-기능)
-10. [승인 설정](#10-승인-설정)
-11. [효과적인 사용 팁](#11-효과적인-사용-팁)
+9. [설정 변경](#9-설정-변경)
+10. [보안 기능](#10-보안-기능)
+11. [승인 설정](#11-승인-설정)
+12. [효과적인 사용 팁](#12-효과적인-사용-팁)
+13. [올림푸스 OS (페르소나 시스템)](#13-올림푸스-os-페르소나-시스템)
 
 ---
 
@@ -388,7 +390,84 @@ Cratos는 8개 LLM 프로바이더를 지원합니다.
 
 ---
 
-## 9. 보안 기능
+## 9. 설정 변경
+
+Cratos 설정을 자연어로 변경할 수 있습니다.
+
+### LLM 모델 변경
+
+```
+나: 모델을 Claude로 바꿔줘
+봇: LLM Model → claude-sonnet-4
+
+나: GPT-4o로 설정해줘
+봇: LLM Model → gpt-4o
+
+나: 현재 모델 뭐야?
+봇: LLM Model: claude-sonnet-4
+    사용 가능: gpt-4o, claude-sonnet-4, deepseek-chat, llama-3.3-70b, gemini-2.0-flash
+```
+
+### 언어 설정
+
+```
+나: 한국어로 설정해줘
+봇: Language → ko
+
+나: 영어로 바꿔
+봇: Language → en
+```
+
+### 페르소나 변경
+
+```
+나: 페르소나를 Sindri로 바꿔
+봇: Persona → sindri
+
+나: 사용 가능한 페르소나 뭐 있어?
+봇: Persona 옵션: cratos, sindri, athena, heimdall, mimir
+```
+
+### WoL 디바이스 등록
+
+원격 PC를 Wake-on-LAN으로 켤 수 있도록 등록합니다.
+
+```
+나: 원격피씨 WoL 등록해줘
+봇: '원격피씨'을(를) 등록하려면 MAC 주소가 필요해요.
+
+    **MAC 주소 찾는 방법:**
+    Windows: cmd → ipconfig /all → 물리적 주소
+    Mac: 시스템 설정 → 네트워크 → 하드웨어
+
+    MAC 주소를 알려주시면 등록할게요. (예: AA:BB:CC:DD:EE:FF)
+
+나: AA:BB:CC:DD:EE:FF
+봇: '원격피씨' 디바이스가 등록되었어요! 이제 '원격피씨 켜줘' 라고 말하면 됩니다.
+```
+
+### WoL 디바이스 관리
+
+```
+나: 등록된 WoL 디바이스 목록 보여줘
+봇: 등록된 WoL 디바이스 2개:
+    - 원격피씨: AA:BB:CC:DD:EE:FF
+    - 서버: 11:22:33:44:55:66
+
+나: 원격피씨 삭제해줘
+봇: '원격피씨' 디바이스가 삭제되었어요.
+```
+
+### 설정 초기화
+
+```
+나: 언어 설정 초기화해줘
+봇: Language 초기화됨 → en
+```
+
+---
+
+## 10. 보안 기능
 
 Cratos는 여러 보안 기능을 기본 제공합니다.
 
@@ -424,7 +503,7 @@ API 키, 비밀번호 등 민감 정보 노출을 방지합니다:
 
 ---
 
-## 10. 승인 설정
+## 11. 승인 설정
 
 작업 승인 방식을 설정할 수 있습니다.
 
@@ -455,7 +534,7 @@ API 키, 비밀번호 등 민감 정보 노출을 방지합니다:
 
 ---
 
-## 11. 효과적인 사용 팁
+## 12. 효과적인 사용 팁
 
 ### DO: 명확하게 요청하기
 
@@ -508,6 +587,114 @@ API 키, 비밀번호 등 민감 정보 노출을 방지합니다:
 나: /history           # 최근 작업 내역
 나: /cancel            # 현재 작업 취소
 나: /approve           # 대기 중인 작업 승인
+```
+
+---
+
+## 13. 올림푸스 OS (페르소나 시스템)
+
+Cratos는 신화 기반 3-레이어 에이전트 조직 체계를 제공합니다.
+
+### 개요
+
+| Layer | 이름 | 목적 |
+|-------|------|------|
+| WHO | **Pantheon** | 에이전트 페르소나 |
+| HOW | **Decrees** | 율법, 계급, 개발 규칙 |
+| WHAT | **Chronicles** | 전공 기록 및 평가 |
+
+### @mention으로 페르소나 호출
+
+특정 페르소나를 직접 호출할 수 있습니다:
+
+```
+나: @sindri 이 버그 수정해줘
+봇: [Sindri Lv1] 율법 제2조에 의거하여, 버그 수정을 시작합니다...
+
+나: @athena 다음 스프린트 계획해줘
+봇: [Athena Lv3] 스프린트 계획을 수립하겠습니다...
+
+나: @heimdall 보안 리뷰 해줘
+봇: [Heimdall Lv2] 보안 점검을 시작합니다...
+
+나: @mimir 이 기술에 대해 조사해줘
+봇: [Mimir Lv4] 기술 조사를 진행하겠습니다...
+```
+
+### 페르소나 목록
+
+| 역할 | 이름 | 도메인 |
+|------|------|--------|
+| Orchestrator | **Cratos** | 전체 통솔 (Lv255) |
+| PM | **Athena** | 전략, 기획 (Lv3) |
+| DEV | **Sindri** | 개발, 구현 (Lv1) |
+| QA | **Heimdall** | 품질, 보안 (Lv2) |
+| RESEARCHER | **Mimir** | 리서치 (Lv4) |
+
+### 페르소나 관리
+
+```
+나: cratos pantheon list
+봇: Olympus Pantheon
+
+    SUPREME:
+      cratos     Lv255  God Slayer
+
+    ROLES:
+      athena     Lv3    Strategist (PM)
+      sindri     Lv1    Forge Master (DEV)
+      heimdall   Lv2    Guardian (QA)
+      mimir      Lv4    Sage (RESEARCHER)
+
+나: cratos pantheon show sindri
+봇: Persona: Sindri (Forge Master)
+    Domain: DEV
+    Level: Lv1 Mortal
+
+    Traits:
+      - Near-obsessive dedication to quality
+      - Philosophy: Elegant code keeps the system alive
+
+    Principles:
+      1. Report architecture before implementation
+      2. Strictly follow Clean Architecture
+      3. Maintain test coverage above 70%
+```
+
+### 율법 확인
+
+```
+나: cratos decrees show laws
+봇: Laws (10 Articles)
+
+    Article 1: Planning and Design
+    Article 2: Development Guidelines
+    Article 3: Schedule Management
+    Article 4: Authority and Escalation
+    Article 5: Oracle Role
+    Article 6: Communication Protocol
+    Article 7: Configuration Management
+    Article 8: Punishment
+    Article 9: Personnel and Evaluation
+    Article 10: Task Completion
+```
+
+### 전공 기록 확인
+
+```
+나: cratos chronicle show sindri
+봇: Chronicle: Sindri Lv1
+
+    Current Quests:
+      - [ ] Implement REST API
+      - [x] Database schema design
+
+    Recent Log:
+      2026-02-05  Completed auth module (Laws Art.2)
+      2026-02-04  Technical spec documentation (Laws Art.1)
+
+나: cratos chronicle log "API 엔드포인트 구현 완료"
+봇: Log entry added to Sindri's chronicle.
 ```
 
 ---
