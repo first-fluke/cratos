@@ -9,8 +9,10 @@ use clap::Parser;
 use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod api;
 mod cli;
 mod server;
+mod websocket;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,10 +29,13 @@ async fn main() -> Result<()> {
     let cli = cli::Cli::parse();
 
     let has_subcommand = cli.command.is_some();
-    
+
     if has_subcommand {
-        info!("Starting Cratos AI Assistant v{}", env!("CARGO_PKG_VERSION"));
-        
+        info!(
+            "Starting Cratos AI Assistant v{}",
+            env!("CARGO_PKG_VERSION")
+        );
+
         if !std::path::Path::new(".env").exists() {
             warn!(".env file not found. Run 'cratos init' to create one.");
         }

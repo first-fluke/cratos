@@ -8,7 +8,8 @@ use config::{Config, Environment, File};
 use cratos_channels::{TelegramAdapter, TelegramConfig};
 use cratos_core::{
     metrics_global, shutdown_signal_with_controller, ApprovalManager, Orchestrator,
-    OrchestratorConfig, PlannerConfig, RedisStore, SessionStore, ShutdownController,
+    OrchestratorConfig, PlannerConfig, RedisStore, SchedulerConfig, SchedulerEngine,
+    SchedulerStore, SessionStore, ShutdownController,
 };
 use cratos_llm::{
     AnthropicConfig, AnthropicProvider, DeepSeekConfig, DeepSeekProvider, EmbeddingProvider,
@@ -40,6 +41,36 @@ pub struct AppConfig {
     pub channels: ChannelsConfig,
     #[serde(default)]
     pub vector_search: VectorSearchConfig,
+    #[serde(default)]
+    pub scheduler: SchedulerAppConfig,
+}
+
+/// Scheduler configuration
+#[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
+pub struct SchedulerAppConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_check_interval")]
+    pub check_interval_secs: u64,
+    #[serde(default = "default_retry_delay")]
+    pub retry_delay_secs: u64,
+    #[serde(default = "default_max_concurrent")]
+    pub max_concurrent: usize,
+    #[serde(default = "default_true")]
+    pub logging_enabled: bool,
+}
+
+fn default_check_interval() -> u64 {
+    60
+}
+
+fn default_retry_delay() -> u64 {
+    30
+}
+
+fn default_max_concurrent() -> usize {
+    10
 }
 
 /// Server configuration
@@ -148,19 +179,14 @@ struct EmbeddingAdapter {
 
 #[async_trait::async_trait]
 impl SearchEmbedder for EmbeddingAdapter {
-    async fn embed(&self,
-        text: &str,
-    ) -> cratos_replay::Result<Vec<f32>> {
+    async fn embed(&self, text: &str) -> cratos_replay::Result<Vec<f32>> {
         self.provider
             .embed(text)
             .await
             .map_err(|e| cratos_replay::Error::Database(format!("Embedding failed: {}", e)))
     }
 
-    async fn embed_batch(
-        &self,
-        texts: &[String],
-    ) -> cratos_replay::Result<Vec<Vec<f32>>> {
+    async fn embed_batch(&self, texts: &[String]) -> cratos_replay::Result<Vec<Vec<f32>>> {
         self.provider
             .embed_batch(texts)
             .await
@@ -186,10 +212,7 @@ impl SkillEmbedder for SkillEmbeddingAdapter {
             .map_err(|e| cratos_skills::Error::Internal(format!("Embedding failed: {}", e)))
     }
 
-    async fn embed_batch(
-        &self,
-        texts: &[String],
-    ) -> cratos_skills::Result<Vec<Vec<f32>>> {
+    async fn embed_batch(&self, texts: &[String]) -> cratos_skills::Result<Vec<Vec<f32>>> {
         self.provider
             .embed_batch(texts)
             .await
@@ -737,6 +760,39 @@ pub async fn run() -> Result<()> {
         info!("Slack adapter enabled but not yet started (requires additional setup)");
     }
 
+    // Start ProactiveScheduler if enabled
+    if config.scheduler.enabled {
+        let scheduler_db_path = data_dir.join("scheduler.db");
+        match SchedulerStore::from_path(&scheduler_db_path).await {
+            Ok(scheduler_store) => {
+                let scheduler_config = SchedulerConfig::default()
+                    .with_check_interval(config.scheduler.check_interval_secs)
+                    .with_retry_delay(config.scheduler.retry_delay_secs)
+                    .with_max_concurrent(config.scheduler.max_concurrent);
+
+                let scheduler_engine =
+                    SchedulerEngine::new(Arc::new(scheduler_store), scheduler_config);
+                let scheduler_shutdown = shutdown_controller.token();
+
+                tokio::spawn(async move {
+                    if let Err(e) = scheduler_engine.run(scheduler_shutdown).await {
+                        error!("Scheduler error: {}", e);
+                    }
+                });
+
+                info!(
+                    "ProactiveScheduler started (check interval: {}s, max concurrent: {})",
+                    config.scheduler.check_interval_secs, config.scheduler.max_concurrent
+                );
+            }
+            Err(e) => {
+                warn!("Failed to initialize scheduler store: {}", e);
+            }
+        }
+    } else {
+        info!("ProactiveScheduler disabled by configuration");
+    }
+
     let cleanup_event_store = event_store.clone();
     let retention_days = config.replay.retention_days;
     let cleanup_shutdown = shutdown_controller.token();
@@ -767,11 +823,18 @@ pub async fn run() -> Result<()> {
     info!("Cleanup task started (retention: {} days)", retention_days);
 
     let redis_url_for_health = config.redis.url.clone();
+
+    // Build the main router with all endpoints
     let app = Router::new()
+        // Health and metrics endpoints
         .route("/health", get(health_check))
         .route("/health/detailed", get(detailed_health_check))
-        .route("/api/v1/health", get(health_check))
         .route("/metrics", get(metrics_endpoint))
+        // API routes
+        .merge(crate::api::api_router())
+        // WebSocket routes
+        .merge(crate::websocket::websocket_router())
+        // Root endpoint
         .route("/", get(|| async { "Cratos AI Assistant" }))
         .layer(Extension(redis_url_for_health));
 
