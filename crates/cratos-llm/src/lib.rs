@@ -2,16 +2,18 @@
 //!
 //! This crate provides LLM integration for Cratos:
 //! - Router: Provider trait definition and automatic routing
-//! - OpenAI: async-openai provider
-//! - Anthropic: Claude API provider
-//! - Gemini: Google Gemini API provider
-//! - Ollama: Local Ollama provider
-//! - GLM: ZhipuAI GLM provider
-//! - Qwen: Alibaba Qwen provider
+//! - OpenAI: GPT-5 family (nano, 5.2, Ultra)
+//! - Anthropic: Claude 4 family (Haiku, Sonnet 4, Opus 4.5)
+//! - Gemini: Google Gemini 3 family (Flash, Pro)
+//! - Ollama: Local Ollama provider (Llama 3.2, Mistral)
+//! - GLM: ZhipuAI GLM-4 provider
+//! - Qwen: Alibaba Qwen 3 provider
 //! - OpenRouter: Multi-provider gateway
 //! - Novita: Free tier LLM provider
-//! - Groq: Free tier with ultra-fast inference
-//! - DeepSeek: Ultra-low-cost provider ($0.14/1M tokens)
+//! - Groq: Free tier with Llama 4 (ultra-fast inference)
+//! - DeepSeek: Ultra-low-cost provider ($0.03 ~ $0.55/1M tokens)
+//! - SiliconFlow: Cheapest provider ($0.03 ~ $0.09/1M tokens)
+//! - Fireworks: Fast inference for open-source models
 //! - Embeddings: Vector embeddings for semantic search (feature: embeddings)
 
 #![forbid(unsafe_code)]
@@ -24,6 +26,7 @@ pub mod deepseek;
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
 pub mod error;
+pub mod fireworks;
 pub mod gemini;
 pub mod glm;
 pub mod groq;
@@ -35,6 +38,7 @@ pub mod openai;
 pub mod openrouter;
 pub mod qwen;
 pub mod router;
+pub mod siliconflow;
 pub mod token;
 pub mod tools;
 pub mod util;
@@ -54,6 +58,7 @@ pub use router::{
 // Re-export provider types
 pub use anthropic::{AnthropicConfig, AnthropicProvider};
 pub use deepseek::{DeepSeekConfig, DeepSeekProvider};
+pub use fireworks::{FireworksConfig, FireworksProvider};
 pub use gemini::{GeminiConfig, GeminiProvider};
 pub use glm::{GlmConfig, GlmProvider};
 pub use groq::{GroqConfig, GroqProvider};
@@ -63,6 +68,7 @@ pub use ollama::{OllamaConfig, OllamaProvider};
 pub use openai::{OpenAiConfig, OpenAiProvider};
 pub use openrouter::{OpenRouterConfig, OpenRouterProvider};
 pub use qwen::{QwenConfig, QwenProvider};
+pub use siliconflow::{SiliconFlowConfig, SiliconFlowProvider};
 
 // Re-export embeddings (when feature is enabled)
 #[cfg(feature = "embeddings")]

@@ -26,29 +26,67 @@ const DEFAULT_MAX_RECORDS: usize = 10_000;
 /// Minimum cost threshold for savings recommendation (USD)
 const MIN_SAVINGS_THRESHOLD: f64 = 0.01;
 
-/// Assumed percentage of GPT-5.2 requests that could use mini
-const GPT4O_MINI_CANDIDATE_RATIO: f64 = 0.3;
+/// Assumed percentage of expensive requests that could use cheaper models
+const EXPENSIVE_MODEL_CANDIDATE_RATIO: f64 = 0.3;
 
 /// Assumed percentage of Opus requests that could use Sonnet
 const OPUS_SONNET_CANDIDATE_RATIO: f64 = 0.5;
 
-// Model pricing constants (per 1M tokens)
-/// GPT-5.2-mini input cost per 1M tokens
-const GPT4O_MINI_INPUT_COST: f64 = 0.15;
-/// GPT-5.2-mini output cost per 1M tokens
-const GPT4O_MINI_OUTPUT_COST: f64 = 0.60;
+// ============================================================================
+// 2026 Model Pricing Constants (per 1M tokens, USD)
+// ============================================================================
+
+// DeepSeek (Ultra-low-cost leader)
+/// DeepSeek R1 Distill input cost per 1M tokens
+const DEEPSEEK_DISTILL_INPUT_COST: f64 = 0.03;
+/// DeepSeek R1 Distill output cost per 1M tokens
+const DEEPSEEK_DISTILL_OUTPUT_COST: f64 = 0.09;
+/// DeepSeek Chat (V3) input cost per 1M tokens
+const DEEPSEEK_CHAT_INPUT_COST: f64 = 0.14;
+/// DeepSeek Chat (V3) output cost per 1M tokens
+const DEEPSEEK_CHAT_OUTPUT_COST: f64 = 0.28;
+/// DeepSeek Reasoner (R1) input cost per 1M tokens
+const DEEPSEEK_REASONER_INPUT_COST: f64 = 0.55;
+/// DeepSeek Reasoner (R1) output cost per 1M tokens
+const DEEPSEEK_REASONER_OUTPUT_COST: f64 = 2.19;
+
+// OpenAI GPT-5 family (2026)
+/// GPT-5 nano input cost per 1M tokens
+const GPT5_NANO_INPUT_COST: f64 = 0.05;
+/// GPT-5 nano output cost per 1M tokens
+const GPT5_NANO_OUTPUT_COST: f64 = 0.40;
 /// GPT-5.2 input cost per 1M tokens
-const GPT4O_INPUT_COST: f64 = 2.50;
+const GPT52_INPUT_COST: f64 = 2.50;
 /// GPT-5.2 output cost per 1M tokens
-const GPT4O_OUTPUT_COST: f64 = 10.00;
-/// Claude Sonnet input cost per 1M tokens
+const GPT52_OUTPUT_COST: f64 = 10.00;
+/// GPT-5 Ultra input cost per 1M tokens
+const GPT5_ULTRA_INPUT_COST: f64 = 10.00;
+/// GPT-5 Ultra output cost per 1M tokens
+const GPT5_ULTRA_OUTPUT_COST: f64 = 30.00;
+
+// Anthropic Claude 4 family (2026)
+/// Claude 3.5 Haiku input cost per 1M tokens
+const CLAUDE_HAIKU_INPUT_COST: f64 = 0.25;
+/// Claude 3.5 Haiku output cost per 1M tokens
+const CLAUDE_HAIKU_OUTPUT_COST: f64 = 1.25;
+/// Claude Sonnet 4 input cost per 1M tokens
 const CLAUDE_SONNET_INPUT_COST: f64 = 3.00;
-/// Claude Sonnet output cost per 1M tokens
+/// Claude Sonnet 4 output cost per 1M tokens
 const CLAUDE_SONNET_OUTPUT_COST: f64 = 15.00;
-/// Claude Opus input cost per 1M tokens
+/// Claude Opus 4.5 input cost per 1M tokens
 const CLAUDE_OPUS_INPUT_COST: f64 = 15.00;
-/// Claude Opus output cost per 1M tokens
+/// Claude Opus 4.5 output cost per 1M tokens
 const CLAUDE_OPUS_OUTPUT_COST: f64 = 75.00;
+
+// Google Gemini 3 family (2026)
+/// Gemini 3 Flash input cost per 1M tokens
+const GEMINI_FLASH_INPUT_COST: f64 = 0.50;
+/// Gemini 3 Flash output cost per 1M tokens
+const GEMINI_FLASH_OUTPUT_COST: f64 = 3.00;
+/// Gemini 3 Pro input cost per 1M tokens
+const GEMINI_PRO_INPUT_COST: f64 = 2.00;
+/// Gemini 3 Pro output cost per 1M tokens
+const GEMINI_PRO_OUTPUT_COST: f64 = 12.00;
 
 // ============================================================================
 // Cost Models
@@ -81,12 +119,90 @@ impl ModelPricing {
     }
 }
 
-/// Default pricing for common models (as of 2025)
+/// Default pricing for common models (2026 pricing)
 pub fn default_pricing() -> HashMap<String, ModelPricing> {
     let now = Utc::now();
     let mut pricing = HashMap::new();
 
-    // OpenAI Models
+    // ========================================================================
+    // DeepSeek Models (Ultra-low-cost leader)
+    // ========================================================================
+    pricing.insert(
+        "deepseek-r1-distill-llama-70b".to_string(),
+        ModelPricing {
+            model: "deepseek-r1-distill-llama-70b".to_string(),
+            provider: "deepseek".to_string(),
+            input_cost_per_million: DEEPSEEK_DISTILL_INPUT_COST,
+            output_cost_per_million: DEEPSEEK_DISTILL_OUTPUT_COST,
+            context_window: 64_000,
+            updated_at: now,
+        },
+    );
+
+    pricing.insert(
+        "deepseek-chat".to_string(),
+        ModelPricing {
+            model: "deepseek-chat".to_string(),
+            provider: "deepseek".to_string(),
+            input_cost_per_million: DEEPSEEK_CHAT_INPUT_COST,
+            output_cost_per_million: DEEPSEEK_CHAT_OUTPUT_COST,
+            context_window: 64_000,
+            updated_at: now,
+        },
+    );
+
+    pricing.insert(
+        "deepseek-reasoner".to_string(),
+        ModelPricing {
+            model: "deepseek-reasoner".to_string(),
+            provider: "deepseek".to_string(),
+            input_cost_per_million: DEEPSEEK_REASONER_INPUT_COST,
+            output_cost_per_million: DEEPSEEK_REASONER_OUTPUT_COST,
+            context_window: 64_000,
+            updated_at: now,
+        },
+    );
+
+    // ========================================================================
+    // OpenAI GPT-5 Family (2026)
+    // ========================================================================
+    pricing.insert(
+        "gpt-5-nano".to_string(),
+        ModelPricing {
+            model: "gpt-5-nano".to_string(),
+            provider: "openai".to_string(),
+            input_cost_per_million: GPT5_NANO_INPUT_COST,
+            output_cost_per_million: GPT5_NANO_OUTPUT_COST,
+            context_window: 32_000,
+            updated_at: now,
+        },
+    );
+
+    pricing.insert(
+        "gpt-5.2".to_string(),
+        ModelPricing {
+            model: "gpt-5.2".to_string(),
+            provider: "openai".to_string(),
+            input_cost_per_million: GPT52_INPUT_COST,
+            output_cost_per_million: GPT52_OUTPUT_COST,
+            context_window: 128_000,
+            updated_at: now,
+        },
+    );
+
+    pricing.insert(
+        "gpt-5-ultra".to_string(),
+        ModelPricing {
+            model: "gpt-5-ultra".to_string(),
+            provider: "openai".to_string(),
+            input_cost_per_million: GPT5_ULTRA_INPUT_COST,
+            output_cost_per_million: GPT5_ULTRA_OUTPUT_COST,
+            context_window: 256_000,
+            updated_at: now,
+        },
+    );
+
+    // Legacy GPT-4o models (still available)
     pricing.insert(
         "gpt-4o".to_string(),
         ModelPricing {
@@ -111,19 +227,46 @@ pub fn default_pricing() -> HashMap<String, ModelPricing> {
         },
     );
 
+    // ========================================================================
+    // Anthropic Claude 4 Family (2026)
+    // ========================================================================
     pricing.insert(
-        "gpt-4o".to_string(),
+        "claude-opus-4-20250514".to_string(),
         ModelPricing {
-            model: "gpt-4o".to_string(),
-            provider: "openai".to_string(),
-            input_cost_per_million: 2.50,
-            output_cost_per_million: 10.00,
-            context_window: 128_000,
+            model: "claude-opus-4-20250514".to_string(),
+            provider: "anthropic".to_string(),
+            input_cost_per_million: CLAUDE_OPUS_INPUT_COST,
+            output_cost_per_million: CLAUDE_OPUS_OUTPUT_COST,
+            context_window: 200_000,
             updated_at: now,
         },
     );
 
-    // Anthropic Models
+    pricing.insert(
+        "claude-sonnet-4-20250514".to_string(),
+        ModelPricing {
+            model: "claude-sonnet-4-20250514".to_string(),
+            provider: "anthropic".to_string(),
+            input_cost_per_million: CLAUDE_SONNET_INPUT_COST,
+            output_cost_per_million: CLAUDE_SONNET_OUTPUT_COST,
+            context_window: 200_000,
+            updated_at: now,
+        },
+    );
+
+    pricing.insert(
+        "claude-3-5-haiku-20241022".to_string(),
+        ModelPricing {
+            model: "claude-3-5-haiku-20241022".to_string(),
+            provider: "anthropic".to_string(),
+            input_cost_per_million: CLAUDE_HAIKU_INPUT_COST,
+            output_cost_per_million: CLAUDE_HAIKU_OUTPUT_COST,
+            context_window: 200_000,
+            updated_at: now,
+        },
+    );
+
+    // Legacy Claude 3.5 Sonnet (still available)
     pricing.insert(
         "claude-3-5-sonnet-20241022".to_string(),
         ModelPricing {
@@ -136,6 +279,7 @@ pub fn default_pricing() -> HashMap<String, ModelPricing> {
         },
     );
 
+    // Legacy Claude 3 Opus
     pricing.insert(
         "claude-3-opus-20240229".to_string(),
         ModelPricing {
@@ -148,24 +292,39 @@ pub fn default_pricing() -> HashMap<String, ModelPricing> {
         },
     );
 
+    // ========================================================================
+    // Google Gemini 3 Family (2026)
+    // ========================================================================
     pricing.insert(
-        "claude-3-haiku-20240307".to_string(),
+        "gemini-3-flash".to_string(),
         ModelPricing {
-            model: "claude-3-haiku-20240307".to_string(),
-            provider: "anthropic".to_string(),
-            input_cost_per_million: 0.25,
-            output_cost_per_million: 1.25,
-            context_window: 200_000,
+            model: "gemini-3-flash".to_string(),
+            provider: "gemini".to_string(),
+            input_cost_per_million: GEMINI_FLASH_INPUT_COST,
+            output_cost_per_million: GEMINI_FLASH_OUTPUT_COST,
+            context_window: 2_000_000,
             updated_at: now,
         },
     );
 
-    // Google Models
+    pricing.insert(
+        "gemini-3-pro".to_string(),
+        ModelPricing {
+            model: "gemini-3-pro".to_string(),
+            provider: "gemini".to_string(),
+            input_cost_per_million: GEMINI_PRO_INPUT_COST,
+            output_cost_per_million: GEMINI_PRO_OUTPUT_COST,
+            context_window: 1_000_000,
+            updated_at: now,
+        },
+    );
+
+    // Legacy Gemini 1.5 models
     pricing.insert(
         "gemini-1.5-pro".to_string(),
         ModelPricing {
             model: "gemini-1.5-pro".to_string(),
-            provider: "google".to_string(),
+            provider: "gemini".to_string(),
             input_cost_per_million: 1.25,
             output_cost_per_million: 5.00,
             context_window: 2_000_000,
@@ -177,7 +336,7 @@ pub fn default_pricing() -> HashMap<String, ModelPricing> {
         "gemini-1.5-flash".to_string(),
         ModelPricing {
             model: "gemini-1.5-flash".to_string(),
-            provider: "google".to_string(),
+            provider: "gemini".to_string(),
             input_cost_per_million: 0.075,
             output_cost_per_million: 0.30,
             context_window: 1_000_000,
@@ -185,7 +344,48 @@ pub fn default_pricing() -> HashMap<String, ModelPricing> {
         },
     );
 
-    // Local models (free)
+    // ========================================================================
+    // Groq (FREE - rate limited)
+    // ========================================================================
+    pricing.insert(
+        "llama-4-scout-17b-16e-instruct".to_string(),
+        ModelPricing {
+            model: "llama-4-scout-17b-16e-instruct".to_string(),
+            provider: "groq".to_string(),
+            input_cost_per_million: 0.0,
+            output_cost_per_million: 0.0,
+            context_window: 128_000,
+            updated_at: now,
+        },
+    );
+
+    pricing.insert(
+        "llama-4-maverick-17b-128e-instruct".to_string(),
+        ModelPricing {
+            model: "llama-4-maverick-17b-128e-instruct".to_string(),
+            provider: "groq".to_string(),
+            input_cost_per_million: 0.0,
+            output_cost_per_million: 0.0,
+            context_window: 128_000,
+            updated_at: now,
+        },
+    );
+
+    pricing.insert(
+        "llama-3.3-70b-versatile".to_string(),
+        ModelPricing {
+            model: "llama-3.3-70b-versatile".to_string(),
+            provider: "groq".to_string(),
+            input_cost_per_million: 0.0,
+            output_cost_per_million: 0.0,
+            context_window: 128_000,
+            updated_at: now,
+        },
+    );
+
+    // ========================================================================
+    // Local models via Ollama (FREE)
+    // ========================================================================
     pricing.insert(
         "llama3.2".to_string(),
         ModelPricing {
@@ -206,6 +406,60 @@ pub fn default_pricing() -> HashMap<String, ModelPricing> {
             input_cost_per_million: 0.0,
             output_cost_per_million: 0.0,
             context_window: 32_000,
+            updated_at: now,
+        },
+    );
+
+    // ========================================================================
+    // Qwen 3 Family
+    // ========================================================================
+    pricing.insert(
+        "qwen3-8b".to_string(),
+        ModelPricing {
+            model: "qwen3-8b".to_string(),
+            provider: "qwen".to_string(),
+            input_cost_per_million: 0.06,
+            output_cost_per_million: 0.09,
+            context_window: 128_000,
+            updated_at: now,
+        },
+    );
+
+    pricing.insert(
+        "qwen3-32b".to_string(),
+        ModelPricing {
+            model: "qwen3-32b".to_string(),
+            provider: "qwen".to_string(),
+            input_cost_per_million: 0.20,
+            output_cost_per_million: 0.30,
+            context_window: 128_000,
+            updated_at: now,
+        },
+    );
+
+    // ========================================================================
+    // GLM-4 Family
+    // ========================================================================
+    pricing.insert(
+        "glm-4-9b".to_string(),
+        ModelPricing {
+            model: "glm-4-9b".to_string(),
+            provider: "glm".to_string(),
+            input_cost_per_million: 0.086,
+            output_cost_per_million: 0.086,
+            context_window: 128_000,
+            updated_at: now,
+        },
+    );
+
+    pricing.insert(
+        "glm-4-flash".to_string(),
+        ModelPricing {
+            model: "glm-4-flash".to_string(),
+            provider: "glm".to_string(),
+            input_cost_per_million: 0.01,
+            output_cost_per_million: 0.01,
+            context_window: 128_000,
             updated_at: now,
         },
     );
@@ -488,7 +742,11 @@ impl CostTracker {
         let most_expensive_model = stats
             .by_model
             .iter()
-            .max_by(|a, b| a.1.total_cost.partial_cmp(&b.1.total_cost).unwrap())
+            .max_by(|a, b| {
+                a.1.total_cost
+                    .partial_cmp(&b.1.total_cost)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|(name, _)| name.clone());
 
         // Find most used model
@@ -517,14 +775,23 @@ impl CostTracker {
         let mut recommendations = Vec::new();
 
         for (model, model_stats) in &stats.by_model {
-            if let Some((savings, recommendation)) =
-                self.calculate_gpt4o_savings(model, model_stats)
+            // Check for GPT savings opportunities
+            if let Some((savings, recommendation)) = self.calculate_gpt_savings(model, model_stats)
             {
                 potential_savings += savings;
                 recommendations.push(recommendation);
             }
 
+            // Check for Claude Opus → Sonnet savings
             if let Some((savings, recommendation)) = self.calculate_opus_savings(model, model_stats)
+            {
+                potential_savings += savings;
+                recommendations.push(recommendation);
+            }
+
+            // Check for premium model → DeepSeek savings
+            if let Some((savings, recommendation)) =
+                self.calculate_deepseek_savings(model, model_stats)
             {
                 potential_savings += savings;
                 recommendations.push(recommendation);
@@ -541,35 +808,83 @@ impl CostTracker {
         }
     }
 
-    /// Calculate potential savings by replacing GPT-5.2 with GPT-5.2-mini for simple tasks
-    fn calculate_gpt4o_savings(
+    /// Calculate potential savings by replacing expensive models with cheaper alternatives
+    ///
+    /// Examples:
+    /// - GPT-5.2 → GPT-5 nano for simple tasks
+    /// - GPT-5 Ultra → GPT-5.2 for routine tasks
+    fn calculate_gpt_savings(
         &self,
         model: &str,
         model_stats: &ModelStats,
     ) -> Option<(f64, String)> {
-        if !model.contains("gpt-4o") || model.contains("mini") {
-            return None;
+        // GPT-5.2 → GPT-5 nano
+        if model.contains("gpt-5.2") {
+            let nano_cost_per_million = GPT5_NANO_INPUT_COST + GPT5_NANO_OUTPUT_COST;
+            let current_cost_per_million = GPT52_INPUT_COST + GPT52_OUTPUT_COST;
+            let tokens = model_stats.input_tokens + model_stats.output_tokens;
+            let current_cost = (tokens as f64 / 1_000_000.0) * current_cost_per_million;
+            let nano_cost = (tokens as f64 / 1_000_000.0)
+                * nano_cost_per_million
+                * EXPENSIVE_MODEL_CANDIDATE_RATIO;
+            let savings = current_cost * EXPENSIVE_MODEL_CANDIDATE_RATIO - nano_cost;
+
+            if savings > MIN_SAVINGS_THRESHOLD {
+                return Some((
+                    savings,
+                    format!(
+                        "Consider using gpt-5-nano for simple tasks (est. ${:.2} savings)",
+                        savings
+                    ),
+                ));
+            }
         }
 
-        let mini_cost_per_million = GPT4O_MINI_INPUT_COST + GPT4O_MINI_OUTPUT_COST;
-        let current_cost_per_million = GPT4O_INPUT_COST + GPT4O_OUTPUT_COST;
-        let tokens = model_stats.input_tokens + model_stats.output_tokens;
-        let current_cost = (tokens as f64 / 1_000_000.0) * current_cost_per_million;
-        let mini_cost =
-            (tokens as f64 / 1_000_000.0) * mini_cost_per_million * GPT4O_MINI_CANDIDATE_RATIO;
-        let savings = current_cost * GPT4O_MINI_CANDIDATE_RATIO - mini_cost;
+        // GPT-5 Ultra → GPT-5.2
+        if model.contains("gpt-5-ultra") {
+            let cheaper_cost_per_million = GPT52_INPUT_COST + GPT52_OUTPUT_COST;
+            let current_cost_per_million = GPT5_ULTRA_INPUT_COST + GPT5_ULTRA_OUTPUT_COST;
+            let tokens = model_stats.input_tokens + model_stats.output_tokens;
+            let current_cost = (tokens as f64 / 1_000_000.0) * current_cost_per_million;
+            let cheaper_cost = (tokens as f64 / 1_000_000.0)
+                * cheaper_cost_per_million
+                * EXPENSIVE_MODEL_CANDIDATE_RATIO;
+            let savings = current_cost * EXPENSIVE_MODEL_CANDIDATE_RATIO - cheaper_cost;
 
-        if savings > MIN_SAVINGS_THRESHOLD {
-            Some((
-                savings,
-                format!(
-                    "Consider using gpt-4o-mini for simple tasks (est. ${:.2} savings)",
-                    savings
-                ),
-            ))
-        } else {
-            None
+            if savings > MIN_SAVINGS_THRESHOLD {
+                return Some((
+                    savings,
+                    format!(
+                        "Consider using gpt-5.2 for routine tasks (est. ${:.2} savings)",
+                        savings
+                    ),
+                ));
+            }
         }
+
+        // Legacy GPT-4o → DeepSeek (ultra-low-cost alternative)
+        if model.contains("gpt-4o") && !model.contains("mini") {
+            let deepseek_cost_per_million = DEEPSEEK_CHAT_INPUT_COST + DEEPSEEK_CHAT_OUTPUT_COST;
+            let current_cost_per_million = 2.50 + 10.00; // GPT-4o pricing
+            let tokens = model_stats.input_tokens + model_stats.output_tokens;
+            let current_cost = (tokens as f64 / 1_000_000.0) * current_cost_per_million;
+            let deepseek_cost = (tokens as f64 / 1_000_000.0)
+                * deepseek_cost_per_million
+                * EXPENSIVE_MODEL_CANDIDATE_RATIO;
+            let savings = current_cost * EXPENSIVE_MODEL_CANDIDATE_RATIO - deepseek_cost;
+
+            if savings > MIN_SAVINGS_THRESHOLD {
+                return Some((
+                    savings,
+                    format!(
+                        "Consider using deepseek-chat for simple tasks (est. ${:.2} savings)",
+                        savings
+                    ),
+                ));
+            }
+        }
+
+        None
     }
 
     /// Calculate potential savings by replacing Claude Opus with Sonnet for routine tasks
@@ -595,6 +910,62 @@ impl CostTracker {
                 savings,
                 format!(
                     "Consider using Claude Sonnet for routine tasks (est. ${:.2} savings)",
+                    savings
+                ),
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Calculate potential savings by switching to DeepSeek for non-premium tasks
+    ///
+    /// DeepSeek R1 Distill is the cheapest option at $0.03/$0.09 per 1M tokens.
+    fn calculate_deepseek_savings(
+        &self,
+        model: &str,
+        model_stats: &ModelStats,
+    ) -> Option<(f64, String)> {
+        // Skip if already using DeepSeek or free models
+        if model.contains("deepseek")
+            || model.contains("llama")
+            || model.contains("groq")
+            || model.contains("ollama")
+        {
+            return None;
+        }
+
+        // Skip premium models (Opus) - they're used for quality reasons
+        if model.contains("opus") || model.contains("ultra") {
+            return None;
+        }
+
+        // Calculate potential savings by switching to DeepSeek R1 Distill
+        let deepseek_cost_per_million = DEEPSEEK_DISTILL_INPUT_COST + DEEPSEEK_DISTILL_OUTPUT_COST;
+
+        // Estimate current cost (use Gemini Flash as baseline: $0.50 + $3.00 = $3.50 average)
+        let current_cost_per_million = if model.contains("gemini") {
+            GEMINI_FLASH_INPUT_COST + GEMINI_FLASH_OUTPUT_COST
+        } else if model.contains("claude") || model.contains("sonnet") {
+            CLAUDE_SONNET_INPUT_COST + CLAUDE_SONNET_OUTPUT_COST
+        } else if model.contains("gpt") {
+            GPT52_INPUT_COST + GPT52_OUTPUT_COST
+        } else {
+            5.0 // Default assumption
+        };
+
+        let tokens = model_stats.input_tokens + model_stats.output_tokens;
+        let current_cost = (tokens as f64 / 1_000_000.0) * current_cost_per_million;
+        let deepseek_cost = (tokens as f64 / 1_000_000.0)
+            * deepseek_cost_per_million
+            * EXPENSIVE_MODEL_CANDIDATE_RATIO;
+        let savings = current_cost * EXPENSIVE_MODEL_CANDIDATE_RATIO - deepseek_cost;
+
+        if savings > MIN_SAVINGS_THRESHOLD {
+            Some((
+                savings,
+                format!(
+                    "Consider deepseek-r1-distill for trivial tasks (est. ${:.2} savings)",
                     savings
                 ),
             ))
@@ -751,10 +1122,23 @@ mod tests {
     fn test_default_pricing_has_common_models() {
         let pricing = default_pricing();
 
+        // 2026 models
+        assert!(pricing.contains_key("gpt-5.2"));
+        assert!(pricing.contains_key("gpt-5-nano"));
+        assert!(pricing.contains_key("claude-sonnet-4-20250514"));
+        assert!(pricing.contains_key("claude-opus-4-20250514"));
+        assert!(pricing.contains_key("gemini-3-flash"));
+        assert!(pricing.contains_key("deepseek-r1-distill-llama-70b"));
+
+        // Legacy models (still available)
         assert!(pricing.contains_key("gpt-4o"));
         assert!(pricing.contains_key("gpt-4o-mini"));
         assert!(pricing.contains_key("claude-3-5-sonnet-20241022"));
         assert!(pricing.contains_key("gemini-1.5-pro"));
+
+        // Free models
+        assert!(pricing.contains_key("llama-4-scout-17b-16e-instruct"));
+        assert!(pricing.contains_key("llama3.2"));
     }
 
     #[tokio::test]
