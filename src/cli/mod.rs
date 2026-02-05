@@ -1,6 +1,7 @@
 //! CLI module for Cratos
 //!
 //! Provides interactive commands:
+//! - `wizard`: User-friendly multilingual setup wizard (recommended for beginners)
 //! - `init`: Interactive setup wizard for .env configuration
 //! - `doctor`: System diagnostics and health checks
 //! - `pantheon`: Manage Olympus Pantheon (personas)
@@ -14,6 +15,7 @@ pub mod decrees;
 pub mod doctor;
 pub mod init;
 pub mod pantheon;
+pub mod wizard;
 
 /// Cratos AI Assistant CLI
 #[derive(Parser, Debug)]
@@ -27,6 +29,12 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// User-friendly setup wizard with multilingual support (recommended)
+    Wizard {
+        /// Language code (en, ko). Auto-detected if not specified.
+        #[arg(short, long)]
+        lang: Option<String>,
+    },
     /// Interactive setup wizard
     Init,
     /// Run system diagnostics
@@ -116,6 +124,7 @@ pub enum ChronicleCommands {
 /// Run the CLI command
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
+        Some(Commands::Wizard { lang }) => wizard::run(lang.as_deref()).await,
         Some(Commands::Init) => init::run().await,
         Some(Commands::Doctor) => doctor::run().await,
         Some(Commands::Pantheon(cmd)) => pantheon::run(cmd).await,

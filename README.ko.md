@@ -2,6 +2,23 @@
 
 Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트가 이해하고, 정보를 모으고, 실행하고, 결과를 보고하는 **Rust 기반 AI 어시스턴트**입니다.
 
+## 원클릭 설치
+
+### macOS / Linux
+```bash
+curl -sSL https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.sh | sh
+```
+
+### Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.ps1 | iex
+```
+
+설치 스크립트가 자동으로:
+- 플랫폼에 맞는 바이너리 다운로드
+- PATH에 설치
+- 한국어 설정 마법사 실행
+
 ## 주요 기능
 
 - **경량 설치**: 내장 SQLite로 설치 즉시 실행 (`~/.cratos/cratos.db`)
@@ -42,7 +59,36 @@ Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트가 이해�
 
 ## 빠른 시작
 
-### 1. 환경 설정
+### 방법 1: 원클릭 설치 (권장)
+
+```bash
+# macOS / Linux
+curl -sSL https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.ps1 | iex
+```
+
+설정 마법사가 안내하는 대로 따라하세요:
+1. Telegram 봇 만들기 (링크 제공)
+2. AI 프로바이더 선택 (무료 옵션 제공)
+3. 연결 테스트
+
+### 방법 2: 수동 설정
+
+```bash
+# 저장소 클론
+git clone https://github.com/first-fluke/cratos.git
+cd cratos
+
+# 설정 마법사 실행 (한국어)
+cargo run -- wizard --lang ko
+
+# 또는 기존 init 사용
+cargo run -- init
+```
+
+### 방법 3: 소스에서 빌드
 
 ```bash
 # 환경 변수 파일 생성
@@ -50,17 +96,10 @@ cp .env.example .env
 
 # .env 파일 수정 (API 키 입력)
 vim .env
-```
 
-### 2. 실행
-
-```bash
 # 빌드 및 실행
 cargo build --release
 cargo run --release
-
-# 또는 한 번에
-cargo run
 
 # 헬스체크
 curl http://localhost:9742/health
@@ -68,7 +107,15 @@ curl http://localhost:9742/health
 
 데이터는 자동으로 `~/.cratos/cratos.db`에 저장됩니다.
 
-### 3. Docker로 실행 (선택)
+### Wizard vs Init
+
+| 명령어 | 설명 |
+|--------|------|
+| `cratos wizard` | 단계별 설명과 링크가 포함된 친절한 설정 (초보자 권장) |
+| `cratos wizard --lang ko` | 한국어 설정 마법사 |
+| `cratos init` | 경험자를 위한 기존 설정 |
+
+### Docker로 실행 (선택)
 
 ```bash
 # Redis만 실행 (세션 저장용, 선택사항)
@@ -199,6 +246,15 @@ cratos/
 ### CLI 명령어
 
 ```bash
+# 설정
+cratos wizard                     # 친절한 설정 마법사
+cratos wizard --lang ko           # 한국어 설정 마법사
+cratos init                       # 기존 설정
+
+# 시스템
+cratos serve                      # 서버 시작
+cratos doctor                     # 진단 실행
+
 # Pantheon (페르소나)
 cratos pantheon list              # 페르소나 목록
 cratos pantheon show sindri       # 페르소나 상세 보기

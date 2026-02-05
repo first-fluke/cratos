@@ -2,6 +2,23 @@
 
 Cratos is a **Rust-based AI assistant** that understands natural language commands from Telegram/Slack, gathers information, executes tasks, and reports results.
 
+## One-Line Installation
+
+### macOS / Linux
+```bash
+curl -sSL https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.sh | sh
+```
+
+### Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.ps1 | iex
+```
+
+The installer automatically:
+- Downloads the appropriate binary for your platform
+- Installs to your PATH
+- Launches the setup wizard
+
 ## Key Features
 
 - **Lightweight**: Runs immediately with embedded SQLite (`~/.cratos/cratos.db`)
@@ -42,7 +59,36 @@ Cratos is a **Rust-based AI assistant** that understands natural language comman
 
 ## Quick Start
 
-### 1. Environment Setup
+### Option 1: One-Line Install (Recommended)
+
+```bash
+# macOS / Linux
+curl -sSL https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.ps1 | iex
+```
+
+The setup wizard will guide you through:
+1. Creating a Telegram bot
+2. Choosing an AI provider (free options available)
+3. Testing your configuration
+
+### Option 2: Manual Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/first-fluke/cratos.git
+cd cratos
+
+# Run the setup wizard
+cargo run -- wizard
+
+# Or use the classic init
+cargo run -- init
+```
+
+### Option 3: Build from Source
 
 ```bash
 # Create environment file
@@ -50,23 +96,24 @@ cp .env.example .env
 
 # Edit .env file (add your API keys)
 vim .env
-```
 
-### 2. Run
-
-```bash
 # Build and run
 cargo build --release
 cargo run --release
-
-# Or at once
-cargo run
 
 # Health check
 curl http://localhost:9742/health
 ```
 
 Data is automatically stored in `~/.cratos/cratos.db`.
+
+### Wizard vs Init
+
+| Command | Description |
+|---------|-------------|
+| `cratos wizard` | User-friendly setup with step-by-step instructions and links (recommended for beginners) |
+| `cratos wizard --lang ko` | Setup wizard in Korean |
+| `cratos init` | Classic setup for experienced users |
 
 ## Project Structure
 
@@ -189,6 +236,15 @@ Response format: `[Persona LvN] Per Laws Article N...`
 ### CLI Commands
 
 ```bash
+# Setup
+cratos wizard                     # User-friendly setup wizard
+cratos wizard --lang ko           # Setup wizard in Korean
+cratos init                       # Classic setup
+
+# System
+cratos serve                      # Start the server
+cratos doctor                     # Run diagnostics
+
 # Pantheon (Personas)
 cratos pantheon list              # List personas
 cratos pantheon show sindri       # Show persona details
