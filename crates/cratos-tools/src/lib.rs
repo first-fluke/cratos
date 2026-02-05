@@ -19,7 +19,7 @@ pub mod registry;
 pub mod runner;
 pub mod sandbox;
 
-pub use builtins::register_builtins;
+pub use builtins::{register_builtins, register_builtins_with_config, BuiltinsConfig};
 pub use doctor::{ChecklistItem, Diagnosis, FailureCategory, ProbableCause, ToolDoctor};
 pub use error::{Error, Result};
 pub use registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolRegistry, ToolResult};
