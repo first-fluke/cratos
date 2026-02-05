@@ -29,6 +29,10 @@ pub enum Error {
     #[error("network error: {0}")]
     Network(String),
 
+    /// Configuration error
+    #[error("config error: {0}")]
+    Config(String),
+
     /// IO error
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

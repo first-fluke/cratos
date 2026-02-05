@@ -267,7 +267,7 @@ impl SkillRouter {
         if total_score > 0.0 {
             let match_reason = match match_reasons.len() {
                 0 => return None,
-                1 => match_reasons.into_iter().next().unwrap(),
+                1 => match_reasons.into_iter().next()?,
                 _ => MatchReason::Combined,
             };
 
@@ -328,18 +328,16 @@ impl SkillRouter {
             }
 
             // Get or compile the regex
-            let regex = match self.compiled_patterns.get(pattern) {
-                Some(r) => r,
-                None => match Regex::new(pattern) {
-                    Ok(r) => {
-                        self.compiled_patterns.insert(pattern.clone(), r);
-                        self.compiled_patterns.get(pattern).unwrap()
-                    }
+            let regex = if let Some(r) = self.compiled_patterns.get(pattern) {
+                r
+            } else {
+                match Regex::new(pattern) {
+                    Ok(r) => self.compiled_patterns.entry(pattern.clone()).or_insert(r),
                     Err(e) => {
                         debug!("Invalid regex pattern '{}': {}", pattern, e);
                         continue;
                     }
-                },
+                }
             };
 
             if let Some(caps) = regex.captures(input_text) {

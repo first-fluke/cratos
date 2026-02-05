@@ -43,11 +43,11 @@ fn test_routing_rules_default() {
 
 #[test]
 fn test_model_tier_configuration() {
-    // Fast tier should use cheaper models
+    // Fast tier should use cheaper models (2026: gpt-5-nano)
     let fast_model = ModelTier::Fast.default_model("openai");
-    assert!(fast_model.contains("mini"));
+    assert!(fast_model.contains("nano") || fast_model.contains("mini"));
 
-    // Premium tier should use advanced models
+    // Premium tier should use advanced models (2026: claude-opus-4.5)
     let premium_model = ModelTier::Premium.default_model("anthropic");
     assert!(premium_model.contains("opus"));
 }
@@ -120,6 +120,8 @@ fn test_tool_registry_with_builtins() {
         "git_push",
         "github_api",
         "browser",
+        "wol",
+        "config",
     ];
 
     for tool_name in expected_tools {

@@ -8,32 +8,33 @@
 //! Cratos provides a simple, natural language interface:
 //!
 //! ```text
-//! @backend API 구현해줘
-//! @frontend UI 만들어줘
-//! @qa 테스트 작성해줘
+//! @backend implement the API
+//! @frontend create the UI
+//! @qa write tests
 //! ```
 //!
 //! ## Architecture
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │                    통합 에이전트 인터페이스                    │
+//! │              Unified Agent Interface                        │
 //! │        @backend @frontend @qa @pm @researcher ...          │
 //! └─────────────────────────────────────────────────────────────┘
 //!                              │
 //!                              ▼
 //! ┌─────────────────────────────────────────────────────────────┐
 //! │                    AgentOrchestrator                        │
-//! │  ├─ 에이전트 라우팅 (명시적 @멘션 or 시맨틱)                   │
-//! │  ├─ CLI 매핑 (각 에이전트 → 선호 AI CLI)                      │
-//! │  ├─ 세션/워크스페이스 자동 관리                               │
-//! │  └─ 병렬 실행 + 상태 동기화                                   │
+//! │  ├─ Agent routing (explicit @mention or semantic)          │
+//! │  ├─ CLI mapping (each agent → preferred AI CLI)            │
+//! │  ├─ Session/workspace auto-management                      │
+//! │  └─ Parallel execution + state synchronization             │
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 
 mod cli_registry;
 mod config;
 mod orchestrator;
+mod persona_routing;
 
 pub use cli_registry::{CliConfig, CliError, CliProvider, CliRegistry, CliResult};
 pub use config::{AgentConfig, AgentPersona, AgentRouting, AgentToolConfig, CliProviderConfig};
@@ -41,3 +42,4 @@ pub use orchestrator::{
     AgentOrchestrator, AgentResponse, ExecutionContext, OrchestratorConfig, OrchestratorError,
     OrchestratorResult, ParsedAgentTask, TaskStatus,
 };
+pub use persona_routing::{domain_to_agent_id, extract_persona_mention, PersonaMapping};

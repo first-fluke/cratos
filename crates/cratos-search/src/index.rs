@@ -195,8 +195,11 @@ impl VectorIndex {
         let index = usearch::Index::new(&options)
             .map_err(|e| Error::Index(format!("Failed to create index: {}", e)))?;
 
+        let path_str = index_path
+            .to_str()
+            .ok_or_else(|| Error::Index("Invalid path encoding for index".to_string()))?;
         index
-            .load(index_path.to_str().unwrap())
+            .load(path_str)
             .map_err(|e| Error::Index(format!("Failed to load index: {}", e)))?;
 
         // Load ID mapping
@@ -237,8 +240,11 @@ impl VectorIndex {
         let mapping_path = path.with_extension("mapping.json");
 
         // Save usearch index
+        let index_path_str = index_path
+            .to_str()
+            .ok_or_else(|| Error::Index("Invalid path encoding for index".to_string()))?;
         self.index
-            .save(index_path.to_str().unwrap())
+            .save(index_path_str)
             .map_err(|e| Error::Index(format!("Failed to save index: {}", e)))?;
 
         // Save ID mapping
