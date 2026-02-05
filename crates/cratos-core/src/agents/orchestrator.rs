@@ -5,9 +5,9 @@
 //! ## Usage
 //!
 //! ```text
-//! @backend API 구현해줘
-//! @frontend UI 만들어줘
-//! @backend API @frontend UI 병렬 실행
+//! @backend implement the API
+//! @frontend create the UI
+//! @backend API @frontend UI parallel execution
 //! ```
 //!
 //! ## Safety Features
@@ -364,7 +364,7 @@ impl AgentOrchestrator {
     /// # Example
     ///
     /// ```ignore
-    /// let response = orchestrator.handle("@backend API 구현해줘", &context).await?;
+    /// let response = orchestrator.handle("@backend implement the API", &context).await?;
     /// ```
     ///
     /// # Errors
@@ -414,9 +414,9 @@ impl AgentOrchestrator {
     /// Parse input into agent tasks
     ///
     /// Supports:
-    /// - Explicit @mentions: "@backend API 구현"
+    /// - Explicit @mentions: "@backend implement API"
     /// - Multiple mentions: "@backend API @frontend UI"
-    /// - Semantic routing (if no mention): "API 구현" → backend agent
+    /// - Semantic routing (if no mention): "implement API" → backend agent
     pub fn parse_input(&self, input: &str) -> OrchestratorResult<Vec<ParsedAgentTask>> {
         let mut tasks = Vec::new();
 
@@ -512,7 +512,7 @@ impl AgentOrchestrator {
             for keyword in &agent.routing.keywords {
                 if input_lower.contains(&keyword.to_lowercase()) {
                     let priority = agent.routing.priority;
-                    if best_match.is_none() || priority > best_match.unwrap().1 {
+                    if best_match.is_none() || priority > best_match.map(|(_, p)| p).unwrap_or(0) {
                         best_match = Some((&agent.id, priority));
                     }
                     break;
@@ -732,11 +732,13 @@ mod tests {
     #[test]
     fn test_parse_single_mention() {
         let orchestrator = AgentOrchestrator::default();
-        let tasks = orchestrator.parse_input("@backend API 구현해줘").unwrap();
+        let tasks = orchestrator
+            .parse_input("@backend implement the API")
+            .unwrap();
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].agent_id, "backend");
-        assert_eq!(tasks[0].prompt, "API 구현해줘");
+        assert_eq!(tasks[0].prompt, "implement the API");
         assert!(tasks[0].explicit_mention);
     }
 
@@ -744,7 +746,7 @@ mod tests {
     fn test_parse_multiple_mentions() {
         let orchestrator = AgentOrchestrator::default();
         let tasks = orchestrator
-            .parse_input("@backend API 구현 @frontend UI 만들어줘")
+            .parse_input("@backend implement API @frontend create UI")
             .unwrap();
 
         assert_eq!(tasks.len(), 2);
@@ -755,7 +757,7 @@ mod tests {
     #[test]
     fn test_parse_no_mention_semantic() {
         let orchestrator = AgentOrchestrator::default();
-        let tasks = orchestrator.parse_input("API 설계해줘").unwrap();
+        let tasks = orchestrator.parse_input("design the API").unwrap();
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].agent_id, "backend"); // Matches "API" keyword
@@ -765,7 +767,7 @@ mod tests {
     #[test]
     fn test_parse_no_mention_default() {
         let orchestrator = AgentOrchestrator::default();
-        let tasks = orchestrator.parse_input("뭔가 해줘").unwrap();
+        let tasks = orchestrator.parse_input("do something").unwrap();
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].agent_id, "researcher"); // Default agent

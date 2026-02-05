@@ -115,8 +115,8 @@ impl ExecutionViewer {
             .filter(|e| {
                 e.created_at >= from
                     && e.created_at <= to
-                    && channel_type.map_or(true, |ct| e.channel_type == ct)
-                    && channel_id.map_or(true, |ci| e.channel_id == ci)
+                    && channel_type.is_none_or(|ct| e.channel_type == ct)
+                    && channel_id.is_none_or(|ci| e.channel_id == ci)
             })
             .collect();
 

@@ -73,11 +73,15 @@ impl ContentRenderer {
             .or_else(|| self.syntax_set.find_syntax_by_name(language))
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
 
-        let theme = self
+        // Get the theme, falling back to first available or returning default HTML
+        let Some(theme) = self
             .theme_set
             .themes
             .get(&self.theme_name)
-            .unwrap_or_else(|| self.theme_set.themes.values().next().unwrap());
+            .or_else(|| self.theme_set.themes.values().next())
+        else {
+            return format!("<pre><code>{}</code></pre>", html_escape(code));
+        };
 
         highlighted_html_for_string(code, &self.syntax_set, syntax, theme)
             .unwrap_or_else(|_| format!("<pre><code>{}</code></pre>", html_escape(code)))
