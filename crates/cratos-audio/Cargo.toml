@@ -13,8 +13,10 @@ default = ["tts"]
 tts = []
 # Enable STT (requires OPENAI_API_KEY)
 stt = []
-# Enable full voice control (wake word + STT + TTS)
-full = ["tts", "stt"]
+# Enable local STT (Whisper via candle, no API key needed)
+local-stt = ["dep:candle-core", "dep:candle-transformers", "dep:candle-nn", "dep:hf-hub", "dep:tokenizers"]
+# Enable full voice control (wake word + STT + TTS + local STT)
+full = ["tts", "stt", "local-stt"]
 
 [dependencies]
 cratos-core.workspace = true
@@ -57,6 +59,13 @@ dirs.workspace = true
 
 # Base64 for audio encoding
 base64 = "0.21"
+
+# Local Whisper STT (candle = pure Rust, no C++ dependencies)
+candle-core = { workspace = true, optional = true }
+candle-transformers = { workspace = true, optional = true }
+candle-nn = { workspace = true, optional = true }
+hf-hub = { workspace = true, optional = true }
+tokenizers = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio-test.workspace = true

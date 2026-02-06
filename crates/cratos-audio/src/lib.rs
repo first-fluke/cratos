@@ -38,20 +38,27 @@ pub mod output;
 pub mod stt;
 pub mod tts;
 pub mod wake_word;
+#[cfg(feature = "local-stt")]
+pub mod whisper_local;
 
 mod controller;
 
-pub use config::{VoiceConfig, WakeWordConfig};
+pub use config::{SttConfig, VoiceConfig, WakeWordConfig};
 pub use controller::VoiceController;
 pub use error::{Error, Result};
-pub use stt::SpeechToText;
+pub use stt::{SpeechToText, SttBackend};
 pub use tts::TextToSpeech;
 pub use wake_word::WakeWordDetector;
+#[cfg(feature = "local-stt")]
+pub use whisper_local::{LocalWhisper, WhisperModel};
 
-/// Check if STT is available (OPENAI_API_KEY set)
+/// Check if STT is available (API key set or local-stt feature enabled)
 #[must_use]
 pub fn stt_available() -> bool {
-    std::env::var("OPENAI_API_KEY").is_ok()
+    if std::env::var("OPENAI_API_KEY").is_ok() {
+        return true;
+    }
+    cfg!(feature = "local-stt")
 }
 
 /// Get the default models directory

@@ -55,7 +55,7 @@ pub struct VoiceController {
 impl VoiceController {
     /// Create a new voice controller
     pub fn new(config: VoiceConfig) -> Result<Self> {
-        let stt = SpeechToText::new(&config.language);
+        let stt = SpeechToText::with_config(&config.language, &config.stt);
         let tts = TextToSpeech::new(&config.language);
 
         // Determine mode based on available features
@@ -84,7 +84,7 @@ impl VoiceController {
     /// Create with TTS-only mode (no listening)
     pub fn tts_only(config: VoiceConfig) -> Result<Self> {
         let tts = TextToSpeech::new(&config.language);
-        let stt = SpeechToText::new(&config.language);
+        let stt = SpeechToText::with_config(&config.language, &config.stt);
 
         Ok(Self {
             config,

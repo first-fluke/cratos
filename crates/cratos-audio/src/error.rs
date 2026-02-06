@@ -33,6 +33,10 @@ pub enum Error {
     #[error("model not found: {0}")]
     ModelNotFound(String),
 
+    /// Model download error
+    #[error("model download error: {0}")]
+    ModelDownload(String),
+
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),

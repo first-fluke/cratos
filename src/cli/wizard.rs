@@ -7,6 +7,7 @@
 
 use inquire::{Confirm, Password, Select};
 use std::fs;
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
 /// Supported languages
@@ -448,6 +449,21 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
 
     let texts = get_texts(lang);
 
+    // Check if stdin is a terminal (required for interactive prompts)
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(if lang == Language::Korean {
+            "이 명령어는 대화형 터미널에서 실행해야 합니다.\n\
+             터미널 앱(Terminal.app, iTerm2 등)에서 직접 실행해 주세요.\n\
+             또는 환경변수로 직접 설정할 수 있습니다:\n  \
+             TELEGRAM_BOT_TOKEN, OPENAI_API_KEY 등을 .env 파일에 작성하세요."
+        } else {
+            "This command requires an interactive terminal.\n\
+             Please run it directly in a terminal app (Terminal.app, iTerm2, etc.).\n\
+             Alternatively, you can set environment variables directly:\n  \
+             Write TELEGRAM_BOT_TOKEN, OPENAI_API_KEY, etc. in a .env file."
+        });
+    }
+
     // Welcome
     print_box(texts.welcome_title, texts.welcome_subtitle);
     println!("{}", texts.welcome_steps);
@@ -456,13 +472,15 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
     // Check for existing .env
     let env_path = Path::new(".env");
     if env_path.exists() {
-        let overwrite = Confirm::new(if lang == Language::Korean {
-            ".env 파일이 이미 존재합니다. 덮어쓸까요?"
-        } else {
-            ".env file already exists. Overwrite?"
-        })
-        .with_default(false)
-        .prompt()?;
+        let overwrite = prompt_confirm(
+            if lang == Language::Korean {
+                ".env 파일이 이미 존재합니다. 덮어쓸까요?"
+            } else {
+                ".env file already exists. Overwrite?"
+            },
+            false,
+            None,
+        )?;
 
         if !overwrite {
             println!("\n  {}", texts.cancel_msg);
@@ -477,17 +495,12 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
     println!("  {}", texts.step1_help_link);
     println!();
 
-    let skip_telegram = Confirm::new(texts.step1_skip)
-        .with_default(false)
-        .with_help_message(texts.step1_skip_note)
-        .prompt()?;
+    let skip_telegram = prompt_confirm(texts.step1_skip, false, Some(texts.step1_skip_note))?;
 
     let telegram_token = if skip_telegram {
         String::new()
     } else {
-        Password::new(texts.step1_prompt)
-            .with_display_mode(inquire::PasswordDisplayMode::Masked)
-            .prompt()?
+        prompt_password(texts.step1_prompt)?
     };
 
     // Step 2: LLM Provider Selection
@@ -558,13 +571,7 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
     options.push(format!("  {}", ollama_display));
     provider_indices.push(ollama_idx);
 
-    let selected = Select::new(texts.step2_prompt, options)
-        .with_help_message(if lang == Language::Korean {
-            "화살표로 선택, Enter로 확인"
-        } else {
-            "Use arrows to select, Enter to confirm"
-        })
-        .prompt()?;
+    let selected = prompt_select(texts.step2_prompt, &options)?;
 
     // Re-parse the selection to find provider index
     let provider_idx = provider_indices
@@ -616,10 +623,7 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
         println!("{}", instructions);
         println!();
 
-        Password::new(texts.step3_prompt)
-            .with_display_mode(inquire::PasswordDisplayMode::Masked)
-            .with_validator(inquire::required!())
-            .prompt()?
+        prompt_password_required(texts.step3_prompt)?
     };
 
     // Step 4: Test Connection
@@ -653,9 +657,7 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
 
     if !all_ok {
         println!();
-        let proceed = Confirm::new(texts.step4_continue_anyway)
-            .with_default(false)
-            .prompt()?;
+        let proceed = prompt_confirm(texts.step4_continue_anyway, false, None)?;
 
         if !proceed {
             println!("\n  {}", texts.cancel_msg);
@@ -785,4 +787,130 @@ fn build_env_file(provider: &WizardProvider, api_key: &str, telegram_token: &str
     content.push_str("CRATOS_DEFAULT_PERSONA=cratos\n");
 
     content
+}
+
+/// Read a line from stdin (basic fallback)
+fn read_line() -> anyhow::Result<String> {
+    let mut input = String::new();
+    io::stdin()
+        .lock()
+        .read_line(&mut input)
+        .map_err(|e| anyhow::anyhow!("Failed to read input: {}", e))?;
+    Ok(input.trim().to_string())
+}
+
+/// Prompt for confirmation, falling back to basic stdin on inquire failure
+fn prompt_confirm(message: &str, default: bool, help: Option<&str>) -> anyhow::Result<bool> {
+    let mut builder = Confirm::new(message).with_default(default);
+    if let Some(h) = help {
+        builder = builder.with_help_message(h);
+    }
+    match builder.prompt() {
+        Ok(v) => Ok(v),
+        Err(
+            inquire::InquireError::OperationCanceled | inquire::InquireError::OperationInterrupted,
+        ) => {
+            anyhow::bail!("Cancelled");
+        }
+        Err(_) => {
+            // Fallback: basic stdin prompt
+            let default_hint = if default { "Y/n" } else { "y/N" };
+            if let Some(h) = help {
+                println!("  {}", h);
+            }
+            print!("? {} ({}) ", message, default_hint);
+            io::stdout().flush()?;
+            let input = read_line()?;
+            match input.to_lowercase().as_str() {
+                "y" | "yes" => Ok(true),
+                "n" | "no" => Ok(false),
+                "" => Ok(default),
+                _ => Ok(default),
+            }
+        }
+    }
+}
+
+/// Prompt for a password, falling back to basic stdin on inquire failure
+fn prompt_password(message: &str) -> anyhow::Result<String> {
+    match Password::new(message)
+        .with_display_mode(inquire::PasswordDisplayMode::Masked)
+        .prompt()
+    {
+        Ok(v) => Ok(v),
+        Err(
+            inquire::InquireError::OperationCanceled | inquire::InquireError::OperationInterrupted,
+        ) => {
+            anyhow::bail!("Cancelled");
+        }
+        Err(_) => {
+            // Fallback: basic stdin (not hidden, but functional)
+            print!("  {} ", message);
+            io::stdout().flush()?;
+            read_line()
+        }
+    }
+}
+
+/// Prompt for a required password, falling back to basic stdin on inquire failure
+fn prompt_password_required(message: &str) -> anyhow::Result<String> {
+    match Password::new(message)
+        .with_display_mode(inquire::PasswordDisplayMode::Masked)
+        .with_validator(inquire::required!())
+        .prompt()
+    {
+        Ok(v) => Ok(v),
+        Err(
+            inquire::InquireError::OperationCanceled | inquire::InquireError::OperationInterrupted,
+        ) => {
+            anyhow::bail!("Cancelled");
+        }
+        Err(_) => {
+            // Fallback: basic stdin with required check
+            loop {
+                print!("  {} ", message);
+                io::stdout().flush()?;
+                let input = read_line()?;
+                if !input.is_empty() {
+                    return Ok(input);
+                }
+                println!("  (required)");
+            }
+        }
+    }
+}
+
+/// Prompt for selection, falling back to numbered list on inquire failure
+fn prompt_select(message: &str, options: &[String]) -> anyhow::Result<String> {
+    match Select::new(message, options.to_vec()).prompt() {
+        Ok(v) => Ok(v),
+        Err(
+            inquire::InquireError::OperationCanceled | inquire::InquireError::OperationInterrupted,
+        ) => {
+            anyhow::bail!("Cancelled");
+        }
+        Err(_) => {
+            // Fallback: numbered list
+            println!();
+            for (i, opt) in options.iter().enumerate() {
+                if opt.starts_with("──") {
+                    println!("  {}", opt);
+                } else {
+                    println!("  [{}] {}", i, opt);
+                }
+            }
+            println!();
+            loop {
+                print!("  {} ", message);
+                io::stdout().flush()?;
+                let input = read_line()?;
+                if let Ok(idx) = input.parse::<usize>() {
+                    if idx < options.len() && !options[idx].starts_with("──") {
+                        return Ok(options[idx].clone());
+                    }
+                }
+                println!("  (enter a valid number)");
+            }
+        }
+    }
 }

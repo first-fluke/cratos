@@ -3,6 +3,39 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Speech-to-text configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SttConfig {
+    /// Backend: "auto" | "api" | "local"
+    /// - auto: local first, API fallback
+    /// - api: OpenAI Whisper API only
+    /// - local: local candle Whisper only
+    #[serde(default = "default_stt_backend")]
+    pub backend: String,
+
+    /// Local model size: "tiny" | "base" | "small"
+    /// Korean requires "small" for reasonable accuracy
+    #[serde(default = "default_stt_model")]
+    pub model: String,
+}
+
+fn default_stt_backend() -> String {
+    "auto".to_string()
+}
+
+fn default_stt_model() -> String {
+    "small".to_string()
+}
+
+impl Default for SttConfig {
+    fn default() -> Self {
+        Self {
+            backend: default_stt_backend(),
+            model: default_stt_model(),
+        }
+    }
+}
+
 /// Voice controller configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceConfig {
@@ -21,6 +54,10 @@ pub struct VoiceConfig {
     /// TTS voice name (platform-specific)
     #[serde(default)]
     pub tts_voice: Option<String>,
+
+    /// STT configuration
+    #[serde(default)]
+    pub stt: SttConfig,
 
     /// Models directory
     #[serde(default = "default_models_dir")]
@@ -70,6 +107,7 @@ impl Default for VoiceConfig {
             language: default_language(),
             threshold: default_threshold(),
             tts_voice: None,
+            stt: SttConfig::default(),
             models_dir: default_models_dir(),
             sample_rate: default_sample_rate(),
             silence_duration_ms: default_silence_duration(),

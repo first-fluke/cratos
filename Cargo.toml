@@ -77,6 +77,11 @@ tokenizers = { version = "0.22", default-features = false, features = ["http", "
 hf-hub = { version = "0.4", default-features = false, features = ["rustls-tls"] }
 usearch = "2"
 
+# Local ML inference (candle = pure Rust, no C++ dependencies)
+candle-core = { version = "0.8", default-features = false }
+candle-transformers = { version = "0.8", default-features = false }
+candle-nn = { version = "0.8", default-features = false }
+
 # Internal crates
 cratos-core = { path = "crates/cratos-core" }
 cratos-channels = { path = "crates/cratos-channels" }

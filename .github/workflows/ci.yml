@@ -19,6 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.88
         with:
@@ -56,6 +59,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.88
         with:
@@ -78,6 +84,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.88
@@ -112,6 +121,9 @@ jobs:
     needs: [check, fmt, clippy, test]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.88
