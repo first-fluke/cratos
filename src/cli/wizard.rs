@@ -439,6 +439,38 @@ fn print_box(title: &str, content: &str) {
     println!();
 }
 
+/// Print instructions when running in a non-interactive environment (e.g. piped install)
+fn print_non_interactive_instructions(lang: Language) {
+    println!();
+    if lang == Language::Korean {
+        println!("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!("  Cratos가 설치되었습니다!");
+        println!("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!();
+        println!("  대화형 설정이 필요합니다. 터미널에서 다음을 실행하세요:");
+        println!();
+        println!("    cratos wizard       대화형 설정 마법사");
+        println!("    cratos init         간단 초기화");
+        println!();
+        println!("  또는 .env 파일을 직접 작성할 수 있습니다:");
+        println!("    TELEGRAM_BOT_TOKEN, OPENAI_API_KEY 등");
+        println!();
+    } else {
+        println!("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!("  Cratos installed successfully!");
+        println!("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!();
+        println!("  Interactive setup is required. Run in your terminal:");
+        println!();
+        println!("    cratos wizard       Interactive setup wizard");
+        println!("    cratos init         Quick initialization");
+        println!();
+        println!("  Or create a .env file manually with:");
+        println!("    TELEGRAM_BOT_TOKEN, OPENAI_API_KEY, etc.");
+        println!();
+    }
+}
+
 /// Run the wizard
 pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
     // Detect or use specified language
@@ -451,17 +483,8 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
 
     // Check if stdin is a terminal (required for interactive prompts)
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!(if lang == Language::Korean {
-            "이 명령어는 대화형 터미널에서 실행해야 합니다.\n\
-             터미널 앱(Terminal.app, iTerm2 등)에서 직접 실행해 주세요.\n\
-             또는 환경변수로 직접 설정할 수 있습니다:\n  \
-             TELEGRAM_BOT_TOKEN, OPENAI_API_KEY 등을 .env 파일에 작성하세요."
-        } else {
-            "This command requires an interactive terminal.\n\
-             Please run it directly in a terminal app (Terminal.app, iTerm2, etc.).\n\
-             Alternatively, you can set environment variables directly:\n  \
-             Write TELEGRAM_BOT_TOKEN, OPENAI_API_KEY, etc. in a .env file."
-        });
+        print_non_interactive_instructions(lang);
+        return Ok(());
     }
 
     // Welcome

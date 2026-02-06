@@ -11,7 +11,7 @@ pub mod executions;
 pub mod scheduler;
 pub mod tools;
 
-use axum::{routing::get, Router};
+use axum::Router;
 
 pub use config::config_routes;
 pub use executions::executions_routes;
@@ -25,10 +25,4 @@ pub fn api_router() -> Router {
         .merge(tools_routes())
         .merge(executions_routes())
         .merge(scheduler_routes())
-        .route("/health", get(health_check))
-}
-
-/// API health check
-async fn health_check() -> &'static str {
-    "OK"
 }

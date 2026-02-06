@@ -130,7 +130,14 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Some(Commands::Pantheon(cmd)) => pantheon::run(cmd).await,
         Some(Commands::Decrees(cmd)) => decrees::run(cmd).await,
         Some(Commands::Chronicle(cmd)) => chronicle::run(cmd).await,
-        Some(Commands::Serve) => crate::server::run().await,
+        Some(Commands::Serve) => {
+            if !std::path::Path::new(".env").exists() {
+                wizard::run(None).await?;
+                // Reload .env after wizard creates it
+                let _ = dotenvy::dotenv();
+            }
+            crate::server::run().await
+        }
         None => {
             let mut cmd = <Cli as clap::CommandFactory>::command();
             cmd.print_help()?;

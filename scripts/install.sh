@@ -375,9 +375,7 @@ main() {
     # Run wizard unless disabled
     if [ -z "$CRATOS_NO_WIZARD" ]; then
         echo ""
-        info "Starting setup wizard..."
-        echo ""
-        "$INSTALL_DIR/$BINARY_NAME" wizard || true
+        "$INSTALL_DIR/$BINARY_NAME" wizard
     else
         echo ""
         success "Installation complete!"
