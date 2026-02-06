@@ -21,6 +21,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     all_ok &= check_rust_version().await;
     all_ok &= check_env_file().await;
+    all_ok &= check_cli_auth().await;
     all_ok &= check_data_dir().await;
     all_ok &= check_llm_config().await;
     check_container_runtime().await;
@@ -72,6 +73,7 @@ async fn check_env_file() -> bool {
         let env_content = std::fs::read_to_string(".env").unwrap_or_default();
 
         let has_llm_key = has_valid_key(&env_content, "GROQ_API_KEY", "gsk_")
+            || has_valid_key(&env_content, "GOOGLE_API_KEY", "")
             || has_valid_key(&env_content, "SILICONFLOW_API_KEY", "")
             || has_valid_key(&env_content, "FIREWORKS_API_KEY", "fw_")
             || has_valid_key(&env_content, "OPENROUTER_API_KEY", "sk-or-")
@@ -156,6 +158,44 @@ async fn check_llm_config() -> bool {
         println!("ℹ️  Skipped (external API)");
         true
     }
+}
+
+async fn check_cli_auth() -> bool {
+    use cratos_llm::cli_auth;
+
+    println!("Checking CLI auth tokens...");
+
+    let gemini_status = cli_auth::check_gemini_cli_status();
+    match gemini_status {
+        cli_auth::GeminiCliStatus::Valid => {
+            println!("  ✅ Gemini CLI: {} (Antigravity Pro)", gemini_status);
+        }
+        cli_auth::GeminiCliStatus::Expired => {
+            println!("  ⚠️  Gemini CLI: {}", gemini_status);
+        }
+        cli_auth::GeminiCliStatus::NotFound => {
+            println!("  ℹ️  Gemini CLI: not configured (optional)");
+        }
+        _ => {
+            println!("  ⚠️  Gemini CLI: {}", gemini_status);
+        }
+    }
+
+    let codex_status = cli_auth::check_codex_cli_status();
+    match codex_status {
+        cli_auth::CodexCliStatus::Valid => {
+            println!("  ✅ Codex CLI: {} (ChatGPT Pro/Plus)", codex_status);
+        }
+        cli_auth::CodexCliStatus::NotFound => {
+            println!("  ℹ️  Codex CLI: not configured (optional)");
+        }
+        _ => {
+            println!("  ⚠️  Codex CLI: {}", codex_status);
+        }
+    }
+
+    // CLI auth is optional, never fails the check
+    true
 }
 
 async fn check_container_runtime() -> bool {

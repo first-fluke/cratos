@@ -29,7 +29,26 @@ pub async fn run(persona: Option<String>) -> Result<()> {
 
     let config = crate::server::load_config().context("Failed to load configuration")?;
     let llm_provider = crate::server::resolve_llm_provider(&config.llm)?;
-    let provider_name = llm_provider.name().to_string();
+    let provider_name = {
+        let raw = llm_provider.name().to_string();
+        // Resolve the actual default provider name (router returns "router")
+        let default_name = config.llm.default_provider.clone();
+        let normalized = match default_name.as_str() {
+            "google" => "gemini",
+            "zhipu" | "zhipuai" => "glm",
+            other => other,
+        };
+        let sources = cratos_llm::cli_auth::get_all_auth_sources();
+        if let Some(source) = sources.get(normalized) {
+            if *source != cratos_llm::cli_auth::AuthSource::ApiKey {
+                format!("{} ({})", normalized, source)
+            } else {
+                raw
+            }
+        } else {
+            raw
+        }
+    };
 
     info!("TUI: LLM provider = {}", provider_name);
 

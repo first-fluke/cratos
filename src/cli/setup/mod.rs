@@ -101,6 +101,10 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
 
     // ── 6. Slack ──
     print_header(t.slack_title);
+    println!("  {}", t.slack_desc);
+    println!("{}", t.slack_instructions);
+    println!("  {}", t.slack_help_link);
+    println!();
 
     let skip_slack = prompts::confirm(t.slack_skip, true, Some(t.slack_skip_note))?;
 
@@ -170,7 +174,61 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
     let api_key = if provider.name == "ollama" {
         println!();
         println!("  {}", t.apikey_ollama_no_key_en);
-        println!("  {}", t.apikey_ollama_run_en);
+
+        // Check Ollama installation and status
+        let status = testing::check_ollama().await;
+        match status {
+            testing::OllamaStatus::NotInstalled => {
+                println!("{}", t.ollama_install_guide);
+                let proceed = prompts::confirm(t.test_continue, false, None)?;
+                if !proceed {
+                    println!("\n  {}", t.cancel_msg);
+                    return Ok(());
+                }
+            }
+            testing::OllamaStatus::NotRunning => {
+                println!("{}", t.ollama_not_running);
+                let proceed = prompts::confirm(t.test_continue, true, None)?;
+                if !proceed {
+                    println!("\n  {}", t.cancel_msg);
+                    return Ok(());
+                }
+            }
+            testing::OllamaStatus::Running => {
+                // Check installed models and auto-pull if needed
+                println!("  {}", t.ollama_checking_models);
+                let installed = testing::list_ollama_models().await;
+                if let Some(model) = testing::has_suitable_model(&installed) {
+                    println!("  {}", t.ollama_suitable_model_found.replace("{}", &model));
+                } else {
+                    println!("{}", t.ollama_no_suitable_model);
+
+                    let skip = prompts::confirm(t.ollama_skip_pull, false, None)?;
+                    if !skip {
+                        // Build model selection list
+                        let model_options: Vec<String> = testing::OLLAMA_RECOMMENDED_MODELS
+                            .iter()
+                            .map(|m| {
+                                let desc = match lang {
+                                    i18n::Language::Korean => m.desc_ko,
+                                    i18n::Language::English => m.desc_en,
+                                };
+                                format!("{} [{}] — {}", m.name, m.size, desc)
+                            })
+                            .collect();
+
+                        let selected = prompts::select(t.ollama_select_model, &model_options)?;
+                        let model_name = selected.split_whitespace().next().unwrap_or("qwen2.5:7b");
+
+                        if testing::pull_ollama_model(model_name).await {
+                            println!("\n  {}", t.ollama_pull_success);
+                        } else {
+                            println!("\n  {}", t.ollama_pull_failed);
+                        }
+                    }
+                }
+            }
+        }
         String::new()
     } else {
         // Check if already set in environment
@@ -187,7 +245,36 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
                 prompt_api_key(provider, lang, t)?
             }
         } else {
-            prompt_api_key(provider, lang, t)?
+            // Try CLI auth detection for supported providers
+            let cli_detected = match provider.name {
+                "google" => matches!(
+                    cratos_llm::cli_auth::check_gemini_cli_status(),
+                    cratos_llm::cli_auth::GeminiCliStatus::Valid
+                        | cratos_llm::cli_auth::GeminiCliStatus::Expired
+                ),
+                "openai" => {
+                    cratos_llm::cli_auth::check_codex_cli_status()
+                        == cratos_llm::cli_auth::CodexCliStatus::Valid
+                }
+                _ => false,
+            };
+
+            if cli_detected {
+                let cli_name = match provider.name {
+                    "google" => "Gemini CLI (Antigravity Pro)",
+                    "openai" => "Codex CLI (ChatGPT Pro/Plus)",
+                    _ => unreachable!(),
+                };
+                println!("\n  {} {}", t.cli_auth_detected, cli_name);
+                let use_cli = prompts::confirm(t.cli_auth_use, true, Some(t.cli_auth_skip_note))?;
+                if use_cli {
+                    String::new() // Empty API key — runtime will use CLI auth fallback
+                } else {
+                    prompt_api_key(provider, lang, t)?
+                }
+            } else {
+                prompt_api_key(provider, lang, t)?
+            }
         }
     };
 
@@ -227,10 +314,28 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
         }
     }
 
-    if !api_key.is_empty() || provider.name == "ollama" {
+    // CLI auth detected if api_key is empty but provider is not ollama
+    let has_cli_auth = api_key.is_empty() && provider.name != "ollama"
+        && (provider.name == "google" || provider.name == "openai");
+
+    if !api_key.is_empty() || provider.name == "ollama" || has_cli_auth {
         print!("  {} ", t.test_llm);
         if testing::test_llm(provider, &api_key).await {
             println!("{}", t.test_success);
+        } else if provider.name == "ollama" {
+            let status = testing::check_ollama().await;
+            match status {
+                testing::OllamaStatus::NotInstalled => {
+                    println!("{}", t.ollama_test_failed_not_installed);
+                }
+                testing::OllamaStatus::NotRunning => {
+                    println!("{}", t.ollama_test_failed_not_running);
+                }
+                testing::OllamaStatus::Running => {
+                    println!("{}", t.test_failed);
+                }
+            }
+            all_ok = false;
         } else {
             println!("{}", t.test_failed);
             all_ok = false;

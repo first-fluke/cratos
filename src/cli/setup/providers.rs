@@ -41,28 +41,18 @@ impl Provider {
     }
 }
 
-/// All 12 providers: union of init.rs (11) + wizard.rs (7), deduplicated.
+/// All 13 providers.
 pub const PROVIDERS: &[Provider] = &[
     // ── FREE ──
     Provider {
-        name: "groq",
-        display_en: "Groq - Ultra fast, free (Llama)",
-        display_ko: "Groq - 초고속, 무료 (Llama)",
-        env_var: "GROQ_API_KEY",
-        signup_url: "https://console.groq.com/keys",
-        category: ProviderCategory::Free,
-        cost_en: "Free tier available",
-        cost_ko: "무료 사용 가능",
-    },
-    Provider {
         name: "openrouter",
-        display_en: "OpenRouter - Free models (Llama, Mistral)",
-        display_ko: "OpenRouter - 무료 모델 (Llama, Mistral)",
+        display_en: "OpenRouter - Multi-model gateway (100+ models)",
+        display_ko: "OpenRouter - 멀티모델 게이트웨이 (100+ 모델)",
         env_var: "OPENROUTER_API_KEY",
         signup_url: "https://openrouter.ai/keys",
-        category: ProviderCategory::Free,
-        cost_en: "Free tier available",
-        cost_ko: "무료 사용 가능",
+        category: ProviderCategory::Paid,
+        cost_en: "Pay-per-use, varies by model",
+        cost_ko: "모델별 종량제",
     },
     Provider {
         name: "google",
@@ -85,6 +75,16 @@ pub const PROVIDERS: &[Provider] = &[
         cost_ko: "무료 사용 가능",
     },
     // ── PAID ──
+    Provider {
+        name: "groq",
+        display_en: "Groq - Ultra fast inference (Llama)",
+        display_ko: "Groq - 초고속 추론 (Llama)",
+        env_var: "GROQ_API_KEY",
+        signup_url: "https://console.groq.com/keys",
+        category: ProviderCategory::Paid,
+        cost_en: "Pay-per-use",
+        cost_ko: "종량제",
+    },
     Provider {
         name: "siliconflow",
         display_en: "SiliconFlow (Cheapest: $0.03/M tokens)",
@@ -117,13 +117,23 @@ pub const PROVIDERS: &[Provider] = &[
     },
     Provider {
         name: "moonshot",
-        display_en: "Moonshot AI (Kimi 2.5)",
-        display_ko: "Moonshot AI (Kimi 2.5)",
+        display_en: "Moonshot AI (Kimi K2.5)",
+        display_ko: "Moonshot AI (Kimi K2.5)",
         env_var: "MOONSHOT_API_KEY",
-        signup_url: "https://platform.moonshot.cn",
+        signup_url: "https://platform.moonshot.ai",
         category: ProviderCategory::Paid,
         cost_en: "$0.60/M tokens",
         cost_ko: "$0.60/M 토큰",
+    },
+    Provider {
+        name: "qwen",
+        display_en: "Qwen (Alibaba, Qwen3)",
+        display_ko: "Qwen (알리바바, 통의천문 Qwen3)",
+        env_var: "DASHSCOPE_API_KEY",
+        signup_url: "https://dashscope.console.aliyun.com",
+        category: ProviderCategory::Paid,
+        cost_en: "$0.06/M tokens",
+        cost_ko: "$0.06/M 토큰",
     },
     Provider {
         name: "openai",

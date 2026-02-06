@@ -72,6 +72,9 @@ pub struct Texts {
 
     // Slack
     pub slack_title: &'static str,
+    pub slack_desc: &'static str,
+    pub slack_instructions: &'static str,
+    pub slack_help_link: &'static str,
     pub slack_skip: &'static str,
     pub slack_skip_note: &'static str,
     pub slack_token_prompt: &'static str,
@@ -90,12 +93,26 @@ pub struct Texts {
     pub apikey_instructions: &'static str,
     pub apikey_prompt: &'static str,
     pub apikey_ollama_no_key_en: &'static str,
-    pub apikey_ollama_run_en: &'static str,
 
     // Persona
     pub persona_title: &'static str,
     pub persona_prompt: &'static str,
     pub persona_help: &'static str,
+
+    // Ollama guide
+    pub ollama_install_guide: &'static str,
+    pub ollama_not_running: &'static str,
+    pub ollama_test_failed_not_installed: &'static str,
+    pub ollama_test_failed_not_running: &'static str,
+
+    // Ollama model setup
+    pub ollama_checking_models: &'static str,
+    pub ollama_suitable_model_found: &'static str,
+    pub ollama_no_suitable_model: &'static str,
+    pub ollama_select_model: &'static str,
+    pub ollama_pull_success: &'static str,
+    pub ollama_pull_failed: &'static str,
+    pub ollama_skip_pull: &'static str,
 
     // Test
     pub test_title: &'static str,
@@ -112,6 +129,11 @@ pub struct Texts {
     pub complete_next_steps: &'static str,
     pub complete_tips: &'static str,
     pub complete_problems: &'static str,
+
+    // CLI Auth detection
+    pub cli_auth_detected: &'static str,
+    pub cli_auth_use: &'static str,
+    pub cli_auth_skip_note: &'static str,
 
     // Common
     pub enabled: &'static str,
@@ -164,6 +186,23 @@ How to create:
     telegram_skip_note: "(You can set this up later)",
 
     slack_title: "Slack Bot Setup",
+    slack_desc: "You need a Slack app to use Cratos in your workspace.",
+    slack_instructions: r#"
+How to create:
+  1. Go to Slack API and create a new app:
+     https://api.slack.com/apps
+
+  2. Click "Create New App" → "From scratch"
+
+  3. Under "OAuth & Permissions", add Bot Token Scopes:
+     chat:write, app_mentions:read, channels:history
+
+  4. Install the app to your workspace
+
+  5. Copy the Bot User OAuth Token (xoxb-...)
+     and Signing Secret (from "Basic Information")
+"#,
+    slack_help_link: "Help: https://api.slack.com/start/quickstart",
     slack_skip: "Skip Slack setup?",
     slack_skip_note: "(You can set this up later)",
     slack_token_prompt: "Enter Slack bot token (xoxb-...):",
@@ -188,7 +227,35 @@ How to get:
 "#,
     apikey_prompt: "Paste your API key:",
     apikey_ollama_no_key_en: "Ollama runs locally. No API key needed.",
-    apikey_ollama_run_en: "Make sure Ollama is running: ollama serve",
+
+    ollama_install_guide: r#"
+  Ollama is not installed. Install it first:
+
+    macOS:   brew install ollama
+    Linux:   curl -fsSL https://ollama.ai/install.sh | sh
+
+  Download page: https://ollama.ai/download
+"#,
+    ollama_not_running: r#"
+  Ollama is installed but not running.
+  Start it with:
+
+    ollama serve
+"#,
+    ollama_test_failed_not_installed: "Failed. Ollama is not installed.",
+    ollama_test_failed_not_running: "Failed. Ollama is not running. Start it with: ollama serve",
+
+    ollama_checking_models: "Checking installed models...",
+    ollama_suitable_model_found: "Found suitable model: {}",
+    ollama_no_suitable_model: r#"
+  No suitable model found.
+  llama3.2 (3B) is too small for tool calling.
+  A 7B+ model is required for Cratos to work properly.
+"#,
+    ollama_select_model: "Select a model to download:",
+    ollama_pull_success: "Model downloaded successfully!",
+    ollama_pull_failed: "Model download failed. You can manually run: ollama pull <model>",
+    ollama_skip_pull: "Skip model download?",
 
     persona_title: "Select Default Persona",
     persona_prompt: "Select default persona:",
@@ -196,7 +263,7 @@ How to get:
 
     test_title: "Test Connection",
     test_telegram: "Testing Telegram connection...",
-    test_llm: "Testing LLM connection...",
+    test_llm: "Testing LLM with real API call (may take a few seconds)...",
     test_success: "Success!",
     test_failed: "Failed. Please verify your credentials.",
     test_continue: "Continue anyway?",
@@ -217,6 +284,10 @@ Tips:
   - View help:           cratos --help
 "#,
     complete_problems: "Having problems? Run: cratos doctor",
+
+    cli_auth_detected: "CLI subscription detected:",
+    cli_auth_use: "Use CLI subscription instead of API key?",
+    cli_auth_skip_note: "(API key not required)",
 
     enabled: "enabled",
     disabled: "disabled",
@@ -268,6 +339,23 @@ pub const TEXTS_KO: Texts = Texts {
     telegram_skip_note: "(나중에 설정할 수 있어요)",
 
     slack_title: "Slack 봇 설정",
+    slack_desc: "Slack 워크스페이스에서 Cratos를 사용하려면 Slack 앱이 필요해요.",
+    slack_instructions: r#"
+따라하기:
+  1. Slack API에서 새 앱 만들기:
+     https://api.slack.com/apps
+
+  2. "Create New App" → "From scratch" 클릭
+
+  3. "OAuth & Permissions"에서 Bot Token Scopes 추가:
+     chat:write, app_mentions:read, channels:history
+
+  4. 워크스페이스에 앱 설치
+
+  5. Bot User OAuth Token (xoxb-...) 복사
+     + Signing Secret ("Basic Information"에서 확인)
+"#,
+    slack_help_link: "도움말: https://api.slack.com/start/quickstart",
     slack_skip: "Slack 설정 건너뛰기?",
     slack_skip_note: "(나중에 설정할 수 있어요)",
     slack_token_prompt: "Slack 봇 토큰 입력 (xoxb-...):",
@@ -292,7 +380,35 @@ pub const TEXTS_KO: Texts = Texts {
 "#,
     apikey_prompt: "API 키를 붙여넣기 하세요:",
     apikey_ollama_no_key_en: "Ollama는 로컬에서 실행됩니다. API 키가 필요 없어요.",
-    apikey_ollama_run_en: "Ollama가 실행 중인지 확인하세요: ollama serve",
+
+    ollama_install_guide: r#"
+  Ollama가 설치되어 있지 않습니다. 먼저 설치하세요:
+
+    macOS:   brew install ollama
+    Linux:   curl -fsSL https://ollama.ai/install.sh | sh
+
+  다운로드: https://ollama.ai/download
+"#,
+    ollama_not_running: r#"
+  Ollama가 설치되었지만 실행 중이 아닙니다.
+  다음 명령으로 실행하세요:
+
+    ollama serve
+"#,
+    ollama_test_failed_not_installed: "실패. Ollama가 설치되어 있지 않습니다.",
+    ollama_test_failed_not_running: "실패. Ollama가 실행 중이 아닙니다. 실행: ollama serve",
+
+    ollama_checking_models: "설치된 모델 확인 중...",
+    ollama_suitable_model_found: "적합한 모델 발견: {}",
+    ollama_no_suitable_model: r#"
+  적합한 모델이 없습니다.
+  llama3.2 (3B)는 도구 호출에 너무 작습니다.
+  Cratos가 제대로 작동하려면 7B 이상 모델이 필요합니다.
+"#,
+    ollama_select_model: "다운로드할 모델을 선택하세요:",
+    ollama_pull_success: "모델 다운로드 완료!",
+    ollama_pull_failed: "모델 다운로드 실패. 수동으로 실행하세요: ollama pull <모델명>",
+    ollama_skip_pull: "모델 다운로드 건너뛰기?",
 
     persona_title: "기본 페르소나 선택",
     persona_prompt: "기본 페르소나를 선택하세요:",
@@ -300,7 +416,7 @@ pub const TEXTS_KO: Texts = Texts {
 
     test_title: "연결 테스트",
     test_telegram: "Telegram 연결 확인 중...",
-    test_llm: "LLM 연결 확인 중...",
+    test_llm: "LLM 실제 API 호출 테스트 중 (몇 초 걸릴 수 있어요)...",
     test_success: "성공!",
     test_failed: "실패. 인증 정보를 확인해 주세요.",
     test_continue: "그래도 계속할까요?",
@@ -321,6 +437,10 @@ pub const TEXTS_KO: Texts = Texts {
   - 도움말 보기:         cratos --help
 "#,
     complete_problems: "문제가 있으면 실행: cratos doctor",
+
+    cli_auth_detected: "CLI 구독 인증 감지됨:",
+    cli_auth_use: "API 키 대신 CLI 구독을 사용할까요?",
+    cli_auth_skip_note: "(API 키 불필요)",
 
     enabled: "활성화",
     disabled: "비활성화",

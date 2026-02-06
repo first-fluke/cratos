@@ -16,6 +16,7 @@ pub mod chronicle;
 pub mod decrees;
 pub mod doctor;
 pub mod pantheon;
+pub mod quota;
 pub mod setup;
 pub mod tui;
 
@@ -48,6 +49,15 @@ pub enum Commands {
     /// View and manage chronicles (records)
     #[command(subcommand)]
     Chronicle(ChronicleCommands),
+    /// Show provider quota and rate limit status
+    Quota {
+        /// Output as JSON (for scripting)
+        #[arg(long)]
+        json: bool,
+        /// Live-refresh mode (every 2 seconds)
+        #[arg(long)]
+        watch: bool,
+    },
     /// Start the server (default)
     Serve,
     /// Launch interactive TUI chat
@@ -73,6 +83,8 @@ pub enum PantheonCommands {
         /// Persona name to summon
         name: String,
     },
+    /// Dismiss (deactivate) the active persona
+    Dismiss,
 }
 
 /// Decrees subcommands
@@ -97,6 +109,16 @@ pub enum DecreeType {
     Ranks,
     /// Warfare rules (개발 규칙)
     Warfare,
+    /// Alliance (협업 규칙)
+    Alliance,
+    /// Tribute (보상/비용 규칙)
+    Tribute,
+    /// Judgment (평가 프레임워크)
+    Judgment,
+    /// Culture (문화/가치관)
+    Culture,
+    /// Operations (운영 절차)
+    Operations,
 }
 
 /// Chronicle subcommands
@@ -135,6 +157,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Some(Commands::Pantheon(cmd)) => pantheon::run(cmd).await,
         Some(Commands::Decrees(cmd)) => decrees::run(cmd).await,
         Some(Commands::Chronicle(cmd)) => chronicle::run(cmd).await,
+        Some(Commands::Quota { json, watch }) => quota::run(json, watch).await,
         Some(Commands::Serve) => {
             if !std::path::Path::new(ENV_FILE_PATH).exists() {
                 setup::run(None).await?;

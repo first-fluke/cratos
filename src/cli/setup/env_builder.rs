@@ -19,6 +19,12 @@ pub fn build_env(
     c.push_str("# ===================\n");
     if provider.name == "ollama" {
         c.push_str("OLLAMA_BASE_URL=http://localhost:11434\n");
+    } else if api_key.is_empty() {
+        // CLI auth — API key not needed, using CLI subscription
+        c.push_str(&format!(
+            "# {}=  (using CLI subscription auth)\n",
+            provider.env_var
+        ));
     } else {
         c.push_str(&format!("{}={}\n", provider.env_var, api_key));
     }
@@ -57,7 +63,7 @@ pub fn build_env(
     c.push_str("# Server\n");
     c.push_str("# ===================\n");
     c.push_str("HOST=127.0.0.1\n");
-    c.push_str("PORT=9742\n");
+    c.push_str("PORT=8090\n");
 
     // Logging
     c.push_str("\n# ===================\n");
