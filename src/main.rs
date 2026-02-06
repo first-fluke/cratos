@@ -28,22 +28,20 @@ async fn main() -> Result<()> {
 
     let cli = cli::Cli::parse();
 
-    // wizard/init create .env, so skip startup log and .env warning for them
-    let is_setup_command = matches!(
+    // init creates .env, so skip startup log and .env warning for it
+    let skip_startup_log = matches!(
         &cli.command,
-        Some(cli::Commands::Wizard { .. })
-            | Some(cli::Commands::Init)
-            | Some(cli::Commands::Serve)
+        Some(cli::Commands::Init { .. }) | Some(cli::Commands::Serve)
     );
 
-    if cli.command.is_some() && !is_setup_command {
+    if cli.command.is_some() && !skip_startup_log {
         info!(
             "Starting Cratos AI Assistant v{}",
             env!("CARGO_PKG_VERSION")
         );
 
-        if !std::path::Path::new(".env").exists() {
-            warn!(".env file not found. Run 'cratos wizard' to create one.");
+        if !std::path::Path::new(cli::ENV_FILE_PATH).exists() {
+            warn!(".env file not found. Run 'cratos init' to create one.");
         }
     }
 

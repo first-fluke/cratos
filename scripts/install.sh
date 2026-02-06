@@ -5,7 +5,7 @@
 # Environment variables:
 #   CRATOS_INSTALL_DIR - Installation directory (default: /usr/local/bin or ~/.local/bin)
 #   CRATOS_VERSION     - Version to install (default: latest)
-#   CRATOS_NO_WIZARD   - Skip running wizard after install (default: false)
+#   CRATOS_NO_WIZARD   - Skip running setup after install (default: false)
 #   CRATOS_BUILD_FROM_SOURCE - Force build from source (default: false)
 
 set -e
@@ -151,7 +151,10 @@ add_to_path() {
             ;;
     esac
 
-    # Add to config file
+    # Add to config file (skip if already present)
+    if [ -f "$CONFIG_FILE" ] && grep -qF "$DIR" "$CONFIG_FILE" 2>/dev/null; then
+        return 0
+    fi
     if [ -f "$CONFIG_FILE" ]; then
         echo "" >> "$CONFIG_FILE"
         echo "# Added by Cratos installer" >> "$CONFIG_FILE"
@@ -207,19 +210,20 @@ build_from_source() {
 
     # Create temp directory for source
     SRC_DIR=$(mktemp -d)
-    trap "rm -rf $SRC_DIR" EXIT
 
     info "Cloning repository..."
     if command -v git > /dev/null 2>&1; then
-        git clone --depth 1 "https://github.com/$REPO.git" "$SRC_DIR/cratos" 2>/dev/null || {
+        if ! git clone --depth 1 "https://github.com/$REPO.git" "$SRC_DIR/cratos" 2>/dev/null; then
+            rm -rf "$SRC_DIR"
             error "Failed to clone repository."
-        }
+        fi
     else
         # Download as tarball if git not available
         info "Git not found, downloading source tarball..."
-        download "https://github.com/$REPO/archive/refs/heads/main.tar.gz" "$SRC_DIR/source.tar.gz" || {
+        if ! download "https://github.com/$REPO/archive/refs/heads/main.tar.gz" "$SRC_DIR/source.tar.gz"; then
+            rm -rf "$SRC_DIR"
             error "Failed to download source."
-        }
+        fi
         tar -xzf "$SRC_DIR/source.tar.gz" -C "$SRC_DIR"
         mv "$SRC_DIR/cratos-main" "$SRC_DIR/cratos"
     fi
@@ -230,22 +234,28 @@ build_from_source() {
     info "You'll see build progress below:"
     echo ""
     echo "  ────────────────────────────────────────────────────"
-    cargo build --release
-    BUILD_STATUS=$?
-    echo "  ────────────────────────────────────────────────────"
-    echo ""
-
-    if [ $BUILD_STATUS -ne 0 ]; then
-        error "Build failed with status $BUILD_STATUS"
+    if ! cargo build --release; then
+        echo "  ────────────────────────────────────────────────────"
+        echo ""
+        error_no_exit "Build failed. You may need to install build dependencies:"
+        echo "  macOS:  xcode-select --install"
+        echo "  Ubuntu: sudo apt install build-essential pkg-config libssl-dev"
+        echo "  Fedora: sudo dnf install gcc pkg-config openssl-devel"
+        echo ""
+        rm -rf "$SRC_DIR"
         return 1
     fi
+    echo "  ────────────────────────────────────────────────────"
+    echo ""
 
     if [ -f "target/release/$BINARY_NAME" ]; then
         cp "target/release/$BINARY_NAME" "$TMP_DIR/$BINARY_NAME"
         success "Build completed!"
+        rm -rf "$SRC_DIR"
         return 0
     else
-        error "Build failed."
+        error_no_exit "Build completed but binary not found."
+        rm -rf "$SRC_DIR"
         return 1
     fi
 }
@@ -283,6 +293,13 @@ main() {
     echo "  ╚═══════════════════════════════════════════════════════════════╝"
     echo ""
 
+    # Early Windows detection
+    case "$(uname -s)" in
+        CYGWIN*|MINGW*|MSYS*)
+            error "Windows is not supported by this installer. Please build from source or use WSL."
+            ;;
+    esac
+
     # Detect platform
     TARGET=$(get_target)
     info "Detected platform: $TARGET"
@@ -293,7 +310,7 @@ main() {
 
     # Create temporary directory
     TMP_DIR=$(mktemp -d)
-    trap "rm -rf $TMP_DIR" EXIT
+    trap 'rm -rf "$TMP_DIR"' EXIT
 
     BINARY_READY=false
 
@@ -345,10 +362,17 @@ main() {
         if [ -w "$INSTALL_DIR" ]; then
             mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/"
             chmod +x "$INSTALL_DIR/$BINARY_NAME"
-        else
+        elif [ -t 0 ]; then
             warn "Elevated permissions required. Using sudo..."
             sudo mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/"
             sudo chmod +x "$INSTALL_DIR/$BINARY_NAME"
+        else
+            error_no_exit "Cannot write to $INSTALL_DIR (no interactive terminal for sudo)."
+            INSTALL_DIR="$HOME/.local/bin"
+            mkdir -p "$INSTALL_DIR"
+            mv "$TMP_DIR/$BINARY_NAME" "$INSTALL_DIR/"
+            chmod +x "$INSTALL_DIR/$BINARY_NAME"
+            warn "Installed to $INSTALL_DIR instead."
         fi
     else
         error "No binary to install."
@@ -364,7 +388,9 @@ main() {
     if "$INSTALL_DIR/$BINARY_NAME" --version > /dev/null 2>&1; then
         success "Cratos installed successfully!"
     else
-        error "Installation verification failed."
+        warn "Binary installed but verification failed."
+        warn "You may need to install runtime dependencies (e.g., libssl)."
+        warn "Try running: $INSTALL_DIR/$BINARY_NAME --version"
     fi
 
     # Print version
@@ -372,18 +398,17 @@ main() {
     "$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null || true
     echo ""
 
-    # Run wizard unless disabled
-    if [ -z "$CRATOS_NO_WIZARD" ]; then
+    # Run wizard unless disabled or non-interactive
+    if [ -z "$CRATOS_NO_WIZARD" ] && [ -t 0 ]; then
         echo ""
-        "$INSTALL_DIR/$BINARY_NAME" wizard
+        "$INSTALL_DIR/$BINARY_NAME" init || true
     else
         echo ""
         success "Installation complete!"
         echo ""
         echo "  Next steps:"
-        echo "    1. Run the setup wizard:  cratos wizard"
-        echo "    2. Or run init:           cratos init"
-        echo "    3. Start the server:      cratos serve"
+        echo "    1. Run setup:             cratos init"
+        echo "    2. Start the server:      cratos serve"
         echo ""
     fi
 }

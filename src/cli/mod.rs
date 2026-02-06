@@ -1,8 +1,7 @@
 //! CLI module for Cratos
 //!
 //! Provides interactive commands:
-//! - `wizard`: User-friendly multilingual setup wizard (recommended for beginners)
-//! - `init`: Interactive setup wizard for .env configuration
+//! - `init`: Unified interactive setup wizard (i18n, fallback prompts)
 //! - `doctor`: System diagnostics and health checks
 //! - `pantheon`: Manage Olympus Pantheon (personas)
 //! - `decrees`: View and manage decrees (laws)
@@ -10,12 +9,14 @@
 
 use clap::{Parser, Subcommand, ValueEnum};
 
+/// Path to the environment configuration file.
+pub const ENV_FILE_PATH: &str = ".env";
+
 pub mod chronicle;
 pub mod decrees;
 pub mod doctor;
-pub mod init;
 pub mod pantheon;
-pub mod wizard;
+pub mod setup;
 
 /// Cratos AI Assistant CLI
 #[derive(Parser, Debug)]
@@ -29,14 +30,12 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// User-friendly setup wizard with multilingual support (recommended)
-    Wizard {
+    /// Interactive setup wizard
+    Init {
         /// Language code (en, ko). Auto-detected if not specified.
         #[arg(short, long)]
         lang: Option<String>,
     },
-    /// Interactive setup wizard
-    Init,
     /// Run system diagnostics
     Doctor,
     /// Manage Olympus Pantheon (personas)
@@ -124,16 +123,15 @@ pub enum ChronicleCommands {
 /// Run the CLI command
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
-        Some(Commands::Wizard { lang }) => wizard::run(lang.as_deref()).await,
-        Some(Commands::Init) => init::run().await,
+        Some(Commands::Init { lang }) => setup::run(lang.as_deref()).await,
         Some(Commands::Doctor) => doctor::run().await,
         Some(Commands::Pantheon(cmd)) => pantheon::run(cmd).await,
         Some(Commands::Decrees(cmd)) => decrees::run(cmd).await,
         Some(Commands::Chronicle(cmd)) => chronicle::run(cmd).await,
         Some(Commands::Serve) => {
-            if !std::path::Path::new(".env").exists() {
-                wizard::run(None).await?;
-                // Reload .env after wizard creates it
+            if !std::path::Path::new(ENV_FILE_PATH).exists() {
+                setup::run(None).await?;
+                // Reload .env after setup creates it
                 let _ = dotenvy::dotenv();
             }
             crate::server::run().await
