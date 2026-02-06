@@ -32,6 +32,10 @@ pub struct App {
     pub is_loading: bool,
     pub should_quit: bool,
     pub loading_tick: usize,
+    /// Cached quota status line for TUI display (updated each tick).
+    pub quota_line: String,
+    /// Whether the sidebar is visible (toggled with F1).
+    pub show_sidebar: bool,
     orchestrator: Arc<Orchestrator>,
     session_id: String,
     /// Sender side lives in App so `submit_message` can clone it into spawned tasks.
@@ -60,6 +64,8 @@ impl App {
             is_loading: false,
             should_quit: false,
             loading_tick: 0,
+            quota_line: String::new(),
+            show_sidebar: false,
             orchestrator,
             session_id,
             response_tx: tx,
@@ -98,6 +104,11 @@ impl App {
         self.scroll_offset = 0;
     }
 
+    /// Toggle sidebar visibility (F1).
+    pub fn toggle_sidebar(&mut self) {
+        self.show_sidebar = !self.show_sidebar;
+    }
+
     // ── input handling ──────────────────────────────────────────────────
 
     pub fn move_cursor_left(&mut self) {
@@ -133,6 +144,95 @@ impl App {
                 self.cursor_pos = remove_pos;
             }
         }
+    }
+
+    /// Delete character after cursor (Delete key).
+    pub fn delete_char_after_cursor(&mut self) {
+        if self.cursor_pos < self.input.len() {
+            self.input.remove(self.cursor_pos);
+        }
+    }
+
+    /// Move cursor one word to the left (Alt+Left / Option+Left).
+    pub fn move_cursor_word_left(&mut self) {
+        let before = &self.input[..self.cursor_pos];
+        // Skip trailing whitespace, then skip word chars
+        let trimmed = before.trim_end();
+        if trimmed.is_empty() {
+            self.cursor_pos = 0;
+            return;
+        }
+        // Find last whitespace boundary in trimmed portion
+        if let Some(pos) = trimmed.rfind(|c: char| c.is_whitespace()) {
+            // pos is byte index of the whitespace; move to char after it
+            self.cursor_pos = pos + trimmed[pos..].chars().next().unwrap().len_utf8();
+        } else {
+            self.cursor_pos = 0;
+        }
+    }
+
+    /// Move cursor one word to the right (Alt+Right / Option+Right).
+    pub fn move_cursor_word_right(&mut self) {
+        let after = &self.input[self.cursor_pos..];
+        // Skip leading non-whitespace, then skip whitespace
+        let mut chars = after.char_indices();
+        // Skip current word
+        let mut offset = 0;
+        for (i, c) in chars.by_ref() {
+            if c.is_whitespace() {
+                offset = i;
+                break;
+            }
+            offset = i + c.len_utf8();
+        }
+        // Skip whitespace
+        for (i, c) in self.input[self.cursor_pos + offset..].char_indices() {
+            if !c.is_whitespace() {
+                self.cursor_pos += offset + i;
+                return;
+            }
+        }
+        self.cursor_pos = self.input.len();
+    }
+
+    /// Delete word before cursor (Ctrl+W / Alt+Backspace).
+    pub fn delete_word_before_cursor(&mut self) {
+        if self.cursor_pos == 0 {
+            return;
+        }
+        let before = &self.input[..self.cursor_pos];
+        // Skip trailing whitespace, then skip word chars
+        let trimmed = before.trim_end();
+        let new_pos = if trimmed.is_empty() {
+            0
+        } else if let Some(pos) = trimmed.rfind(|c: char| c.is_whitespace()) {
+            pos + trimmed[pos..].chars().next().unwrap().len_utf8()
+        } else {
+            0
+        };
+        self.input.drain(new_pos..self.cursor_pos);
+        self.cursor_pos = new_pos;
+    }
+
+    /// Clear from cursor to beginning of line (Ctrl+U).
+    pub fn clear_to_start(&mut self) {
+        self.input.drain(..self.cursor_pos);
+        self.cursor_pos = 0;
+    }
+
+    /// Clear from cursor to end of line (Ctrl+K).
+    pub fn clear_to_end(&mut self) {
+        self.input.truncate(self.cursor_pos);
+    }
+
+    /// Move cursor to beginning of line (Ctrl+A / Home).
+    pub fn move_cursor_home(&mut self) {
+        self.cursor_pos = 0;
+    }
+
+    /// Move cursor to end of line (Ctrl+E / End).
+    pub fn move_cursor_end(&mut self) {
+        self.cursor_pos = self.input.len();
     }
 
     pub fn scroll_up(&mut self) {
@@ -174,7 +274,23 @@ impl App {
             }
             "/help" => {
                 self.push_system(
-                    "Commands:\n  /persona <name>  Switch persona\n  /clear            Clear chat\n  /help             Show this help\n  /quit             Exit TUI".into(),
+                    "Commands:\n\
+                     \x20 /persona <name>  Switch persona\n\
+                     \x20 /clear           Clear chat\n\
+                     \x20 /help            Show this help\n\
+                     \x20 /quit            Exit TUI\n\
+                     \n\
+                     Keys:\n\
+                     \x20 Ctrl+U / Ctrl+K  Clear before/after cursor\n\
+                     \x20 Ctrl+W           Delete word backward\n\
+                     \x20 Ctrl+A / Ctrl+E  Home / End\n\
+                     \x20 Alt+\u{2190}/\u{2192}         Word left/right\n\
+                     \x20 \u{2191}/\u{2193}              Scroll chat\n\
+                     \x20 PageUp/PageDn    Scroll fast\n\
+                     \x20 F1               Toggle sidebar\n\
+                     \x20 Ctrl+L           Clear screen\n\
+                     \x20 Ctrl+C / Esc     Quit"
+                        .into(),
                 );
             }
             "/persona" => {
@@ -233,10 +349,66 @@ impl App {
         }
     }
 
+    /// Refresh the cached quota status line from the global tracker.
+    pub fn refresh_quota(&mut self) {
+        // Use try_read to avoid blocking — skip update if lock is held
+        let tracker = cratos_llm::global_quota_tracker();
+        let states = tracker.try_get_all_states();
+        if states.is_empty() {
+            self.quota_line = String::new();
+            return;
+        }
+
+        // Show the most recently updated provider
+        let latest = states
+            .iter()
+            .max_by_key(|s| s.updated_at);
+
+        if let Some(state) = latest {
+            let req = match (state.requests_remaining, state.requests_limit) {
+                (Some(rem), Some(lim)) => format!("{}/{}", rem, cratos_llm::format_compact_number(lim)),
+                _ => "-".to_string(),
+            };
+            let tok = match (state.tokens_remaining, state.tokens_limit) {
+                (Some(rem), Some(lim)) => format!(
+                    "{}/{}",
+                    cratos_llm::format_compact_number(rem),
+                    cratos_llm::format_compact_number(lim)
+                ),
+                _ => "-".to_string(),
+            };
+            let reset = state
+                .reset_at
+                .map(|at| {
+                    let dur = at - chrono::Utc::now();
+                    if dur.num_seconds() <= 0 {
+                        "now".to_string()
+                    } else {
+                        cratos_llm::format_duration(&dur)
+                    }
+                })
+                .unwrap_or_else(|| "-".to_string());
+
+            let auth_suffix = cratos_llm::cli_auth::get_auth_source(&state.provider)
+                .filter(|s| *s != cratos_llm::cli_auth::AuthSource::ApiKey)
+                .map(|s| format!(" ({})", s))
+                .unwrap_or_default();
+
+            self.quota_line = format!(
+                "{}{} {} req {} tok ~{}",
+                state.provider, auth_suffix, req, tok, reset
+            );
+        }
+    }
+
     /// Advance the loading spinner animation counter.
     pub fn tick(&mut self) {
         if self.is_loading {
             self.loading_tick = self.loading_tick.wrapping_add(1);
+        }
+        // Refresh quota every 4 ticks (~1 second at 250ms tick rate)
+        if self.loading_tick % 4 == 0 {
+            self.refresh_quota();
         }
     }
 }
