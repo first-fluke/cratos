@@ -18,7 +18,7 @@
 [server]
 # SECURITY: In production, consider binding to 127.0.0.1 and using a reverse proxy
 host = "127.0.0.1"
-port = 8080
+port = 8090
 
 # Data directory for SQLite database and other local storage
 # Default: ~/.cratos (or platform-specific data directory)
@@ -47,23 +47,25 @@ default_provider = "auto"
 # - General tasks: Low-cost (DeepSeek) - ~$0.14/1M tokens
 # - Complex tasks: Premium (Anthropic) - Higher cost, better quality
 #
-# Cost comparison per 1M tokens:
+# Cost comparison per 1M tokens (Feb 2026):
 # | Provider   | Model                    | Input    | Output   |
 # |------------|--------------------------|----------|----------|
-# | Groq       | llama-3.3-70b-versatile  | $0       | $0       | FREE!
+# | Groq       | llama-3.1-8b-instant     | $0.05    | $0.08    |
+# | GPT-5 nano | gpt-5-nano               | $0.05    | $0.40    |
 # | DeepSeek   | deepseek-chat            | $0.14    | $0.28    |
-# | OpenAI     | gpt-4o-mini              | $0.15    | $0.60    |
-# | Anthropic  | claude-sonnet-4          | $3.00    | $15.00   |
+# | GPT-5      | gpt-5                    | $1.25    | $10.00   |
+# | Anthropic  | claude-sonnet-4-5        | $3.00    | $15.00   |
+# | Anthropic  | claude-opus-4-5          | $5.00    | $25.00   |
 
 [llm.model_routing]
-# Simple tasks (classification, extraction): Use FREE tier
-simple = { provider = "groq", model = "llama-3.3-70b-versatile" }
-# General tasks (conversation, summarization): Use low-cost tier
+# Simple tasks (classification, extraction): Ultra-low-cost
+simple = { provider = "groq", model = "openai/gpt-oss-20b" }
+# General tasks (conversation, summarization): Low-cost
 general = { provider = "deepseek", model = "deepseek-chat" }
-# Complex tasks (planning, code generation): Use premium tier
-complex = { provider = "anthropic", model = "claude-sonnet-4-20250514" }
+# Complex tasks (planning, code generation): Premium
+complex = { provider = "anthropic", model = "claude-sonnet-4-5-20250929" }
 # Fallback when primary provider fails
-fallback = { provider = "openai", model = "gpt-4o-mini" }
+fallback = { provider = "openai", model = "gpt-5-nano" }
 # Automatically downgrade on rate limits
 auto_downgrade = true
 
@@ -72,38 +74,40 @@ auto_downgrade = true
 # ============================================================================
 
 [llm.groq]
-# Groq FREE tier - API key from GROQ_API_KEY env var
-# FREE: 30 requests/minute, Llama 3.3 70B and other models
+# Groq ultra-fast inference - API key from GROQ_API_KEY env var
+# Free tier available (rate-limited), paid per token
 base_url = "https://api.groq.com/openai/v1"
 default_model = "llama-3.3-70b-versatile"
 timeout_ms = 60000
 
 [llm.deepseek]
 # DeepSeek ultra-low-cost - API key from DEEPSEEK_API_KEY env var
-# $0.14/1M input, $0.28/1M output (95%+ cheaper than GPT-5.2)
+# $0.14/1M input, $0.28/1M output (95%+ cheaper than GPT-5)
 base_url = "https://api.deepseek.com/v1"
 default_model = "deepseek-chat"
 timeout_ms = 120000
 
 [llm.openai]
 # API key loaded from OPENAI_API_KEY environment variable
-default_model = "gpt-4o"
+# GPT-5 is cheaper than GPT-4o ($1.25 vs $2.50 per 1M input tokens)
+default_model = "gpt-5"
 timeout_ms = 60000
 
 [llm.anthropic]
 # API key loaded from ANTHROPIC_API_KEY environment variable
-default_model = "claude-sonnet-4-20250514"
+default_model = "claude-sonnet-4-5-20250929"
 timeout_ms = 120000
 
 [llm.gemini]
 # API key loaded from GOOGLE_API_KEY environment variable
-default_model = "gemini-2.0-flash"
+default_model = "gemini-2.5-flash"
 timeout_ms = 60000
 
 [llm.ollama]
 # Local Ollama instance
+# Note: llama3.2 (3B) is too small for tool calling. Use 7B+ models.
 base_url = "http://localhost:11434"
-default_model = "llama3.2"
+default_model = "qwen2.5:7b"
 timeout_ms = 300000
 
 [llm.glm]
@@ -120,9 +124,10 @@ timeout_ms = 60000
 
 [llm.openrouter]
 # OpenRouter multi-provider gateway - API key from OPENROUTER_API_KEY env var
-# Provides access to 100+ models including free tier
+# WARNING: Free models (:free suffix) are queue-based, very slow, and unreliable for tool calling.
+# Use paid models for production. Cheapest usable: google/gemini-flash-1.5 (~$0.075/M)
 base_url = "https://openrouter.ai/api/v1"
-default_model = "qwen/qwen3-32b:free"
+default_model = "google/gemini-flash-1.5"
 timeout_ms = 60000
 
 [llm.novita]
@@ -135,9 +140,25 @@ timeout_ms = 120000
 [llm.routing]
 # Legacy task-based model selection (deprecated, use model_routing instead)
 classification = "groq:llama-3.3-70b-versatile"
-planning = "anthropic:claude-sonnet-4-20250514"
-code_generation = "anthropic:claude-sonnet-4-20250514"
+planning = "anthropic:claude-sonnet-4-5-20250929"
+code_generation = "anthropic:claude-sonnet-4-5-20250929"
 summarization = "groq:llama-3.3-70b-versatile"
+
+# ============================================================================
+# Olympus OS Configuration
+# ============================================================================
+
+[olympus]
+# Enable law enforcement validation on responses
+enforcement_enabled = true
+# Auto-apply silence punishment on violations (conservative default: off)
+auto_silence = false
+# Auto-add judgment entries on violations
+auto_judgment = true
+# Auto-log chronicle entries after task execution
+auto_chronicle = true
+# Auto-check promotion eligibility after chronicle logging
+auto_promotion = true
 
 # ============================================================================
 # Security Configuration

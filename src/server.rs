@@ -4,11 +4,11 @@
 
 use anyhow::{Context, Result};
 use axum::{routing::get, Extension, Json, Router};
-use config::{Config, Environment, File};
+use config::{Config, Environment, File, FileFormat};
 use cratos_channels::{TelegramAdapter, TelegramConfig};
 use cratos_core::{
-    metrics_global, shutdown_signal_with_controller, ApprovalManager, Orchestrator,
-    OrchestratorConfig, PlannerConfig, RedisStore, SchedulerConfig, SchedulerEngine,
+    metrics_global, shutdown_signal_with_controller, ApprovalManager, OlympusConfig, OlympusHooks,
+    Orchestrator, OrchestratorConfig, PlannerConfig, RedisStore, SchedulerConfig, SchedulerEngine,
     SchedulerStore, SessionStore, ShutdownController,
 };
 use cratos_llm::{
@@ -325,10 +325,16 @@ async fn metrics_endpoint() -> String {
     metrics_global::export_prometheus()
 }
 
+/// Embedded default configuration (compiled into binary)
+const DEFAULT_CONFIG: &str = include_str!("../config/default.toml");
+
 /// Load configuration from files and environment
 pub(crate) fn load_config() -> Result<AppConfig> {
     let config = Config::builder()
-        .add_source(File::with_name("config/default").required(true))
+        // 1. Embedded defaults (always available)
+        .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Toml))
+        // 2. External overrides (optional)
+        .add_source(File::with_name("config/default").required(false))
         .add_source(File::with_name("config/local").required(false))
         .add_source(
             File::with_name(&format!(
@@ -337,6 +343,7 @@ pub(crate) fn load_config() -> Result<AppConfig> {
             ))
             .required(false),
         )
+        // 3. Environment variables (highest priority)
         .add_source(
             Environment::with_prefix("CRATOS")
                 .separator("__")
@@ -362,7 +369,7 @@ pub(crate) fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn Llm
             if default_provider.is_none() {
                 default_provider = Some("groq".to_string());
             }
-            info!("Registered Groq provider (free tier)");
+            info!("Registered Groq provider");
         }
     }
     if let Ok(config) = OpenRouterConfig::from_env() {
@@ -396,13 +403,15 @@ pub(crate) fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn Llm
         }
     }
     if let Ok(config) = OpenAiConfig::from_env() {
+        let auth_source = config.auth_source;
+        cratos_llm::cli_auth::register_auth_source("openai", auth_source);
         let provider = OpenAiProvider::new(config);
         router.register("openai", Arc::new(provider));
         registered_count += 1;
         if default_provider.is_none() {
             default_provider = Some("openai".to_string());
         }
-        info!("Registered OpenAI provider");
+        info!("Registered OpenAI provider ({})", auth_source);
     }
     if let Ok(config) = AnthropicConfig::from_env() {
         if let Ok(provider) = AnthropicProvider::new(config) {
@@ -415,13 +424,15 @@ pub(crate) fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn Llm
         }
     }
     if let Ok(config) = GeminiConfig::from_env() {
+        let auth_source = config.auth_source;
+        cratos_llm::cli_auth::register_auth_source("gemini", auth_source);
         if let Ok(provider) = GeminiProvider::new(config) {
             router.register("gemini", Arc::new(provider));
             registered_count += 1;
             if default_provider.is_none() {
                 default_provider = Some("gemini".to_string());
             }
-            info!("Registered Gemini provider");
+            info!("Registered Gemini provider ({})", auth_source);
         }
     }
     if let Ok(config) = GlmConfig::from_env() {
@@ -458,6 +469,9 @@ pub(crate) fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn Llm
     if let Ok(provider) = OllamaProvider::new(ollama_config) {
         router.register("ollama", Arc::new(provider));
         registered_count += 1;
+        if default_provider.is_none() {
+            default_provider = Some("ollama".to_string());
+        }
         info!("Registered Ollama provider (local)");
     }
 
@@ -475,21 +489,35 @@ pub(crate) fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn Llm
                MOONSHOT_API_KEY    # Kimi K2\n\
                ZHIPU_API_KEY       # GLM-4.7\n\
                OPENAI_API_KEY\n\
-               ANTHROPIC_API_KEY"
+               ANTHROPIC_API_KEY\n\n\
+             Or use CLI subscription tokens:\n\
+               gemini auth login   # Gemini CLI (Antigravity Pro)\n\
+               codex auth login    # Codex CLI (ChatGPT Pro/Plus)"
         ));
     }
 
-    if llm_config.default_provider == "auto" || llm_config.default_provider.is_empty() {
+    // Normalize provider aliases (e.g., "google" -> "gemini")
+    let normalized_provider = match llm_config.default_provider.as_str() {
+        "google" => "gemini".to_string(),
+        "zhipu" | "zhipuai" => "glm".to_string(),
+        other => other.to_string(),
+    };
+
+    if normalized_provider == "auto" || normalized_provider.is_empty() {
         if let Some(dp) = default_provider {
             router.set_default(&dp);
             info!("Auto-selected default provider: {}", dp);
+        } else if let Some(first) = router.list_providers().first() {
+            let first = first.to_string();
+            router.set_default(&first);
+            info!("Auto-selected fallback provider: {}", first);
         }
-    } else if router.has_provider(&llm_config.default_provider) {
-        router.set_default(&llm_config.default_provider);
+    } else if router.has_provider(&normalized_provider) {
+        router.set_default(&normalized_provider);
     } else {
         warn!(
             "Configured default provider '{}' not available, using auto-detected",
-            llm_config.default_provider
+            normalized_provider
         );
         if let Some(dp) = default_provider {
             router.set_default(&dp);
@@ -717,11 +745,15 @@ pub async fn run() -> Result<()> {
         config.approval.default_mode
     );
 
+    let olympus_hooks = OlympusHooks::new(OlympusConfig::default());
+    info!("Olympus OS hooks initialized");
+
     let orchestrator = Arc::new(
         Orchestrator::new(llm_provider, tool_registry, orchestrator_config)
             .with_event_store(event_store.clone())
             .with_memory(session_store)
-            .with_approval_manager(approval_manager),
+            .with_approval_manager(approval_manager)
+            .with_olympus_hooks(olympus_hooks),
     );
     info!("Orchestrator initialized");
 
