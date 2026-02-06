@@ -451,7 +451,13 @@ fn truncate_text(text: &str, max_len: usize) -> String {
         return text.to_string();
     }
 
-    let truncated = &text[..max_len];
+    let safe_end = text.char_indices()
+        .take_while(|(i, _)| *i < max_len)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(0);
+    let truncated = &text[..safe_end];
+
     if let Some(last_space) = truncated.rfind(' ') {
         text[..last_space].to_string()
     } else {

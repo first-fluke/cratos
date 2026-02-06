@@ -18,6 +18,9 @@ use uuid::Uuid;
 /// to be used interchangeably.
 #[async_trait::async_trait]
 pub trait EventStoreTrait: Send + Sync {
+    /// Create an execution record (must be called before appending events)
+    async fn create_execution(&self, execution: &Execution) -> Result<()>;
+
     /// Append an event to the store
     async fn append(&self, event: Event) -> Result<()>;
 
@@ -652,6 +655,10 @@ impl EventStore {
 
 #[async_trait::async_trait]
 impl EventStoreTrait for EventStore {
+    async fn create_execution(&self, execution: &Execution) -> Result<()> {
+        EventStore::create_execution(self, execution).await
+    }
+
     async fn append(&self, event: Event) -> Result<()> {
         self.record_event(&event).await
     }

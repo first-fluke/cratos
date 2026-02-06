@@ -66,9 +66,13 @@ pub fn mask_for_logging(text: &str) -> String {
         }
     }
 
-    // Truncate long messages
+    // Truncate long messages (char boundary safe for multi-byte UTF-8)
     if text.len() > MAX_LOG_TEXT_LENGTH {
-        format!("{}...[truncated]", &text[..MAX_LOG_TEXT_LENGTH])
+        let truncated = match text.char_indices().take_while(|(i, _)| *i < MAX_LOG_TEXT_LENGTH).last() {
+            Some((i, c)) => &text[..i + c.len_utf8()],
+            None => "",
+        };
+        format!("{truncated}...[truncated]")
     } else {
         text.to_string()
     }
@@ -141,6 +145,18 @@ mod tests {
         let masked = mask_for_logging(&long_msg);
         assert!(masked.contains("truncated"));
         assert!(masked.len() < long_msg.len());
+    }
+
+    #[test]
+    fn test_mask_for_logging_truncate_multibyte() {
+        // Korean text: each char is 3 bytes, this string exceeds MAX_LOG_TEXT_LENGTH
+        let korean_msg = "지금 파일디렉토리 예시로 하나 알려줘봐 그리고 추가로 더 알려줘";
+        assert!(korean_msg.len() > MAX_LOG_TEXT_LENGTH);
+        // Must not panic on multi-byte boundary
+        let masked = mask_for_logging(korean_msg);
+        assert!(masked.contains("truncated"));
+        // Verify it's valid UTF-8 (would fail at compile time if not, but sanity check)
+        assert!(masked.is_char_boundary(0));
     }
 
     #[test]

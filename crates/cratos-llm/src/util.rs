@@ -78,6 +78,28 @@ pub fn sanitize_error_for_user(error: &str) -> String {
     error.to_string()
 }
 
+/// Truncate a string to at most `max_bytes` bytes at a valid UTF-8 char boundary.
+///
+/// Unlike `&s[..max_bytes]`, this never panics on multi-byte characters.
+///
+/// # Examples
+/// ```
+/// use cratos_llm::util::truncate_safe;
+/// assert_eq!(truncate_safe("hello world", 5), "hello");
+/// assert_eq!(truncate_safe("short", 100), "short");
+/// ```
+#[must_use]
+pub fn truncate_safe(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Validate API key is not empty and has minimum length
 ///
 /// Returns an error message if validation fails, None if valid.
@@ -144,5 +166,28 @@ mod tests {
         assert!(validate_api_key("", "Test").is_some());
         assert!(validate_api_key("short", "Test").is_some());
         assert!(validate_api_key("valid-api-key-12345", "Test").is_none());
+    }
+
+    #[test]
+    fn test_truncate_safe_ascii() {
+        assert_eq!(truncate_safe("hello world", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_safe_multibyte() {
+        // '한' = 3 bytes, '글' = 3 bytes
+        let s = "한글test";
+        assert_eq!(truncate_safe(s, 4), "한"); // 3+1 → backs to 3-byte boundary
+        assert_eq!(truncate_safe(s, 6), "한글");
+    }
+
+    #[test]
+    fn test_truncate_safe_no_truncation() {
+        assert_eq!(truncate_safe("short", 100), "short");
+    }
+
+    #[test]
+    fn test_truncate_safe_empty() {
+        assert_eq!(truncate_safe("", 10), "");
     }
 }
