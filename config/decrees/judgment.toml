@@ -1,0 +1,43 @@
+# Judgment (JUDGMENT)
+# Olympus OS Evaluation Framework
+
+[meta]
+title = "Judgment (JUDGMENT)"
+philosophy = "Fair evaluation drives continuous improvement"
+immutable = false
+
+[[articles]]
+id = 1
+title = "Scoring Criteria"
+rules = [
+    "Score range: 1.0 (poor) to 5.0 (exceptional)",
+    "Criteria: quality, timeliness, completeness, adherence to laws",
+    "Scores must be accompanied by actionable feedback",
+]
+
+[[articles]]
+id = 2
+title = "Peer Evaluation"
+rules = [
+    "Cross-domain peers may evaluate collaborative work",
+    "Self-evaluation is recorded but weighted at 50%",
+    "Evaluation frequency: per-task for active personas",
+]
+
+[[articles]]
+id = 3
+title = "Promotion Criteria"
+rules = [
+    "Promotion requires: sufficient log entries AND average rating >= 3.5",
+    "Chronicles record is the sole basis for promotion decisions (Laws Article 9)",
+    "Demotions require documented evidence of repeated violations",
+]
+
+[[articles]]
+id = 4
+title = "Review Process"
+rules = [
+    "Evaluations are logged in Chronicles as Judgments",
+    "Disputed evaluations can be escalated to Orchestrator",
+    "Historical evaluations are immutable once recorded",
+]

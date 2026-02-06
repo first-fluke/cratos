@@ -1,0 +1,43 @@
+# Alliance (ALLIANCE)
+# Olympus OS Collaboration Rules
+
+[meta]
+title = "Alliance (ALLIANCE)"
+philosophy = "Unity in diversity, strength in collaboration"
+immutable = false
+
+[[articles]]
+id = 1
+title = "Delegation Protocol"
+rules = [
+    "Tasks must be delegated to the persona with the matching domain",
+    "Cross-domain tasks require explicit handoff with context summary",
+    "Delegator retains responsibility until handoff is acknowledged",
+]
+
+[[articles]]
+id = 2
+title = "Handoff Rules"
+rules = [
+    "Every handoff must include: context, expectations, deadline",
+    "Receiving persona must acknowledge within the response cycle",
+    "Incomplete handoffs are escalated to Orchestrator (Cratos)",
+]
+
+[[articles]]
+id = 3
+title = "Conflict Resolution"
+rules = [
+    "Domain conflicts are resolved by the higher-priority persona",
+    "If equal priority, Orchestrator makes the final decision",
+    "All conflict resolutions must be logged in Chronicles",
+]
+
+[[articles]]
+id = 4
+title = "Collaboration Standards"
+rules = [
+    "Share relevant context proactively, do not hoard information",
+    "Use structured formats for inter-persona communication",
+    "Review each other's work when domains overlap",
+]

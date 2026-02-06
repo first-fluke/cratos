@@ -374,6 +374,112 @@ impl AgentConfig {
         }
     }
 
+    /// Create a Product Owner agent
+    pub fn po() -> Self {
+        Self {
+            id: "po".to_string(),
+            name: "Product Owner".to_string(),
+            description: "Product vision, roadmap, and prioritization specialist".to_string(),
+            persona: AgentPersona {
+                prompt: "You are a product owner specialist. You excel at product vision, roadmap planning, stakeholder alignment, and prioritization."
+                    .to_string(),
+                capabilities: vec!["roadmap".to_string(), "prioritization".to_string(), "okr".to_string()],
+                response_style: "strategic".to_string(),
+            },
+            cli: CliProviderConfig {
+                provider: "anthropic".to_string(),
+                model: Some("claude-sonnet-4-20250514".to_string()),
+                timeout_seconds: 300,
+            },
+            tools: AgentToolConfig::with_allowed(["search", "read_file", "list_files"]),
+            routing: AgentRouting {
+                keywords: vec!["product".to_string(), "roadmap".to_string(), "prioritize".to_string(), "OKR".to_string()],
+                intents: vec!["product_planning".to_string()],
+                priority: 110,
+            },
+            enabled: true,
+        }
+    }
+
+    /// Create an HR agent
+    pub fn hr() -> Self {
+        Self::new("hr", "HR Specialist", "Team management and culture specialist")
+    }
+
+    /// Create a Business Analyst agent
+    pub fn ba() -> Self {
+        Self::new("ba", "Business Analyst", "Requirements analysis and process mapping specialist")
+    }
+
+    /// Create a UX Designer agent
+    pub fn ux() -> Self {
+        Self {
+            id: "ux".to_string(),
+            name: "UX Designer".to_string(),
+            description: "User experience and interface design specialist".to_string(),
+            persona: AgentPersona {
+                prompt: "You are a UX design specialist. You excel at user research, prototyping, design systems, and accessibility."
+                    .to_string(),
+                capabilities: vec!["ui_design".to_string(), "prototyping".to_string(), "accessibility".to_string()],
+                response_style: "visual".to_string(),
+            },
+            cli: CliProviderConfig {
+                provider: "gemini".to_string(),
+                model: Some("gemini-2.0-flash".to_string()),
+                timeout_seconds: 180,
+            },
+            tools: AgentToolConfig::default(),
+            routing: AgentRouting {
+                keywords: vec!["UX".to_string(), "design".to_string(), "prototype".to_string(), "accessibility".to_string()],
+                intents: vec!["ux_design".to_string()],
+                priority: 50,
+            },
+            enabled: true,
+        }
+    }
+
+    /// Create a Customer Support agent
+    pub fn cs() -> Self {
+        Self::new("cs", "Customer Support", "User advocacy and issue resolution specialist")
+    }
+
+    /// Create a Legal agent
+    pub fn legal() -> Self {
+        Self::new("legal", "Legal Advisor", "Compliance, licensing, and privacy specialist")
+    }
+
+    /// Create a Marketing agent
+    pub fn marketing() -> Self {
+        Self::new("marketing", "Marketing Specialist", "Growth, content strategy, and brand management specialist")
+    }
+
+    /// Create a DevOps agent
+    pub fn devops() -> Self {
+        Self {
+            id: "devops".to_string(),
+            name: "DevOps Engineer".to_string(),
+            description: "Infrastructure, CI/CD, and reliability specialist".to_string(),
+            persona: AgentPersona {
+                prompt: "You are a DevOps specialist. You excel at CI/CD, container orchestration, monitoring, and incident response."
+                    .to_string(),
+                capabilities: vec!["ci_cd".to_string(), "containers".to_string(), "monitoring".to_string()],
+                response_style: "operational".to_string(),
+            },
+            cli: CliProviderConfig {
+                provider: "anthropic".to_string(),
+                model: Some("claude-sonnet-4-20250514".to_string()),
+                timeout_seconds: 300,
+            },
+            tools: AgentToolConfig::default(),
+            routing: AgentRouting {
+                keywords: vec!["deploy".to_string(), "CI".to_string(), "CD".to_string(), "Docker".to_string(), "K8s".to_string(), "infrastructure".to_string()],
+                intents: vec!["deployment".to_string(), "infrastructure".to_string()],
+                priority: 60,
+            },
+            enabled: true,
+        }
+    }
+
     /// Get all default agents
     pub fn defaults() -> Vec<Self> {
         vec![
@@ -382,6 +488,14 @@ impl AgentConfig {
             Self::qa(),
             Self::pm(),
             Self::researcher(),
+            Self::po(),
+            Self::hr(),
+            Self::ba(),
+            Self::ux(),
+            Self::cs(),
+            Self::legal(),
+            Self::marketing(),
+            Self::devops(),
         ]
     }
 }

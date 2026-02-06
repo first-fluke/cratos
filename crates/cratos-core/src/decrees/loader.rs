@@ -55,6 +55,36 @@ impl DecreeLoader {
         self.load_file(&path)
     }
 
+    /// Load alliance (collaboration rules)
+    pub fn load_alliance(&self) -> Result<Laws> {
+        let path = self.config_dir.join("alliance.toml");
+        self.load_file(&path)
+    }
+
+    /// Load tribute (cost/budget rules)
+    pub fn load_tribute(&self) -> Result<Laws> {
+        let path = self.config_dir.join("tribute.toml");
+        self.load_file(&path)
+    }
+
+    /// Load judgment (evaluation framework)
+    pub fn load_judgment(&self) -> Result<Laws> {
+        let path = self.config_dir.join("judgment.toml");
+        self.load_file(&path)
+    }
+
+    /// Load culture (values and communication)
+    pub fn load_culture(&self) -> Result<Laws> {
+        let path = self.config_dir.join("culture.toml");
+        self.load_file(&path)
+    }
+
+    /// Load operations (operational procedures)
+    pub fn load_operations(&self) -> Result<Laws> {
+        let path = self.config_dir.join("operations.toml");
+        self.load_file(&path)
+    }
+
     /// Check if laws exist
     #[must_use]
     pub fn laws_exists(&self) -> bool {
@@ -71,6 +101,36 @@ impl DecreeLoader {
     #[must_use]
     pub fn warfare_exists(&self) -> bool {
         self.config_dir.join("warfare.toml").exists()
+    }
+
+    /// Check if alliance rules exist
+    #[must_use]
+    pub fn alliance_exists(&self) -> bool {
+        self.config_dir.join("alliance.toml").exists()
+    }
+
+    /// Check if tribute rules exist
+    #[must_use]
+    pub fn tribute_exists(&self) -> bool {
+        self.config_dir.join("tribute.toml").exists()
+    }
+
+    /// Check if judgment framework exists
+    #[must_use]
+    pub fn judgment_exists(&self) -> bool {
+        self.config_dir.join("judgment.toml").exists()
+    }
+
+    /// Check if culture rules exist
+    #[must_use]
+    pub fn culture_exists(&self) -> bool {
+        self.config_dir.join("culture.toml").exists()
+    }
+
+    /// Check if operations rules exist
+    #[must_use]
+    pub fn operations_exists(&self) -> bool {
+        self.config_dir.join("operations.toml").exists()
     }
 
     /// Validate all decrees
@@ -119,6 +179,49 @@ impl DecreeLoader {
             }
         }
 
+        // Check extended decrees
+        let extended_names = ["alliance", "tribute", "judgment", "culture", "operations"];
+        for name in extended_names {
+            let exists = match name {
+                "alliance" => self.alliance_exists(),
+                "tribute" => self.tribute_exists(),
+                "judgment" => self.judgment_exists(),
+                "culture" => self.culture_exists(),
+                "operations" => self.operations_exists(),
+                _ => false,
+            };
+            if !exists {
+                continue;
+            }
+            let load_result = match name {
+                "alliance" => self.load_alliance(),
+                "tribute" => self.load_tribute(),
+                "judgment" => self.load_judgment(),
+                "culture" => self.load_culture(),
+                "operations" => self.load_operations(),
+                _ => continue,
+            };
+            match load_result {
+                Ok(decree) => {
+                    result.extended.push(ExtendedDecreeResult {
+                        name: name.to_string(),
+                        count: Some(decree.article_count()),
+                        valid: decree.article_count() > 0,
+                        error: None,
+                    });
+                }
+                Err(e) => {
+                    warn!(error = %e, decree = name, "Failed to load extended decree");
+                    result.extended.push(ExtendedDecreeResult {
+                        name: name.to_string(),
+                        count: None,
+                        valid: false,
+                        error: Some(e.to_string()),
+                    });
+                }
+            }
+        }
+
         result
     }
 
@@ -150,6 +253,19 @@ impl Default for DecreeLoader {
     }
 }
 
+/// Result for an extended decree validation
+#[derive(Debug)]
+pub struct ExtendedDecreeResult {
+    /// Decree name (e.g., "alliance", "tribute")
+    pub name: String,
+    /// Article count
+    pub count: Option<usize>,
+    /// Valid flag
+    pub valid: bool,
+    /// Error message
+    pub error: Option<String>,
+}
+
 /// Validation result
 #[derive(Debug, Default)]
 pub struct ValidationResult {
@@ -173,6 +289,9 @@ pub struct ValidationResult {
     pub warfare_valid: bool,
     /// Warfare error message
     pub warfare_error: Option<String>,
+
+    /// Extended decree results
+    pub extended: Vec<ExtendedDecreeResult>,
 }
 
 impl ValidationResult {

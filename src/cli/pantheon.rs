@@ -4,7 +4,7 @@
 
 use super::PantheonCommands;
 use anyhow::Result;
-use cratos_core::pantheon::PersonaLoader;
+use cratos_core::pantheon::{ActivePersonaState, PersonaLoader};
 
 /// Run pantheon command
 pub async fn run(cmd: PantheonCommands) -> Result<()> {
@@ -12,6 +12,7 @@ pub async fn run(cmd: PantheonCommands) -> Result<()> {
         PantheonCommands::List => list().await,
         PantheonCommands::Show { name } => show(&name).await,
         PantheonCommands::Summon { name } => summon(&name).await,
+        PantheonCommands::Dismiss => dismiss().await,
     }
 }
 
@@ -28,16 +29,28 @@ async fn list() -> Result<()> {
         return Ok(());
     }
 
+    // Check active persona
+    let active = ActivePersonaState::new()
+        .load()
+        .unwrap_or(None)
+        .map(|n| n.to_lowercase());
+
     // Supreme (Cratos - Lv255)
     let supreme: Vec<_> = presets.iter().filter(|p| p.level.is_supreme()).collect();
     if !supreme.is_empty() {
         println!("  SUPREME:");
         for preset in supreme {
+            let marker = if active.as_deref() == Some(&preset.persona.name.to_lowercase()) {
+                " ⚡"
+            } else {
+                ""
+            };
             println!(
-                "    {:12} Lv{}  {}",
+                "    {:12} Lv{}  {}{}",
                 preset.persona.name.to_lowercase(),
                 preset.level.level_display(),
-                preset.persona.title
+                preset.persona.title,
+                marker
             );
         }
         println!();
@@ -48,12 +61,18 @@ async fn list() -> Result<()> {
     if !regular.is_empty() {
         println!("  ROLES:");
         for preset in regular {
+            let marker = if active.as_deref() == Some(&preset.persona.name.to_lowercase()) {
+                " ⚡"
+            } else {
+                ""
+            };
             println!(
-                "    {:12} Lv{}  {} ({:?})",
+                "    {:12} Lv{}  {} ({:?}){}",
                 preset.persona.name.to_lowercase(),
                 preset.level.level,
                 preset.persona.title,
-                preset.persona.domain
+                preset.persona.domain,
+                marker
             );
         }
     }
@@ -115,6 +134,10 @@ async fn summon(name: &str) -> Result<()> {
     let loader = PersonaLoader::new();
     let preset = loader.load(name)?;
 
+    // Save active persona state
+    let state = ActivePersonaState::new();
+    state.save(&preset.persona.name)?;
+
     println!("\n⚡ Summoning {}...\n", preset.persona.name);
     println!(
         "[{} Lv{}] Summoned. How may I assist you?",
@@ -123,8 +146,22 @@ async fn summon(name: &str) -> Result<()> {
     );
     println!();
 
-    // TODO: Apply persona to actual session
-    // Currently only displays information
+    Ok(())
+}
+
+/// Dismiss (deactivate) the active persona
+async fn dismiss() -> Result<()> {
+    let state = ActivePersonaState::new();
+
+    match state.load()? {
+        Some(name) => {
+            state.clear()?;
+            println!("\n👋 {} has been dismissed.\n", name);
+        }
+        None => {
+            println!("\n⚠️  No active persona to dismiss.\n");
+        }
+    }
 
     Ok(())
 }

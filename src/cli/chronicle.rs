@@ -5,6 +5,7 @@
 use super::ChronicleCommands;
 use anyhow::Result;
 use cratos_core::chronicles::{Chronicle, ChronicleStatus, ChronicleStore};
+use cratos_core::pantheon::ActivePersonaState;
 
 /// Run chronicle command
 pub async fn run(cmd: ChronicleCommands) -> Result<()> {
@@ -188,7 +189,10 @@ async fn show(name: &str) -> Result<()> {
 
 /// Add log entry to chronicle
 async fn log(message: &str, law: Option<&str>, persona: Option<&str>) -> Result<()> {
-    let persona_name = persona.unwrap_or("sindri"); // default
+    let active = ActivePersonaState::new().load().unwrap_or(None);
+    let persona_name = persona
+        .or(active.as_deref())
+        .unwrap_or("sindri");
 
     let store = ChronicleStore::new();
     let mut chronicle = store

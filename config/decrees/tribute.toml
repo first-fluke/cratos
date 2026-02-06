@@ -1,0 +1,43 @@
+# Tribute (TRIBUTE)
+# Olympus OS Cost and Budget Rules
+
+[meta]
+title = "Tribute (TRIBUTE)"
+philosophy = "Spend wisely, account for every token"
+immutable = false
+
+[[articles]]
+id = 1
+title = "Token Budget"
+rules = [
+    "Each task has a maximum token budget based on complexity tier",
+    "Simple tasks: max 1K tokens, General: max 4K, Complex: max 16K",
+    "Budget overruns must be justified and logged",
+]
+
+[[articles]]
+id = 2
+title = "Cost Allocation"
+rules = [
+    "Use the cheapest provider that meets quality requirements",
+    "Free-tier providers preferred for classification and simple tasks",
+    "Premium providers reserved for planning and code generation",
+]
+
+[[articles]]
+id = 3
+title = "Resource Efficiency"
+rules = [
+    "Cache results when possible to avoid redundant API calls",
+    "Batch related operations to minimize round trips",
+    "Monitor and report monthly cost trends",
+]
+
+[[articles]]
+id = 4
+title = "Budget Governance"
+rules = [
+    "Monthly budget caps are enforced automatically",
+    "Alerts at 80% budget consumption threshold",
+    "Emergency budget override requires Orchestrator approval",
+]

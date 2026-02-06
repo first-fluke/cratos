@@ -19,16 +19,27 @@ fn test_load_all_real_personas() {
     let loader = PersonaLoader::with_path(project_pantheon_dir());
     let personas = loader.load_all().expect("Failed to load personas");
 
-    // Verify Core 5 personas
-    assert_eq!(personas.len(), 5, "Should have 5 core personas");
+    // Verify Core 5 + Extended 9 personas
+    assert_eq!(personas.len(), 14, "Should have 14 personas (5 core + 9 extended)");
 
-    // Verify names
+    // Verify core names
     let names: Vec<_> = personas.iter().map(|p| p.persona.name.as_str()).collect();
     assert!(names.contains(&"Cratos"), "Should have Cratos");
     assert!(names.contains(&"Athena"), "Should have Athena");
     assert!(names.contains(&"Sindri"), "Should have Sindri");
     assert!(names.contains(&"Heimdall"), "Should have Heimdall");
     assert!(names.contains(&"Mimir"), "Should have Mimir");
+
+    // Verify extended names
+    assert!(names.contains(&"Odin"), "Should have Odin");
+    assert!(names.contains(&"Hestia"), "Should have Hestia");
+    assert!(names.contains(&"Norns"), "Should have Norns");
+    assert!(names.contains(&"Apollo"), "Should have Apollo");
+    assert!(names.contains(&"Freya"), "Should have Freya");
+    assert!(names.contains(&"Tyr"), "Should have Tyr");
+    assert!(names.contains(&"Nike"), "Should have Nike");
+    assert!(names.contains(&"Thor"), "Should have Thor");
+    assert!(names.contains(&"Brok"), "Should have Brok");
 }
 
 #[test]

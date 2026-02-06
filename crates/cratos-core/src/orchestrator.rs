@@ -6,9 +6,10 @@
 use crate::approval::SharedApprovalManager;
 use crate::error::Result;
 use crate::memory::{MemoryStore, SessionContext, SessionStore, WorkingMemory};
+use crate::olympus_hooks::OlympusHooks;
 use crate::planner::{Planner, PlannerConfig};
 use cratos_llm::{LlmProvider, ToolCall};
-use cratos_replay::{Event, EventStoreTrait, EventType};
+use cratos_replay::{Event, EventStoreTrait, EventType, Execution};
 use cratos_tools::{RunnerConfig, ToolRegistry, ToolRunner};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -179,6 +180,7 @@ pub struct Orchestrator {
     memory: Arc<dyn SessionStore>,
     event_store: Option<Arc<dyn EventStoreTrait>>,
     approval_manager: Option<SharedApprovalManager>,
+    olympus_hooks: Option<OlympusHooks>,
     config: OrchestratorConfig,
 }
 
@@ -199,6 +201,7 @@ impl Orchestrator {
             memory: Arc::new(MemoryStore::new()),
             event_store: None,
             approval_manager: None,
+            olympus_hooks: None,
             config,
         }
     }
@@ -218,6 +221,12 @@ impl Orchestrator {
     /// Set the approval manager for high-risk tool execution
     pub fn with_approval_manager(mut self, manager: SharedApprovalManager) -> Self {
         self.approval_manager = Some(manager);
+        self
+    }
+
+    /// Set the Olympus OS hooks for post-execution processing
+    pub fn with_olympus_hooks(mut self, hooks: OlympusHooks) -> Self {
+        self.olympus_hooks = Some(hooks);
         self
     }
 
@@ -242,6 +251,22 @@ impl Orchestrator {
             text = %input.text,
             "Starting execution"
         );
+
+        // Create execution record in event store (required before logging events)
+        if let Some(store) = &self.event_store {
+            let execution = Execution::new(
+                &input.channel_type,
+                &input.channel_id,
+                &input.user_id,
+                &input.text,
+            );
+            // Override the auto-generated ID with our execution_id
+            let mut execution = execution;
+            execution.id = execution_id;
+            if let Err(e) = store.create_execution(&execution).await {
+                warn!(error = %e, "Failed to create execution record");
+            }
+        }
 
         // Log user input event
         self.log_event(
@@ -397,10 +422,22 @@ impl Orchestrator {
         )
         .await;
 
+        // Sanitize response: strip leaked XML tags from weak models
+        let final_response = sanitize_response(&final_response);
+
         // Update session with assistant response
         if let Ok(Some(mut session)) = self.memory.get(&session_key).await {
             session.add_assistant_message(&final_response);
             let _ = self.memory.save(&session).await;
+        }
+
+        // Run Olympus OS post-execution hooks (fire-and-forget)
+        if let Some(hooks) = &self.olympus_hooks {
+            let persona = hooks.active_persona().unwrap_or_else(|| "unknown".to_string());
+            let task_completed = !final_response.is_empty();
+            if let Err(e) = hooks.post_execute(&persona, &final_response, task_completed) {
+                warn!(error = %e, "Olympus post-execute hook failed");
+            }
         }
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
@@ -564,6 +601,38 @@ impl Orchestrator {
             .map(|s| s.message_count())
             .unwrap_or(0)
     }
+}
+
+/// Sanitize LLM response before sending to users.
+///
+/// Weak models sometimes generate XML-like tags (e.g. `<tool_response>`) in their text output
+/// instead of using the function calling API properly. This strips those artifacts.
+fn sanitize_response(text: &str) -> String {
+    use regex::Regex;
+
+    // Lazy-init compiled regex patterns
+    static PATTERNS: std::sync::OnceLock<Vec<Regex>> = std::sync::OnceLock::new();
+    let patterns = PATTERNS.get_or_init(|| {
+        vec![
+            // <tool_response>...</tool_response> and similar tags
+            Regex::new(r"(?s)</?(?:tool_response|tool_call|function_call|function_response|system|thinking)>").unwrap(),
+            // JSON blocks that look like raw tool output: {"key": ...}
+            // Only strip if preceded by a tag-like marker
+            Regex::new(r"(?s)<tool_response>\s*\{[^}]*\}\s*</tool_response>").unwrap(),
+        ]
+    });
+
+    let mut result = text.to_string();
+    for pat in patterns {
+        result = pat.replace_all(&result, "").to_string();
+    }
+
+    // Clean up excessive blank lines left behind
+    while result.contains("\n\n\n") {
+        result = result.replace("\n\n\n", "\n\n");
+    }
+
+    result.trim().to_string()
 }
 
 #[cfg(test)]

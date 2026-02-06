@@ -23,6 +23,7 @@ pub mod credentials;
 pub mod decrees;
 pub mod error;
 pub mod memory;
+pub mod olympus_hooks;
 pub mod orchestrator;
 pub mod pantheon;
 pub mod permissions;
@@ -80,17 +81,23 @@ pub use telemetry::{
     global_telemetry, init_telemetry, Telemetry, TelemetryConfig, TelemetryEvent, TelemetryStats,
 };
 
+// Re-export Olympus hooks
+pub use olympus_hooks::{OlympusConfig, OlympusHooks, PostExecutionSummary};
+
 // Re-export pantheon module types (Olympus OS)
 pub use pantheon::{
-    Domain, PersonaInfo, PersonaLevel, PersonaLoader, PersonaPreset, PersonaPrinciples,
-    PersonaSkills, PersonaTraits,
+    ActivePersonaState, Domain, PersonaInfo, PersonaLevel, PersonaLoader, PersonaPreset,
+    PersonaPrinciples, PersonaSkills, PersonaTraits,
 };
 
 // Re-export chronicles module types (Olympus OS)
 pub use chronicles::{Chronicle, ChronicleEntry, ChronicleStatus, ChronicleStore, Judgment, Quest};
 
 // Re-export decrees module types (Olympus OS)
-pub use decrees::{Article, DecreeLoader, Laws, Rank, RankLevel, Ranks, Warfare, WarfareSection};
+pub use decrees::{
+    Article, DecreeLoader, EnforcementAction, EnforcerConfig, ExtendedDecreeResult, LawEnforcer,
+    LawViolation, Laws, Rank, RankLevel, Ranks, ValidationResult, Warfare, WarfareSection,
+};
 
 // Re-export scheduler module types
 pub use scheduler::{

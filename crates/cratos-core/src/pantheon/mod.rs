@@ -19,10 +19,12 @@
 
 #![forbid(unsafe_code)]
 
+mod active_persona;
 mod domain;
 mod loader;
 mod preset;
 
+pub use active_persona::ActivePersonaState;
 pub use domain::Domain;
 pub use loader::PersonaLoader;
 pub use preset::{

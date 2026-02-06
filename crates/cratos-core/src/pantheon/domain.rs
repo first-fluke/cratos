@@ -24,16 +24,23 @@ pub enum Domain {
     Qa,
     /// Researcher (Mimir)
     Researcher,
-    // Extended (Phase 2)
-    // Oracle,
-    // Po,
-    // Hr,
-    // Ba,
-    // Ux,
-    // Cs,
-    // Legal,
-    // Marketing,
-    // DevOps,
+    /// Product Owner (Odin)
+    Po,
+    /// Human Resources (Hestia)
+    Hr,
+    /// Business Analyst (Norns)
+    Ba,
+    /// UX Designer (Apollo)
+    Ux,
+    /// Customer Support (Freya)
+    Cs,
+    /// Legal (Tyr)
+    Legal,
+    /// Marketing (Nike)
+    Marketing,
+    /// DevOps (Thor)
+    #[serde(alias = "DEVOPS")]
+    DevOps,
 }
 
 impl Domain {
@@ -46,6 +53,14 @@ impl Domain {
             Self::Dev => "DEV",
             Self::Qa => "QA",
             Self::Researcher => "RESEARCHER",
+            Self::Po => "PO",
+            Self::Hr => "HR",
+            Self::Ba => "BA",
+            Self::Ux => "UX",
+            Self::Cs => "CS",
+            Self::Legal => "LEGAL",
+            Self::Marketing => "MARKETING",
+            Self::DevOps => "DEVOPS",
         }
     }
 
@@ -58,6 +73,14 @@ impl Domain {
             Self::Dev => "backend",
             Self::Qa => "qa",
             Self::Researcher => "researcher",
+            Self::Po => "po",
+            Self::Hr => "hr",
+            Self::Ba => "ba",
+            Self::Ux => "ux",
+            Self::Cs => "cs",
+            Self::Legal => "legal",
+            Self::Marketing => "marketing",
+            Self::DevOps => "devops",
         }
     }
 
@@ -66,10 +89,18 @@ impl Domain {
     pub const fn priority(&self) -> u32 {
         match self {
             Self::Orchestrator => 1000,
+            Self::Po => 110,
             Self::Pm => 100,
             Self::Dev => 90,
             Self::Qa => 80,
             Self::Researcher => 70,
+            Self::Ba => 65,
+            Self::DevOps => 60,
+            Self::Legal => 55,
+            Self::Ux => 50,
+            Self::Marketing => 45,
+            Self::Hr => 40,
+            Self::Cs => 35,
         }
     }
 }
@@ -131,5 +162,52 @@ mod tests {
     #[test]
     fn test_domain_display() {
         assert_eq!(format!("{}", Domain::Qa), "QA");
+    }
+
+    #[test]
+    fn test_extended_domain_as_str() {
+        assert_eq!(Domain::Po.as_str(), "PO");
+        assert_eq!(Domain::Hr.as_str(), "HR");
+        assert_eq!(Domain::Ba.as_str(), "BA");
+        assert_eq!(Domain::Ux.as_str(), "UX");
+        assert_eq!(Domain::Cs.as_str(), "CS");
+        assert_eq!(Domain::Legal.as_str(), "LEGAL");
+        assert_eq!(Domain::Marketing.as_str(), "MARKETING");
+        assert_eq!(Domain::DevOps.as_str(), "DEVOPS");
+    }
+
+    #[test]
+    fn test_extended_domain_to_agent_id() {
+        assert_eq!(Domain::Po.to_agent_id(), "po");
+        assert_eq!(Domain::Hr.to_agent_id(), "hr");
+        assert_eq!(Domain::Ba.to_agent_id(), "ba");
+        assert_eq!(Domain::Ux.to_agent_id(), "ux");
+        assert_eq!(Domain::Cs.to_agent_id(), "cs");
+        assert_eq!(Domain::Legal.to_agent_id(), "legal");
+        assert_eq!(Domain::Marketing.to_agent_id(), "marketing");
+        assert_eq!(Domain::DevOps.to_agent_id(), "devops");
+    }
+
+    #[test]
+    fn test_extended_domain_priority() {
+        assert!(Domain::Po.priority() > Domain::Pm.priority());
+        assert!(Domain::Ba.priority() > Domain::DevOps.priority());
+        assert!(Domain::Cs.priority() < Domain::Hr.priority());
+    }
+
+    #[test]
+    fn test_extended_domain_serialize() {
+        let domain = Domain::DevOps;
+        let json = serde_json::to_string(&domain).unwrap();
+        assert_eq!(json, r#""DEVOPS""#);
+    }
+
+    #[test]
+    fn test_extended_domain_deserialize() {
+        let domain: Domain = serde_json::from_str(r#""PO""#).unwrap();
+        assert_eq!(domain, Domain::Po);
+
+        let domain: Domain = serde_json::from_str(r#""DEVOPS""#).unwrap();
+        assert_eq!(domain, Domain::DevOps);
     }
 }

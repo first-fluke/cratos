@@ -16,12 +16,14 @@
 //! }
 //! ```
 
+mod enforcer;
 mod laws;
 mod loader;
 mod ranks;
 mod warfare;
 
+pub use enforcer::{EnforcementAction, EnforcerConfig, LawEnforcer, LawViolation};
 pub use laws::{Article, Laws};
-pub use loader::DecreeLoader;
+pub use loader::{DecreeLoader, ExtendedDecreeResult, ValidationResult};
 pub use ranks::{Rank, RankLevel, Ranks};
 pub use warfare::{Warfare, WarfareSection};

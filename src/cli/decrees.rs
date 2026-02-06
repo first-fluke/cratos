@@ -22,6 +22,11 @@ async fn show(decree_type: &DecreeType) -> Result<()> {
         DecreeType::Laws => show_laws(&loader).await,
         DecreeType::Ranks => show_ranks(&loader).await,
         DecreeType::Warfare => show_warfare(&loader).await,
+        DecreeType::Alliance => show_extended(&loader, "alliance").await,
+        DecreeType::Tribute => show_extended(&loader, "tribute").await,
+        DecreeType::Judgment => show_extended(&loader, "judgment").await,
+        DecreeType::Culture => show_extended(&loader, "culture").await,
+        DecreeType::Operations => show_extended(&loader, "operations").await,
     }
 }
 
@@ -88,6 +93,45 @@ async fn show_warfare(loader: &DecreeLoader) -> Result<()> {
     Ok(())
 }
 
+/// Show an extended decree (alliance, tribute, judgment, culture, operations)
+async fn show_extended(loader: &DecreeLoader, name: &str) -> Result<()> {
+    let exists = match name {
+        "alliance" => loader.alliance_exists(),
+        "tribute" => loader.tribute_exists(),
+        "judgment" => loader.judgment_exists(),
+        "culture" => loader.culture_exists(),
+        "operations" => loader.operations_exists(),
+        _ => false,
+    };
+
+    if !exists {
+        println!("⚠️  {name} not found: config/decrees/{name}.toml");
+        println!();
+        println!("  Create {name}.toml with [meta] + [[articles]] structure.");
+        return Ok(());
+    }
+
+    let result = match name {
+        "alliance" => loader.load_alliance(),
+        "tribute" => loader.load_tribute(),
+        "judgment" => loader.load_judgment(),
+        "culture" => loader.load_culture(),
+        "operations" => loader.load_operations(),
+        _ => unreachable!(),
+    };
+
+    match result {
+        Ok(decree) => {
+            println!("{}", decree.format_display());
+        }
+        Err(e) => {
+            println!("⚠️  Failed to load {name}: {e}");
+        }
+    }
+
+    Ok(())
+}
+
 /// Validate decree compliance
 async fn validate() -> Result<()> {
     println!("\n⚖️  Validating decree compliance...\n");
@@ -132,6 +176,19 @@ async fn validate() -> Result<()> {
         println!("  ⚠️  Warfare: Error - {err}");
     } else {
         println!("  ⚠️  Warfare: Not found (optional)");
+    }
+
+    // Extended decrees
+    for ext in &result.extended {
+        if let Some(count) = ext.count {
+            if ext.valid {
+                println!("  ✅ {} ({count} articles): Valid", ext.name);
+            } else {
+                println!("  ⚠️  {} ({count} articles): Empty", ext.name);
+            }
+        } else if let Some(err) = &ext.error {
+            println!("  ⚠️  {}: Error - {err}", ext.name);
+        }
     }
 
     println!();

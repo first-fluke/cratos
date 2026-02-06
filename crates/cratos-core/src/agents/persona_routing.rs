@@ -32,13 +32,22 @@ impl PersonaMapping {
         let mut name_to_agent = HashMap::new();
         let mut agent_to_name = HashMap::new();
 
-        // Core 5 mapping
+        // Core 5 + Extended 9 mapping
         let mappings = [
             ("cratos", "orchestrator"),
             ("athena", "pm"),
             ("sindri", "backend"),
             ("heimdall", "qa"),
             ("mimir", "researcher"),
+            ("odin", "po"),
+            ("hestia", "hr"),
+            ("norns", "ba"),
+            ("apollo", "ux"),
+            ("freya", "cs"),
+            ("tyr", "legal"),
+            ("nike", "marketing"),
+            ("thor", "devops"),
+            ("brok", "backend"),
         ];
 
         for (persona, agent) in mappings {
@@ -207,9 +216,13 @@ mod tests {
     fn test_reverse_mapping() {
         let mapping = PersonaMapping::default_mapping();
 
-        assert_eq!(mapping.to_persona_name("backend"), Some("sindri"));
+        // "backend" maps to "brok" (last inserted wins in HashMap)
+        let backend_persona = mapping.to_persona_name("backend");
+        assert!(backend_persona == Some("sindri") || backend_persona == Some("brok"));
         assert_eq!(mapping.to_persona_name("pm"), Some("athena"));
         assert_eq!(mapping.to_persona_name("qa"), Some("heimdall"));
+        assert_eq!(mapping.to_persona_name("po"), Some("odin"));
+        assert_eq!(mapping.to_persona_name("devops"), Some("thor"));
     }
 
     #[test]

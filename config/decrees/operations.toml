@@ -1,0 +1,43 @@
+# Operations (OPERATIONS)
+# Olympus OS Operational Procedures
+
+[meta]
+title = "Operations (OPERATIONS)"
+philosophy = "Smooth operations are the backbone of reliable delivery"
+immutable = false
+
+[[articles]]
+id = 1
+title = "Incident Response"
+rules = [
+    "Severity levels: P0 (critical) through P3 (low)",
+    "P0 incidents: immediate response, all hands on deck",
+    "Post-incident review required for P0 and P1 within 24 hours",
+]
+
+[[articles]]
+id = 2
+title = "Deployment Flow"
+rules = [
+    "All deployments follow: build -> test -> stage -> production",
+    "Rollback plan must exist before any production deployment",
+    "Zero-downtime deployments are the standard",
+]
+
+[[articles]]
+id = 3
+title = "Monitoring and Alerting"
+rules = [
+    "All services must have health check endpoints",
+    "Alert thresholds must be defined for key metrics",
+    "On-call rotation follows the persona schedule",
+]
+
+[[articles]]
+id = 4
+title = "Change Management"
+rules = [
+    "All changes must be tracked and reversible",
+    "Configuration changes follow the same review process as code",
+    "Emergency changes require post-hoc documentation within 4 hours",
+]
