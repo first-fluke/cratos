@@ -137,6 +137,8 @@ chrono.workspace = true
 
 clap = { version = "4", features = ["derive"] }
 inquire = "0.9"
+ratatui = "0.29"
+crossterm = "0.28"
 dirs.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true

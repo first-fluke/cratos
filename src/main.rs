@@ -31,7 +31,9 @@ async fn main() -> Result<()> {
     // init creates .env, so skip startup log and .env warning for it
     let skip_startup_log = matches!(
         &cli.command,
-        Some(cli::Commands::Init { .. }) | Some(cli::Commands::Serve)
+        Some(cli::Commands::Init { .. })
+            | Some(cli::Commands::Serve)
+            | Some(cli::Commands::Tui { .. })
     );
 
     if cli.command.is_some() && !skip_startup_log {

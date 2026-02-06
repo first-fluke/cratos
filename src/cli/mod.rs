@@ -17,6 +17,7 @@ pub mod decrees;
 pub mod doctor;
 pub mod pantheon;
 pub mod setup;
+pub mod tui;
 
 /// Cratos AI Assistant CLI
 #[derive(Parser, Debug)]
@@ -49,6 +50,12 @@ pub enum Commands {
     Chronicle(ChronicleCommands),
     /// Start the server (default)
     Serve,
+    /// Launch interactive TUI chat
+    Tui {
+        /// Persona to start with (e.g., sindri, athena)
+        #[arg(short, long)]
+        persona: Option<String>,
+    },
 }
 
 /// Pantheon subcommands
@@ -136,6 +143,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             }
             crate::server::run().await
         }
+        Some(Commands::Tui { persona }) => tui::run(persona).await,
         None => {
             let mut cmd = <Cli as clap::CommandFactory>::command();
             cmd.print_help()?;

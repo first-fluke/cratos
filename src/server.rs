@@ -326,7 +326,7 @@ async fn metrics_endpoint() -> String {
 }
 
 /// Load configuration from files and environment
-fn load_config() -> Result<AppConfig> {
+pub(crate) fn load_config() -> Result<AppConfig> {
     let config = Config::builder()
         .add_source(File::with_name("config/default").required(true))
         .add_source(File::with_name("config/local").required(false))
@@ -350,7 +350,7 @@ fn load_config() -> Result<AppConfig> {
         .context("Failed to deserialize configuration")
 }
 
-fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn LlmProvider>> {
+pub(crate) fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn LlmProvider>> {
     let mut router = LlmRouter::new(&llm_config.default_provider);
     let mut registered_count = 0;
     let mut default_provider: Option<String> = None;
