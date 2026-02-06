@@ -127,6 +127,200 @@ pub fn sanitize_error_for_user(error: &str) -> String {
     error.to_string()
 }
 
+// ============================================================================
+// Markdown → HTML Conversion (for Telegram)
+// ============================================================================
+
+/// Convert standard Markdown (LLM output) to Telegram-compatible HTML.
+///
+/// Telegram's `ParseMode::Html` supports a limited subset of HTML tags.
+/// This function handles the most common Markdown patterns:
+/// - `**bold**` / `__bold__` → `<b>bold</b>`
+/// - `*italic*` / `_italic_` → `<i>italic</i>`
+/// - `` `code` `` → `<code>code</code>`
+/// - `` ```lang\nblock\n``` `` → `<pre><code class="language-lang">block</code></pre>`
+/// - `~~strike~~` → `<s>strike</s>`
+/// - `[text](url)` → `<a href="url">text</a>`
+///
+/// HTML entities (`&`, `<`, `>`) are escaped first to prevent injection.
+///
+/// # Examples
+/// ```
+/// use cratos_channels::util::markdown_to_html;
+///
+/// assert_eq!(markdown_to_html("**bold**"), "<b>bold</b>");
+/// assert_eq!(markdown_to_html("use `code` here"), "use <code>code</code> here");
+/// assert_eq!(markdown_to_html("a < b & c > d"), "a &lt; b &amp; c &gt; d");
+/// ```
+#[must_use]
+pub fn markdown_to_html(text: &str) -> String {
+    // Phase 1: Extract code blocks to protect them from further processing
+    let mut protected: Vec<String> = Vec::new();
+    let mut work = String::new();
+    let mut remaining = text;
+
+    while let Some(start) = remaining.find("```") {
+        // Text before the code block — will be processed later
+        work.push_str(&remaining[..start]);
+
+        let after_ticks = &remaining[start + 3..];
+        if let Some(end) = after_ticks.find("```") {
+            // Extract lang + body
+            let block_content = &after_ticks[..end];
+            let (lang, body) = match block_content.find('\n') {
+                Some(nl) => {
+                    let lang = block_content[..nl].trim();
+                    let body = &block_content[nl + 1..];
+                    (lang, body)
+                }
+                None => ("", block_content),
+            };
+
+            let escaped_body = escape_html(body);
+            let placeholder = format!("\x00CODEBLOCK{}\x00", protected.len());
+            if lang.is_empty() {
+                protected.push(format!("<pre><code>{}</code></pre>", escaped_body));
+            } else {
+                protected.push(format!(
+                    "<pre><code class=\"language-{lang}\">{}</code></pre>",
+                    escaped_body
+                ));
+            }
+            work.push_str(&placeholder);
+            remaining = &after_ticks[end + 3..];
+        } else {
+            // Unclosed code block — treat as plain text
+            work.push_str("```");
+            remaining = after_ticks;
+        }
+    }
+    work.push_str(remaining);
+
+    // Phase 2: Escape HTML entities in non-code-block text
+    // We need to escape before applying markdown, but inline code also needs protection
+    let mut rest = work.as_str();
+
+    // Protect inline code first
+    let mut inline_codes: Vec<String> = Vec::new();
+    let mut temp = String::new();
+    while let Some(start) = rest.find('`') {
+        temp.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        if let Some(end) = after.find('`') {
+            let code = &after[..end];
+            let placeholder = format!("\x00INLINECODE{}\x00", inline_codes.len());
+            inline_codes.push(format!("<code>{}</code>", escape_html(code)));
+            temp.push_str(&placeholder);
+            rest = &after[end + 1..];
+        } else {
+            temp.push('`');
+            rest = after;
+        }
+    }
+    temp.push_str(rest);
+
+    // Escape HTML in non-code portions
+    let mut result = escape_html(&temp);
+
+    // Phase 3: Apply Markdown → HTML conversions
+    // Bold: **text** or __text__
+    result = replace_pattern(&result, "**", "<b>", "</b>");
+    result = replace_pattern(&result, "__", "<b>", "</b>");
+    // Italic: *text* or _text_ (after bold is handled)
+    result = replace_pattern(&result, "*", "<i>", "</i>");
+    result = replace_pattern(&result, "_", "<i>", "</i>");
+    // Strikethrough: ~~text~~
+    result = replace_pattern(&result, "~~", "<s>", "</s>");
+
+    // Links: [text](url)
+    result = convert_links(&result);
+
+    // Phase 4: Restore inline code placeholders
+    for (i, code) in inline_codes.iter().enumerate() {
+        let placeholder = format!("\x00INLINECODE{i}\x00");
+        // Placeholder was HTML-escaped, so look for escaped version
+        let escaped_placeholder = escape_html(&placeholder);
+        result = result.replace(&escaped_placeholder, code);
+    }
+
+    // Phase 5: Restore code block placeholders
+    for (i, block) in protected.iter().enumerate() {
+        let placeholder = format!("\x00CODEBLOCK{i}\x00");
+        let escaped_placeholder = escape_html(&placeholder);
+        result = result.replace(&escaped_placeholder, block);
+    }
+
+    result
+}
+
+/// Escape HTML special characters: `&`, `<`, `>`
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Replace paired Markdown delimiters with HTML tags.
+///
+/// Handles `**bold**` → `<b>bold</b>` style patterns.
+fn replace_pattern(text: &str, delimiter: &str, open_tag: &str, close_tag: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut open = true;
+
+    while let Some(pos) = rest.find(delimiter) {
+        result.push_str(&rest[..pos]);
+        if open {
+            result.push_str(open_tag);
+        } else {
+            result.push_str(close_tag);
+        }
+        open = !open;
+        rest = &rest[pos + delimiter.len()..];
+    }
+    result.push_str(rest);
+
+    // If we have an unclosed tag, the last open_tag was wrong — revert
+    if !open {
+        // Odd number of delimiters — put the last delimiter back as-is
+        if let Some(pos) = result.rfind(open_tag) {
+            let escaped_delim = escape_html(delimiter);
+            result.replace_range(pos..pos + open_tag.len(), &escaped_delim);
+        }
+    }
+
+    result
+}
+
+/// Convert Markdown links `[text](url)` to HTML `<a href="url">text</a>`.
+fn convert_links(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut rest = text;
+
+    while let Some(bracket_start) = rest.find('[') {
+        result.push_str(&rest[..bracket_start]);
+        let after_bracket = &rest[bracket_start + 1..];
+
+        if let Some(bracket_end) = after_bracket.find("](") {
+            let link_text = &after_bracket[..bracket_end];
+            let after_paren = &after_bracket[bracket_end + 2..];
+
+            if let Some(paren_end) = after_paren.find(')') {
+                let url = &after_paren[..paren_end];
+                result.push_str(&format!("<a href=\"{url}\">{link_text}</a>"));
+                rest = &after_paren[paren_end + 1..];
+                continue;
+            }
+        }
+
+        // Not a valid link — keep the bracket
+        result.push('[');
+        rest = after_bracket;
+    }
+    result.push_str(rest);
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,5 +385,118 @@ mod tests {
     fn test_sanitize_error_pass_through() {
         let simple = sanitize_error_for_user("File not found");
         assert_eq!(simple, "File not found");
+    }
+
+    // ── markdown_to_html tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_html_escape() {
+        assert_eq!(markdown_to_html("a < b & c > d"), "a &lt; b &amp; c &gt; d");
+    }
+
+    #[test]
+    fn test_bold() {
+        assert_eq!(markdown_to_html("**bold**"), "<b>bold</b>");
+        assert_eq!(markdown_to_html("__bold__"), "<b>bold</b>");
+    }
+
+    #[test]
+    fn test_italic() {
+        assert_eq!(markdown_to_html("*italic*"), "<i>italic</i>");
+        assert_eq!(markdown_to_html("_italic_"), "<i>italic</i>");
+    }
+
+    #[test]
+    fn test_bold_and_italic() {
+        assert_eq!(
+            markdown_to_html("**bold** and *italic*"),
+            "<b>bold</b> and <i>italic</i>"
+        );
+    }
+
+    #[test]
+    fn test_inline_code() {
+        assert_eq!(
+            markdown_to_html("use `code` here"),
+            "use <code>code</code> here"
+        );
+    }
+
+    #[test]
+    fn test_inline_code_html_escape() {
+        assert_eq!(
+            markdown_to_html("use `a<b>` here"),
+            "use <code>a&lt;b&gt;</code> here"
+        );
+    }
+
+    #[test]
+    fn test_code_block() {
+        let input = "before\n```rust\nfn main() {}\n```\nafter";
+        let result = markdown_to_html(input);
+        assert!(result.contains("<pre><code class=\"language-rust\">"));
+        assert!(result.contains("fn main() {}\n</code></pre>"));
+        assert!(result.starts_with("before\n"));
+        assert!(result.ends_with("\nafter"));
+    }
+
+    #[test]
+    fn test_code_block_no_lang() {
+        let input = "```\nhello\n```";
+        let result = markdown_to_html(input);
+        assert!(result.contains("<pre><code>"));
+        assert!(result.contains("hello\n</code></pre>"));
+    }
+
+    #[test]
+    fn test_code_block_html_escape() {
+        let input = "```\n<div>&</div>\n```";
+        let result = markdown_to_html(input);
+        assert!(result.contains("&lt;div&gt;&amp;&lt;/div&gt;"));
+    }
+
+    #[test]
+    fn test_strikethrough() {
+        assert_eq!(markdown_to_html("~~strike~~"), "<s>strike</s>");
+    }
+
+    #[test]
+    fn test_link() {
+        assert_eq!(
+            markdown_to_html("[Google](https://google.com)"),
+            "<a href=\"https://google.com\">Google</a>"
+        );
+    }
+
+    #[test]
+    fn test_unclosed_bold() {
+        // Odd number of ** — the closed pair is rendered, orphan degrades gracefully
+        let result = markdown_to_html("**bold** and **orphan");
+        assert!(result.contains("<b>bold</b>"));
+        // The orphan ** is not rendered as bold (no closing **)
+        assert!(!result.contains("<b>orphan"));
+    }
+
+    #[test]
+    fn test_plain_text() {
+        assert_eq!(markdown_to_html("hello world"), "hello world");
+    }
+
+    #[test]
+    fn test_mixed_markdown() {
+        let input = "**Title**\n\nHello *world*, use `cmd` and visit [site](https://x.com)";
+        let result = markdown_to_html(input);
+        assert!(result.contains("<b>Title</b>"));
+        assert!(result.contains("<i>world</i>"));
+        assert!(result.contains("<code>cmd</code>"));
+        assert!(result.contains("<a href=\"https://x.com\">site</a>"));
+    }
+
+    #[test]
+    fn test_korean_text() {
+        assert_eq!(
+            markdown_to_html("**안녕하세요** 세계"),
+            "<b>안녕하세요</b> 세계"
+        );
     }
 }

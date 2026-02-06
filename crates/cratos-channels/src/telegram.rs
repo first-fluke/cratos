@@ -7,7 +7,7 @@ use crate::message::{
     Attachment, AttachmentType, ChannelAdapter, ChannelType, MessageButton, NormalizedMessage,
     OutgoingMessage,
 };
-use crate::util::{mask_for_logging, sanitize_error_for_user};
+use crate::util::{markdown_to_html, mask_for_logging, sanitize_error_for_user};
 use cratos_core::{Orchestrator, OrchestratorInput};
 use std::sync::Arc;
 use teloxide::{
@@ -318,14 +318,16 @@ impl TelegramAdapter {
                     result.response
                 };
 
-                // Send response
+                // Convert standard Markdown (LLM output) to Telegram-safe HTML
+                let html_text = markdown_to_html(&response_text);
+
                 let send_result = bot
-                    .send_message(msg.chat.id, &response_text)
-                    .parse_mode(ParseMode::MarkdownV2)
+                    .send_message(msg.chat.id, &html_text)
+                    .parse_mode(ParseMode::Html)
                     .reply_parameters(ReplyParameters::new(msg.id))
                     .await;
 
-                // Fall back to plain text if markdown fails
+                // Fall back to plain text if HTML parsing fails
                 if send_result.is_err() {
                     let _ = bot
                         .send_message(msg.chat.id, &response_text)
@@ -367,7 +369,9 @@ impl ChannelAdapter for TelegramAdapter {
         let mut request = self.bot.send_message(ChatId(chat_id), &message.text);
 
         if message.parse_markdown {
-            request = request.parse_mode(ParseMode::MarkdownV2);
+            let html_text = markdown_to_html(&message.text);
+            request = self.bot.send_message(ChatId(chat_id), &html_text)
+                .parse_mode(ParseMode::Html);
         }
 
         if let Some(reply_to) = &message.reply_to {
@@ -403,7 +407,9 @@ impl ChannelAdapter for TelegramAdapter {
                 .edit_message_text(ChatId(chat_id), MessageId(msg_id), &message.text);
 
         if message.parse_markdown {
-            request = request.parse_mode(ParseMode::MarkdownV2);
+            let html_text = markdown_to_html(&message.text);
+            request = self.bot.edit_message_text(ChatId(chat_id), MessageId(msg_id), &html_text)
+                .parse_mode(ParseMode::Html);
         }
 
         request.await.map_err(|e| Error::Telegram(e.to_string()))?;
