@@ -125,10 +125,11 @@ impl OpenAiConfig {
     ///
     /// Priority:
     /// 1. `OPENAI_API_KEY` env var
-    /// 2. `~/.codex/auth.json` (Codex CLI / ChatGPT Pro subscription)
+    /// 2. `~/.cratos/openai_oauth.json` (Cratos OAuth)
+    /// 3. `~/.codex/auth.json` (Codex CLI / ChatGPT Pro subscription)
     ///
     /// # Errors
-    /// Returns error if neither source is available
+    /// Returns error if no source is available
     pub fn from_env() -> Result<Self> {
         let base_url = std::env::var("OPENAI_BASE_URL").ok();
         let org_id = std::env::var("OPENAI_ORG_ID").ok();
@@ -147,7 +148,19 @@ impl OpenAiConfig {
             });
         }
 
-        // 2. Try Codex CLI auth credentials
+        // 2. Try Cratos OAuth token
+        if let Some(tokens) = cli_auth::read_cratos_openai_oauth() {
+            return Ok(Self {
+                api_key: tokens.access_token,
+                auth_source: AuthSource::CratosOAuth,
+                base_url,
+                org_id,
+                default_model,
+                timeout: Duration::from_secs(60),
+            });
+        }
+
+        // 3. Try Codex CLI auth credentials
         if let Some(creds) = cli_auth::read_codex_auth() {
             return Ok(Self {
                 api_key: creds.tokens.access_token,
@@ -160,7 +173,7 @@ impl OpenAiConfig {
         }
 
         Err(Error::NotConfigured(
-            "OPENAI_API_KEY not set and Codex CLI credentials not found".to_string(),
+            "OPENAI_API_KEY not set and no OAuth credentials found".to_string(),
         ))
     }
 

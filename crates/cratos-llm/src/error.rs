@@ -36,6 +36,10 @@ pub enum Error {
     /// Embedding provider error
     #[error("provider error: {0}")]
     Provider(String),
+
+    /// OAuth error
+    #[error("oauth error: {0}")]
+    OAuth(String),
 }
 
 /// Result type alias

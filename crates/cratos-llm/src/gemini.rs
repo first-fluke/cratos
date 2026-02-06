@@ -76,8 +76,12 @@ pub const MODELS: &[&str] = &[
 /// Default Gemini model (Gemini 2.5 Flash - best speed/cost)
 pub const DEFAULT_MODEL: &str = "gemini-2.5-flash";
 
-/// Default API base URL
+/// Default API base URL (for API key auth)
 const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
+
+/// Code Assist endpoint (for OAuth Bearer token auth — same as Gemini CLI)
+const CODE_ASSIST_BASE_URL: &str = "https://cloudcode-pa.googleapis.com";
+const CODE_ASSIST_API_VERSION: &str = "v1internal";
 
 // ============================================================================
 // API Types
@@ -306,7 +310,8 @@ impl GeminiConfig {
     ///
     /// Priority:
     /// 1. `GOOGLE_API_KEY` / `GEMINI_API_KEY` env var → `GeminiAuth::ApiKey`
-    /// 2. `~/.gemini/oauth_creds.json` (Gemini CLI) → `GeminiAuth::OAuth`
+    /// 2. `~/.cratos/google_oauth.json` (Cratos OAuth) → `GeminiAuth::OAuth`
+    /// 3. `~/.gemini/oauth_creds.json` (Gemini CLI) → `GeminiAuth::OAuth`
     pub fn from_env() -> Result<Self> {
         let base_url =
             std::env::var("GEMINI_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
@@ -327,7 +332,22 @@ impl GeminiConfig {
             });
         }
 
-        // 2. Try Gemini CLI OAuth credentials
+        // 2. Try Cratos OAuth token
+        if let Some(tokens) = cli_auth::read_cratos_google_oauth() {
+            if cli_auth::is_token_expired(tokens.expiry_date) {
+                info!("Cratos Google OAuth token expired, will attempt refresh on first request");
+            }
+            return Ok(Self {
+                auth: GeminiAuth::OAuth(tokens.access_token),
+                auth_source: AuthSource::CratosOAuth,
+                base_url,
+                default_model,
+                default_max_tokens: 8192,
+                timeout: Duration::from_secs(60),
+            });
+        }
+
+        // 3. Try Gemini CLI OAuth credentials
         if let Some(creds) = cli_auth::read_gemini_oauth() {
             if cli_auth::is_token_expired(creds.expiry_date) {
                 info!("Gemini CLI token expired, will attempt refresh on first request");
@@ -343,7 +363,7 @@ impl GeminiConfig {
         }
 
         Err(Error::NotConfigured(
-            "GOOGLE_API_KEY or GEMINI_API_KEY not set, and Gemini CLI credentials not found"
+            "GOOGLE_API_KEY or GEMINI_API_KEY not set, and no OAuth credentials found"
                 .to_string(),
         ))
     }
@@ -381,6 +401,53 @@ impl GeminiConfig {
 pub struct GeminiProvider {
     client: Client,
     config: GeminiConfig,
+    /// Lazily resolved Code Assist project ID (for OAuth auth).
+    code_assist_project: tokio::sync::OnceCell<String>,
+}
+
+// Code Assist API types for OAuth auth (same API as Gemini CLI)
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadCodeAssistResponse {
+    #[serde(default)]
+    cloudaicompanion_project: Option<String>,
+    #[serde(default)]
+    current_tier: Option<CodeAssistTier>,
+    #[serde(default)]
+    allowed_tiers: Option<Vec<CodeAssistTier>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodeAssistTier {
+    #[allow(dead_code)]
+    id: Option<String>,
+    #[serde(default)]
+    is_default: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OnboardResponse {
+    #[serde(default)]
+    done: bool,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    response: Option<OnboardResult>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OnboardResult {
+    #[serde(default)]
+    cloudaicompanion_project: Option<CloudAiProject>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CloudAiProject {
+    #[serde(default)]
+    id: Option<String>,
 }
 
 impl GeminiProvider {
@@ -391,13 +458,146 @@ impl GeminiProvider {
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;
 
-        Ok(Self { client, config })
+        Ok(Self {
+            client,
+            config,
+            code_assist_project: tokio::sync::OnceCell::new(),
+        })
     }
 
     /// Create from environment variables
     pub fn from_env() -> Result<Self> {
         let config = GeminiConfig::from_env()?;
         Self::new(config)
+    }
+
+    /// Resolve Code Assist project ID (called once on first OAuth request).
+    async fn resolve_code_assist_project(&self) -> Result<String> {
+        let token = match &self.config.auth {
+            GeminiAuth::OAuth(t) => t.clone(),
+            _ => return Ok(String::new()),
+        };
+
+        if let Ok(project) = std::env::var("GOOGLE_CLOUD_PROJECT")
+            .or_else(|_| std::env::var("GOOGLE_CLOUD_PROJECT_ID"))
+        {
+            return Ok(project);
+        }
+
+        let base = format!("{}/{}", CODE_ASSIST_BASE_URL, CODE_ASSIST_API_VERSION);
+
+        let load_body = serde_json::json!({
+            "metadata": {
+                "ideType": "IDE_UNSPECIFIED",
+                "platform": "PLATFORM_UNSPECIFIED",
+                "pluginType": "GEMINI",
+            }
+        });
+
+        let resp = self
+            .client
+            .post(format!("{}:loadCodeAssist", base))
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&load_body)
+            .send()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            debug!("Code Assist loadCodeAssist failed: HTTP {}", resp.status());
+            return Ok(String::new());
+        }
+
+        let load: LoadCodeAssistResponse = resp
+            .json()
+            .await
+            .map_err(|e| Error::InvalidResponse(e.to_string()))?;
+
+        if let Some(project) = load.cloudaicompanion_project {
+            return Ok(project);
+        }
+
+        if load.current_tier.is_some() {
+            return Ok(String::new());
+        }
+
+        // Onboard user (free tier)
+        let tier_id = load
+            .allowed_tiers
+            .as_ref()
+            .and_then(|tiers| tiers.iter().find(|t| t.is_default))
+            .and_then(|t| t.id.clone())
+            .unwrap_or_else(|| "FREE".to_string());
+
+        let onboard_body = serde_json::json!({
+            "tierId": tier_id,
+            "metadata": {
+                "ideType": "IDE_UNSPECIFIED",
+                "platform": "PLATFORM_UNSPECIFIED",
+                "pluginType": "GEMINI",
+            }
+        });
+
+        let onboard_resp = self
+            .client
+            .post(format!("{}:onboardUser", base))
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&onboard_body)
+            .send()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
+
+        if !onboard_resp.status().is_success() {
+            return Ok(String::new());
+        }
+
+        let mut onboard: OnboardResponse = onboard_resp
+            .json()
+            .await
+            .map_err(|e| Error::InvalidResponse(e.to_string()))?;
+
+        // Poll LRO if needed
+        if !onboard.done {
+            if let Some(ref op_name) = onboard.name.clone() {
+                for _ in 0..12 {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    let poll_resp = self
+                        .client
+                        .get(format!("{}/{}", base, op_name))
+                        .header("Authorization", format!("Bearer {}", token))
+                        .send()
+                        .await
+                        .map_err(|e| Error::Network(e.to_string()))?;
+                    if poll_resp.status().is_success() {
+                        onboard = poll_resp
+                            .json()
+                            .await
+                            .map_err(|e| Error::InvalidResponse(e.to_string()))?;
+                        if onboard.done {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(result) = onboard.response {
+            if let Some(project) = result.cloudaicompanion_project {
+                if let Some(id) = project.id {
+                    return Ok(id);
+                }
+            }
+        }
+
+        Ok(String::new())
+    }
+
+    /// Get or lazily resolve the Code Assist project ID.
+    async fn get_code_assist_project(&self) -> Result<&str> {
+        self.code_assist_project
+            .get_or_try_init(|| self.resolve_code_assist_project())
+            .await
+            .map(|s| s.as_str())
     }
 
     /// Convert messages to Gemini format, returning system instruction separately
@@ -509,6 +709,8 @@ impl GeminiProvider {
         // SECURITY: Don't log the full URL (may contain API key)
         debug!("Sending request to Gemini model: {}", model);
 
+        let is_code_assist = matches!(&self.config.auth, GeminiAuth::OAuth(_));
+
         let mut request_builder = match &self.config.auth {
             GeminiAuth::ApiKey(key) => {
                 let url = format!(
@@ -518,9 +720,10 @@ impl GeminiProvider {
                 self.client.post(&url)
             }
             GeminiAuth::OAuth(token) => {
+                // OAuth uses Code Assist endpoint (same as Gemini CLI)
                 let url = format!(
-                    "{}/models/{}:generateContent",
-                    self.config.base_url, model
+                    "{}/{}:generateContent",
+                    CODE_ASSIST_BASE_URL, CODE_ASSIST_API_VERSION
                 );
                 self.client
                     .post(&url)
@@ -530,11 +733,26 @@ impl GeminiProvider {
 
         request_builder = request_builder.header("content-type", "application/json");
 
-        let response = request_builder
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| Error::Network(e.to_string()))?;
+        // Code Assist wraps request: {model, project, request: {...}}
+        let response = if is_code_assist {
+            let project_id = self.get_code_assist_project().await?;
+            let wrapped = serde_json::json!({
+                "model": format!("models/{}", model),
+                "project": project_id,
+                "request": &request,
+            });
+            request_builder
+                .json(&wrapped)
+                .send()
+                .await
+                .map_err(|e| Error::Network(e.to_string()))?
+        } else {
+            request_builder
+                .json(&request)
+                .send()
+                .await
+                .map_err(|e| Error::Network(e.to_string()))?
+        };
 
         // Gemini doesn't send standard rate limit headers, but capture any present
         crate::quota::global_quota_tracker()
@@ -593,6 +811,15 @@ impl GeminiProvider {
             ))));
         }
 
+        // Code Assist wraps response: {"response": {...}, "traceId": "..."}
+        if is_code_assist {
+            if let Ok(wrapped) = serde_json::from_str::<serde_json::Value>(&body) {
+                if let Some(inner) = wrapped.get("response") {
+                    return serde_json::from_value(inner.clone())
+                        .map_err(|e| Error::InvalidResponse(format!("{}: {}", e, body)));
+                }
+            }
+        }
         serde_json::from_str(&body).map_err(|e| Error::InvalidResponse(format!("{}: {}", e, body)))
     }
 }

@@ -16,6 +16,7 @@
 
 mod env_builder;
 mod i18n;
+mod oauth_server;
 mod personas;
 mod prompts;
 mod providers;
@@ -245,35 +246,10 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
                 prompt_api_key(provider, lang, t)?
             }
         } else {
-            // Try CLI auth detection for supported providers
-            let cli_detected = match provider.name {
-                "google" => matches!(
-                    cratos_llm::cli_auth::check_gemini_cli_status(),
-                    cratos_llm::cli_auth::GeminiCliStatus::Valid
-                        | cratos_llm::cli_auth::GeminiCliStatus::Expired
-                ),
-                "openai" => {
-                    cratos_llm::cli_auth::check_codex_cli_status()
-                        == cratos_llm::cli_auth::CodexCliStatus::Valid
-                }
-                _ => false,
-            };
-
-            if cli_detected {
-                let cli_name = match provider.name {
-                    "google" => "Gemini CLI (Antigravity Pro)",
-                    "openai" => "Codex CLI (ChatGPT Pro/Plus)",
-                    _ => unreachable!(),
-                };
-                println!("\n  {} {}", t.cli_auth_detected, cli_name);
-                let use_cli = prompts::confirm(t.cli_auth_use, true, Some(t.cli_auth_skip_note))?;
-                if use_cli {
-                    String::new() // Empty API key — runtime will use CLI auth fallback
-                } else {
-                    prompt_api_key(provider, lang, t)?
-                }
-            } else {
-                prompt_api_key(provider, lang, t)?
+            match provider.name {
+                "google" => resolve_google_auth(provider, lang, t).await?,
+                "openai" => resolve_openai_auth(provider, lang, t).await?,
+                _ => prompt_api_key(provider, lang, t)?,
             }
         }
     };
@@ -400,4 +376,114 @@ fn prompt_api_key(
     println!();
 
     prompts::password_required(t.apikey_prompt)
+}
+
+/// Resolve Google auth: Cratos OAuth → browser login → API key fallback.
+async fn resolve_google_auth(
+    provider: &providers::Provider,
+    lang: Language,
+    t: &i18n::Texts,
+) -> anyhow::Result<String> {
+    use cratos_llm::cli_auth::*;
+
+    // 1. Check existing Cratos OAuth token
+    match check_cratos_google_oauth_status() {
+        CratosOAuthStatus::Valid => {
+            println!("\n  {} {}", t.oauth_detected, t.oauth_token_valid);
+            return Ok(String::new());
+        }
+        CratosOAuthStatus::Expired => {
+            println!("\n  {} {}", t.oauth_detected, t.oauth_token_expired);
+            println!("  {}", t.oauth_refreshing);
+
+            if let Some(tokens) = read_cratos_google_oauth() {
+                if let Some(ref rt) = tokens.refresh_token {
+                    let config = cratos_llm::oauth_config::google_oauth_config();
+                    if let Ok(_refreshed) = oauth_server::refresh_and_save(&config, rt).await {
+                        println!("  {}", t.oauth_refresh_success);
+                        return Ok(String::new());
+                    }
+                }
+            }
+            println!("  {}", t.oauth_refresh_failed);
+        }
+        CratosOAuthStatus::NotFound => {}
+    }
+
+    // 2. Browser OAuth login
+    println!("\n  {}", t.oauth_browser_login_google);
+    if prompts::confirm(t.oauth_browser_login_prompt, true, None)? {
+        println!("  {}", t.oauth_starting);
+        println!("  {}", t.oauth_waiting);
+
+        let config = cratos_llm::oauth_config::google_oauth_config();
+        match oauth_server::run_oauth_flow(&config).await {
+            Ok(_) => {
+                println!("  {}", t.oauth_login_success);
+                return Ok(String::new());
+            }
+            Err(e) => {
+                tracing::warn!("Browser OAuth failed: {}", e);
+                println!("  {}", t.oauth_login_failed);
+            }
+        }
+    }
+
+    // 3. Fallback: API key input
+    prompt_api_key(provider, lang, t)
+}
+
+/// Resolve OpenAI auth: Cratos OAuth → browser login → API key fallback.
+async fn resolve_openai_auth(
+    provider: &providers::Provider,
+    lang: Language,
+    t: &i18n::Texts,
+) -> anyhow::Result<String> {
+    use cratos_llm::cli_auth::*;
+
+    // 1. Check existing Cratos OAuth token
+    match check_cratos_openai_oauth_status() {
+        CratosOAuthStatus::Valid => {
+            println!("\n  {} {}", t.oauth_detected, t.oauth_token_valid);
+            return Ok(String::new());
+        }
+        CratosOAuthStatus::Expired => {
+            println!("\n  {} {}", t.oauth_detected, t.oauth_token_expired);
+            println!("  {}", t.oauth_refreshing);
+
+            if let Some(tokens) = read_cratos_openai_oauth() {
+                if let Some(ref rt) = tokens.refresh_token {
+                    let config = cratos_llm::oauth_config::openai_oauth_config();
+                    if let Ok(_refreshed) = oauth_server::refresh_and_save(&config, rt).await {
+                        println!("  {}", t.oauth_refresh_success);
+                        return Ok(String::new());
+                    }
+                }
+            }
+            println!("  {}", t.oauth_refresh_failed);
+        }
+        CratosOAuthStatus::NotFound => {}
+    }
+
+    // 2. Browser OAuth login
+    println!("\n  {}", t.oauth_browser_login_openai);
+    if prompts::confirm(t.oauth_browser_login_prompt, true, None)? {
+        println!("  {}", t.oauth_starting);
+        println!("  {}", t.oauth_waiting);
+
+        let config = cratos_llm::oauth_config::openai_oauth_config();
+        match oauth_server::run_oauth_flow(&config).await {
+            Ok(_) => {
+                println!("  {}", t.oauth_login_success);
+                return Ok(String::new());
+            }
+            Err(e) => {
+                tracing::warn!("Browser OAuth failed: {}", e);
+                println!("  {}", t.oauth_login_failed);
+            }
+        }
+    }
+
+    // 3. Fallback: API key input
+    prompt_api_key(provider, lang, t)
 }

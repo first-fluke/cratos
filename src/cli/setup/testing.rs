@@ -66,7 +66,16 @@ pub async fn test_llm(provider: &Provider, api_key: &str) -> bool {
         return test_ollama_model().await;
     }
 
-    if api_key.is_empty() || api_key.len() < 10 {
+    // For providers that support CLI auth, try OAuth if api_key is empty
+    if api_key.is_empty() {
+        return match provider.name {
+            "google" => test_gemini_oauth().await,
+            "openai" => test_openai_codex_auth().await,
+            _ => false,
+        };
+    }
+
+    if api_key.len() < 10 {
         return false;
     }
 
@@ -193,6 +202,112 @@ async fn test_gemini(api_key: &str) -> bool {
         Ok(resp) => resp.status().is_success(),
         Err(_) => false,
     }
+}
+
+/// Test a Google OAuth Bearer token via Code Assist endpoint.
+///
+/// The standard `generativelanguage.googleapis.com` doesn't accept OAuth Bearer
+/// tokens. Gemini CLI uses Code Assist (`cloudcode-pa.googleapis.com`), so we test there.
+pub async fn test_google_oauth_token(access_token: &str) -> bool {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!("Failed to build HTTP client: {}", e);
+            return false;
+        }
+    };
+
+    let body = serde_json::json!({
+        "metadata": {
+            "ideType": "IDE_UNSPECIFIED",
+            "platform": "PLATFORM_UNSPECIFIED",
+            "pluginType": "GEMINI",
+        }
+    });
+
+    match client
+        .post("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist")
+        .header("Authorization", format!("Bearer {}", access_token))
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let status = resp.status();
+            if !status.is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                tracing::debug!("Google OAuth test failed (HTTP {}): {}", status, body);
+            }
+            status.is_success()
+        }
+        Err(e) => {
+            tracing::debug!("Google OAuth test network error: {}", e);
+            false
+        }
+    }
+}
+
+/// Test Google Gemini with OAuth token (Cratos OAuth → Gemini CLI fallback).
+async fn test_gemini_oauth() -> bool {
+    if let Some(tokens) = cratos_llm::cli_auth::read_cratos_google_oauth() {
+        if test_google_oauth_token(&tokens.access_token).await {
+            return true;
+        }
+        if let Some(ref rt) = tokens.refresh_token {
+            let config = cratos_llm::oauth_config::google_oauth_config();
+            if let Ok(refreshed) = cratos_llm::oauth::refresh_token(&config, rt).await {
+                let _ = cratos_llm::oauth::save_tokens(&config.token_file, &refreshed);
+                if test_google_oauth_token(&refreshed.access_token).await {
+                    return true;
+                }
+            }
+        }
+    }
+
+    let creds = match cratos_llm::cli_auth::read_gemini_oauth() {
+        Some(c) => c,
+        None => return false,
+    };
+
+    if test_google_oauth_token(&creds.access_token).await {
+        return true;
+    }
+
+    match cratos_llm::cli_auth::refresh_gemini_token().await {
+        Ok(refreshed) => test_google_oauth_token(&refreshed.access_token).await,
+        Err(_) => false,
+    }
+}
+
+/// Test OpenAI with OAuth token (Cratos OAuth → Codex CLI fallback).
+async fn test_openai_codex_auth() -> bool {
+    if let Some(tokens) = cratos_llm::cli_auth::read_cratos_openai_oauth() {
+        let auth = format!("Bearer {}", tokens.access_token);
+        if test_openai_compatible("https://api.openai.com/v1/chat/completions", "gpt-4o-mini", &auth).await {
+            return true;
+        }
+        if let Some(ref rt) = tokens.refresh_token {
+            let config = cratos_llm::oauth_config::openai_oauth_config();
+            if let Ok(refreshed) = cratos_llm::oauth::refresh_token(&config, rt).await {
+                let _ = cratos_llm::oauth::save_tokens(&config.token_file, &refreshed);
+                let auth = format!("Bearer {}", refreshed.access_token);
+                if test_openai_compatible("https://api.openai.com/v1/chat/completions", "gpt-4o-mini", &auth).await {
+                    return true;
+                }
+            }
+        }
+    }
+
+    let creds = match cratos_llm::cli_auth::read_codex_auth() {
+        Some(c) => c,
+        None => return false,
+    };
+
+    let auth = format!("Bearer {}", creds.tokens.access_token);
+    test_openai_compatible("https://api.openai.com/v1/chat/completions", "gpt-4o-mini", &auth).await
 }
 
 /// Test Ollama with an actual model inference

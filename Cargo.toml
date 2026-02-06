@@ -102,6 +102,8 @@ ort = { version = "2.0.0-rc.5", features = ["download-binaries"] }
 ndarray = "0.15"
 ringbuf = "0.3"
 base64 = "0.21"
+sha2 = "0.10"
+getrandom = { version = "0.2", features = ["std"] }
 
 [package]
 name = "cratos"

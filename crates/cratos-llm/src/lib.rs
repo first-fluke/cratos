@@ -41,6 +41,8 @@ pub mod quota;
 pub mod qwen;
 pub mod router;
 pub mod siliconflow;
+pub mod oauth;
+pub mod oauth_config;
 pub mod token;
 pub mod tools;
 pub mod util;
