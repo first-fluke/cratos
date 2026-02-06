@@ -26,37 +26,65 @@ pub fn handle_events(app: &mut App, timeout: Duration) -> Result<()> {
 
 fn handle_key(app: &mut App, key: KeyEvent) {
     match (key.modifiers, key.code) {
-        // Quit shortcuts
+        // ── Quit ────────────────────────────────────────────────
         (KeyModifiers::CONTROL, KeyCode::Char('c')) | (_, KeyCode::Esc) => {
             app.should_quit = true;
         }
-        // Clear screen
+
+        // ── Screen / UI ────────────────────────────────────────
         (KeyModifiers::CONTROL, KeyCode::Char('l')) => {
             app.messages.clear();
             app.scroll_offset = 0;
         }
-        // Submit message
+        (_, KeyCode::F(1)) => app.toggle_sidebar(),
+
+        // ── Scroll chat ────────────────────────────────────────
+        (_, KeyCode::Up) => app.scroll_up(),
+        (_, KeyCode::Down) => app.scroll_down(),
+        (_, KeyCode::PageUp) => {
+            for _ in 0..10 {
+                app.scroll_up();
+            }
+        }
+        (_, KeyCode::PageDown) => {
+            for _ in 0..10 {
+                app.scroll_down();
+            }
+        }
+
+        // ── Submit (blocked during loading) ────────────────────
         (_, KeyCode::Enter) => {
             if !app.is_loading {
                 app.submit();
             }
         }
-        // Cursor movement
+
+        // ── Line editing (Emacs-style) ─────────────────────────
+        (KeyModifiers::CONTROL, KeyCode::Char('a')) => app.move_cursor_home(),
+        (KeyModifiers::CONTROL, KeyCode::Char('e')) => app.move_cursor_end(),
+        (KeyModifiers::CONTROL, KeyCode::Char('u')) => app.clear_to_start(),
+        (KeyModifiers::CONTROL, KeyCode::Char('k')) => app.clear_to_end(),
+        (KeyModifiers::CONTROL, KeyCode::Char('w')) => app.delete_word_before_cursor(),
+
+        // ── Word navigation (Alt+Arrow) ────────────────────────
+        (KeyModifiers::ALT, KeyCode::Left) => app.move_cursor_word_left(),
+        (KeyModifiers::ALT, KeyCode::Right) => app.move_cursor_word_right(),
+        // Alt+Backspace = delete word backward
+        (KeyModifiers::ALT, KeyCode::Backspace) => app.delete_word_before_cursor(),
+
+        // ── Cursor movement ────────────────────────────────────
         (_, KeyCode::Left) => app.move_cursor_left(),
         (_, KeyCode::Right) => app.move_cursor_right(),
+        (_, KeyCode::Home) => app.move_cursor_home(),
+        (_, KeyCode::End) => app.move_cursor_end(),
         (_, KeyCode::Backspace) => app.delete_char_before_cursor(),
-        // Scroll chat
-        (_, KeyCode::Up) => app.scroll_up(),
-        (_, KeyCode::Down) => app.scroll_down(),
-        // Home / End
-        (_, KeyCode::Home) => app.cursor_pos = 0,
-        (_, KeyCode::End) => app.cursor_pos = app.input.len(),
-        // Character input
+        (_, KeyCode::Delete) => app.delete_char_after_cursor(),
+
+        // ── Character input (allowed while loading) ────────────
         (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
-            if !app.is_loading {
-                app.insert_char(c);
-            }
+            app.insert_char(c);
         }
+
         _ => {}
     }
 }
