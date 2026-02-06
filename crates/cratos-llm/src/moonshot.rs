@@ -75,11 +75,12 @@ fn sanitize_api_error(error: &str) -> String {
         return "API server error. Please try again later.".to_string();
     }
 
-    if error.len() < 100 && !error.contains("ms-") && !error.contains("key") {
-        return error.to_string();
+    // Truncate overly long messages but preserve useful error info
+    if error.len() > 300 {
+        format!("{}...(truncated)", crate::util::truncate_safe(error, 300))
+    } else {
+        error.to_string()
     }
-
-    "An API error occurred. Please try again.".to_string()
 }
 
 impl MoonshotConfig {
@@ -313,6 +314,11 @@ impl LlmProvider for MoonshotProvider {
             .await
             .map_err(|e| Error::Api(sanitize_api_error(&e.to_string())))?;
 
+        // Capture rate limit headers before consuming the body
+        crate::quota::global_quota_tracker()
+            .update_from_headers("moonshot", response.headers())
+            .await;
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(Error::Api(sanitize_api_error(&error_text)));
@@ -385,6 +391,11 @@ impl LlmProvider for MoonshotProvider {
             .send()
             .await
             .map_err(|e| Error::Api(sanitize_api_error(&e.to_string())))?;
+
+        // Capture rate limit headers before consuming the body
+        crate::quota::global_quota_tracker()
+            .update_from_headers("moonshot", response.headers())
+            .await;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();

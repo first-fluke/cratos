@@ -1,7 +1,7 @@
 //! DeepSeek - Ultra-low-cost LLM provider
 //!
 //! DeepSeek provides extremely affordable models:
-//! - DeepSeek-V3: $0.14/1M input, $0.28/1M output (95%+ cheaper than GPT-5.2)
+//! - DeepSeek-V3: $0.14/1M input, $0.28/1M output (95%+ cheaper than GPT-4o)
 //! - DeepSeek-Coder: Specialized for code generation
 //!
 //! Uses OpenAI-compatible API.
@@ -87,11 +87,12 @@ fn sanitize_api_error(error: &str) -> String {
         return "DeepSeek server error. Please try again later.".to_string();
     }
 
-    if error.len() < 100 && !error.contains("sk-") && !error.contains("key") {
-        return error.to_string();
+    // Truncate overly long messages but preserve useful error info
+    if error.len() > 300 {
+        format!("{}...(truncated)", crate::util::truncate_safe(error, 300))
+    } else {
+        error.to_string()
     }
-
-    "An API error occurred. Please try again.".to_string()
 }
 
 impl DeepSeekConfig {
@@ -325,6 +326,11 @@ impl LlmProvider for DeepSeekProvider {
             .await
             .map_err(|e| Error::Api(sanitize_api_error(&e.to_string())))?;
 
+        // Capture rate limit headers before consuming the body
+        crate::quota::global_quota_tracker()
+            .update_from_headers("deepseek", response.headers())
+            .await;
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(Error::Api(sanitize_api_error(&error_text)));
@@ -397,6 +403,11 @@ impl LlmProvider for DeepSeekProvider {
             .send()
             .await
             .map_err(|e| Error::Api(sanitize_api_error(&e.to_string())))?;
+
+        // Capture rate limit headers before consuming the body
+        crate::quota::global_quota_tracker()
+            .update_from_headers("deepseek", response.headers())
+            .await;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();

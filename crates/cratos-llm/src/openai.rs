@@ -2,6 +2,7 @@
 //!
 //! This module implements the OpenAI LLM provider using async-openai 0.32+.
 
+use crate::cli_auth::{self, AuthSource};
 use crate::error::{Error, Result};
 use crate::router::{
     CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage, ToolCall,
@@ -45,39 +46,44 @@ fn sanitize_api_error(error: &str) -> String {
         return "API server error. Please try again later.".to_string();
     }
 
-    if error.len() < 100 && !error.contains("sk-") && !error.contains("key") {
-        return error.to_string();
+    // Truncate overly long messages but preserve useful error info
+    if error.len() > 300 {
+        format!("{}...(truncated)", crate::util::truncate_safe(error, 300))
+    } else {
+        error.to_string()
     }
-
-    "An API error occurred. Please try again.".to_string()
 }
 
 /// Available OpenAI models (2026)
 ///
-/// GPT-5 family pricing:
-/// - gpt-5-nano: $0.05/$0.40 per 1M tokens (32K context)
-/// - gpt-5.2: $2.50/$10.00 per 1M tokens (128K context)
-/// - gpt-5-ultra: $10.00/$30.00 per 1M tokens (256K context)
+/// GPT-5 family pricing (per 1M tokens):
+/// - gpt-5-nano: $0.05/$0.40 (cheapest, 32K context)
+/// - gpt-5: $1.25/$10.00 (400K context, cheaper than GPT-4o!)
+/// - gpt-5.2: latest flagship
+///
+/// GPT-4o family (legacy, still available):
+/// - gpt-4o-mini: $0.15/$0.60 (128K context)
+/// - gpt-4o: $2.50/$10.00 (128K context)
 pub const MODELS: &[&str] = &[
-    // GPT-5 family (2026)
-    "gpt-5-ultra",
+    // GPT-5 family (2025-08~)
     "gpt-5.2",
+    "gpt-5",
     "gpt-5-nano",
-    // GPT-4o family (legacy, still available)
+    // GPT-4o family (legacy)
     "gpt-4o",
     "gpt-4o-mini",
-    "gpt-4",
-    "gpt-3.5-turbo",
 ];
 
-/// Default model to use when none is specified
-pub const DEFAULT_MODEL: &str = "gpt-4o";
+/// Default model — GPT-5 is cheaper ($1.25) than GPT-4o ($2.50) per 1M input tokens
+pub const DEFAULT_MODEL: &str = "gpt-5";
 
 /// Configuration for the OpenAI provider
 #[derive(Clone)]
 pub struct OpenAiConfig {
     /// API key for authentication
     pub api_key: String,
+    /// Authentication source (for logging)
+    pub auth_source: AuthSource,
     /// Optional custom base URL (for Azure OpenAI or proxies)
     pub base_url: Option<String>,
     /// Optional organization ID
@@ -92,6 +98,7 @@ impl fmt::Debug for OpenAiConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OpenAiConfig")
             .field("api_key", &mask_api_key(&self.api_key))
+            .field("auth_source", &self.auth_source)
             .field("base_url", &self.base_url)
             .field("org_id", &self.org_id.as_ref().map(|_| "[REDACTED]"))
             .field("default_model", &self.default_model)
@@ -106,6 +113,7 @@ impl OpenAiConfig {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
+            auth_source: AuthSource::ApiKey,
             base_url: None,
             org_id: None,
             default_model: DEFAULT_MODEL.to_string(),
@@ -113,26 +121,47 @@ impl OpenAiConfig {
         }
     }
 
-    /// Creates configuration from environment variables
+    /// Creates configuration from environment variables.
+    ///
+    /// Priority:
+    /// 1. `OPENAI_API_KEY` env var
+    /// 2. `~/.codex/auth.json` (Codex CLI / ChatGPT Pro subscription)
     ///
     /// # Errors
-    /// Returns error if `OPENAI_API_KEY` is not set
+    /// Returns error if neither source is available
     pub fn from_env() -> Result<Self> {
-        let api_key = std::env::var("OPENAI_API_KEY")
-            .map_err(|_| Error::NotConfigured("OPENAI_API_KEY not set".to_string()))?;
-
         let base_url = std::env::var("OPENAI_BASE_URL").ok();
         let org_id = std::env::var("OPENAI_ORG_ID").ok();
         let default_model =
             std::env::var("OPENAI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
-        Ok(Self {
-            api_key,
-            base_url,
-            org_id,
-            default_model,
-            timeout: Duration::from_secs(60),
-        })
+        // 1. Try explicit API key
+        if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
+            return Ok(Self {
+                api_key,
+                auth_source: AuthSource::ApiKey,
+                base_url,
+                org_id,
+                default_model,
+                timeout: Duration::from_secs(60),
+            });
+        }
+
+        // 2. Try Codex CLI auth credentials
+        if let Some(creds) = cli_auth::read_codex_auth() {
+            return Ok(Self {
+                api_key: creds.tokens.access_token,
+                auth_source: AuthSource::CodexCli,
+                base_url,
+                org_id,
+                default_model,
+                timeout: Duration::from_secs(60),
+            });
+        }
+
+        Err(Error::NotConfigured(
+            "OPENAI_API_KEY not set and Codex CLI credentials not found".to_string(),
+        ))
     }
 
     /// Sets a custom base URL

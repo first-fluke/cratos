@@ -23,25 +23,33 @@ pub const GROQ_API_BASE: &str = "https://api.groq.com/openai/v1";
 
 /// Available Groq models (2026)
 ///
-/// Groq provides FREE access to high-quality models with rate limits.
-/// Llama 4 family (2026):
-/// - llama-4-scout: MoE 17B active / 109B total (FREE)
-/// - llama-4-maverick: MoE 17B active / 400B total (FREE)
+/// Groq provides ultra-fast inference with free tier (rate-limited) and paid tiers.
+/// Pricing per 1M tokens:
+/// - llama-3.1-8b-instant: $0.05/$0.08
+/// - openai/gpt-oss-20b: $0.075/$0.30 (tool use support!)
+/// - openai/gpt-oss-120b: $0.15/$0.60 (tool use support!)
+/// - qwen/qwen3-32b: $0.29/$0.59
+/// - llama-3.3-70b-versatile: $0.59/$0.79
 pub const MODELS: &[&str] = &[
-    // Llama 4 family (2026, FREE)
-    "llama-4-maverick-17b-128e-instruct",
-    "llama-4-scout-17b-16e-instruct",
-    // Llama 3.3 family (still available, FREE)
+    // Production models
     "llama-3.3-70b-versatile",
-    "llama-3.1-70b-versatile",
     "llama-3.1-8b-instant",
-    // Other models
-    "mixtral-8x7b-32768",
-    "gemma2-9b-it",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    // Preview models
+    "qwen/qwen3-32b",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
 ];
 
-/// Default Groq model (Llama 4 Scout - free, fast, capable)
-pub const DEFAULT_MODEL: &str = "llama-4-scout-17b-16e-instruct";
+/// Default Groq model — Llama 3.3 70B (production, fast, capable)
+pub const DEFAULT_MODEL: &str = "llama-3.3-70b-versatile";
+
+/// Models that reliably support OpenAI-compatible function calling on Groq
+const TOOL_CAPABLE_MODELS: &[&str] = &["openai/gpt-oss-20b", "openai/gpt-oss-120b"];
+
+/// Default fallback model when tool calling is needed
+const TOOL_FALLBACK_MODEL: &str = "openai/gpt-oss-120b";
 
 /// Groq provider configuration
 #[derive(Clone)]
@@ -89,11 +97,12 @@ fn sanitize_api_error(error: &str) -> String {
         return "Groq server error. Please try again later.".to_string();
     }
 
-    if error.len() < 100 && !error.contains("gsk_") && !error.contains("key") {
-        return error.to_string();
+    // Truncate overly long messages but preserve useful error info
+    if error.len() > 300 {
+        format!("{}...(truncated)", crate::util::truncate_safe(error, 300))
+    } else {
+        error.to_string()
     }
-
-    "An API error occurred. Please try again.".to_string()
 }
 
 impl GroqConfig {
@@ -263,6 +272,11 @@ impl GroqProvider {
         }
     }
 
+    /// Check if a specific model supports OpenAI-compatible tool calling
+    fn model_supports_tools(model: &str) -> bool {
+        TOOL_CAPABLE_MODELS.contains(&model)
+    }
+
     fn convert_tool_choice(choice: &ToolChoice) -> Option<serde_json::Value> {
         match choice {
             ToolChoice::Auto => Some(serde_json::json!("auto")),
@@ -327,6 +341,11 @@ impl LlmProvider for GroqProvider {
             .await
             .map_err(|e| Error::Api(sanitize_api_error(&e.to_string())))?;
 
+        // Capture rate limit headers before consuming the body
+        crate::quota::global_quota_tracker()
+            .update_from_headers("groq", response.headers())
+            .await;
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(Error::Api(sanitize_api_error(&error_text)));
@@ -369,6 +388,18 @@ impl LlmProvider for GroqProvider {
             &request.request.model
         };
 
+        // Auto-fallback to tool-capable model if the requested model doesn't support tools
+        let effective_model = if Self::model_supports_tools(model) {
+            model.to_string()
+        } else {
+            tracing::warn!(
+                original_model = %model,
+                fallback_model = %TOOL_FALLBACK_MODEL,
+                "Model does not support function calling, auto-switching to tool-capable model"
+            );
+            TOOL_FALLBACK_MODEL.to_string()
+        };
+
         let messages: Vec<ChatMessage> = request
             .request
             .messages
@@ -379,7 +410,7 @@ impl LlmProvider for GroqProvider {
         let tools: Vec<ChatTool> = request.tools.iter().map(Self::convert_tool).collect();
 
         let chat_request = ChatRequest {
-            model: model.to_string(),
+            model: effective_model,
             messages,
             max_tokens: request.request.max_tokens,
             temperature: request.request.temperature,
@@ -399,6 +430,11 @@ impl LlmProvider for GroqProvider {
             .send()
             .await
             .map_err(|e| Error::Api(sanitize_api_error(&e.to_string())))?;
+
+        // Capture rate limit headers before consuming the body
+        crate::quota::global_quota_tracker()
+            .update_from_headers("groq", response.headers())
+            .await;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
@@ -468,7 +504,8 @@ mod tests {
     #[test]
     fn test_available_models() {
         assert!(MODELS.contains(&"llama-3.3-70b-versatile"));
-        assert!(MODELS.contains(&"mixtral-8x7b-32768"));
+        assert!(MODELS.contains(&"openai/gpt-oss-20b"));
+        assert!(MODELS.contains(&"openai/gpt-oss-120b"));
     }
 
     #[test]
@@ -495,5 +532,14 @@ mod tests {
         let config = GroqConfig::new("gsk_1234567890abcdefghijklmnop");
         let debug_str = format!("{:?}", config);
         assert!(!debug_str.contains("1234567890abcdefghijkl"));
+    }
+
+    #[test]
+    fn test_model_supports_tools() {
+        assert!(GroqProvider::model_supports_tools("openai/gpt-oss-20b"));
+        assert!(GroqProvider::model_supports_tools("openai/gpt-oss-120b"));
+        assert!(!GroqProvider::model_supports_tools("llama-3.3-70b-versatile"));
+        assert!(!GroqProvider::model_supports_tools("llama-3.1-8b-instant"));
+        assert!(!GroqProvider::model_supports_tools("qwen/qwen3-32b"));
     }
 }

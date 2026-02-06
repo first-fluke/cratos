@@ -120,10 +120,10 @@ impl TaskType {
 /// Model tier for cost/performance optimization
 ///
 /// Tiers are ordered by cost (ascending) and quality (ascending):
-/// - UltraBudget: < $0.15/M tokens (DeepSeek R1 Distill, Qwen 2.5)
-/// - Fast: $0.15 ~ $1.00/M tokens (GPT-5 nano, Gemini 3 Flash)
-/// - Standard: $1.00 ~ $5.00/M tokens (Claude Sonnet 4, Gemini 3 Pro)
-/// - Premium: > $5.00/M tokens (Claude Opus 4.5, GPT-5 Ultra)
+/// - UltraBudget: < $0.15/M tokens (DeepSeek R1 Distill, GPT-5 nano)
+/// - Fast: $0.15 ~ $1.00/M tokens (GPT-5 nano, Gemini 2.5 Flash)
+/// - Standard: $1.00 ~ $5.00/M tokens (Claude Sonnet 4.5, GPT-5)
+/// - Premium: > $5.00/M tokens (Claude Opus 4.5)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelTier {
@@ -131,13 +131,13 @@ pub enum ModelTier {
     /// Examples: DeepSeek R1 Distill ($0.03), Qwen 2.5-VL ($0.05), GLM-4-9B ($0.086)
     UltraBudget,
     /// Fast, cheap models for simple tasks ($0.15 ~ $1.00/M tokens)
-    /// Examples: GPT-5 nano, Gemini 3 Flash, Mistral Medium 3
+    /// Examples: GPT-5 nano, Gemini 2.5 Flash
     Fast,
     /// Balanced models for general tasks ($1.00 ~ $5.00/M tokens)
-    /// Examples: Claude Sonnet 4, Gemini 3 Pro, GPT-5.2
+    /// Examples: Claude Sonnet 4.5, GPT-5, Gemini 2.5 Pro
     Standard,
     /// Premium models for complex reasoning (> $5.00/M tokens)
-    /// Examples: Claude Opus 4.5, GPT-5 Ultra
+    /// Examples: Claude Opus 4.5
     Premium,
 }
 
@@ -146,9 +146,9 @@ impl ModelTier {
     ///
     /// Model selection follows 2026 pricing tiers:
     /// - UltraBudget: DeepSeek R1 Distill, Qwen 2.5, GLM-4-9B
-    /// - Fast: Gemini 3 Flash, GPT-5 nano, Llama 4 Scout
-    /// - Standard: Claude Sonnet 4, Gemini 3 Pro, GPT-5.2
-    /// - Premium: Claude Opus 4.5, GPT-5 Ultra
+    /// - Fast: GPT-5 nano, Gemini 2.5 Flash, Groq GPT-OSS
+    /// - Standard: Claude Sonnet 4.5, GPT-5, Gemini 2.5 Pro
+    /// - Premium: Claude Opus 4.5
     #[must_use]
     pub fn default_model(&self, provider: &str) -> &'static str {
         match (self, provider) {
@@ -161,36 +161,38 @@ impl ModelTier {
             (ModelTier::Premium, "deepseek") => "deepseek-reasoner",
 
             // ================================================================
-            // Groq - FREE tier with Llama 4 (rate limited)
+            // Groq - FREE tier (rate limited)
             // ================================================================
-            (ModelTier::UltraBudget, "groq") => "llama-4-scout-17b-16e-instruct",
-            (ModelTier::Fast, "groq") => "llama-4-scout-17b-16e-instruct",
-            (ModelTier::Standard, "groq") => "llama-4-maverick-17b-128e-instruct",
-            (ModelTier::Premium, "groq") => "llama-4-maverick-17b-128e-instruct",
+            (ModelTier::UltraBudget, "groq") => "llama-3.1-8b-instant",
+            (ModelTier::Fast, "groq") => "openai/gpt-oss-20b",
+            (ModelTier::Standard, "groq") => "openai/gpt-oss-120b",
+            (ModelTier::Premium, "groq") => "openai/gpt-oss-120b",
 
             // ================================================================
-            // OpenAI - GPT-5 family (2026)
+            // OpenAI - GPT-5 family (Aug 2025~)
+            // gpt-5-nano: $0.05/$0.40, gpt-5: $1.25/$10.00
             // ================================================================
             (ModelTier::UltraBudget, "openai") => "gpt-5-nano",
             (ModelTier::Fast, "openai") => "gpt-5-nano",
-            (ModelTier::Standard, "openai") => "gpt-5.2",
-            (ModelTier::Premium, "openai") => "gpt-5-ultra",
+            (ModelTier::Standard, "openai") => "gpt-5",
+            (ModelTier::Premium, "openai") => "gpt-5",
 
             // ================================================================
-            // Anthropic - Claude 4 family (2026)
+            // Anthropic - Claude 4.5 family
+            // haiku-4.5: $1/$5, sonnet-4.5: $3/$15, opus-4.5: $5/$25
             // ================================================================
-            (ModelTier::UltraBudget, "anthropic") => "claude-3-5-haiku-20241022",
-            (ModelTier::Fast, "anthropic") => "claude-3-5-haiku-20241022",
-            (ModelTier::Standard, "anthropic") => "claude-sonnet-4-20250514",
-            (ModelTier::Premium, "anthropic") => "claude-opus-4-20250514",
+            (ModelTier::UltraBudget, "anthropic") => "claude-haiku-4-5-20251001",
+            (ModelTier::Fast, "anthropic") => "claude-haiku-4-5-20251001",
+            (ModelTier::Standard, "anthropic") => "claude-sonnet-4-5-20250929",
+            (ModelTier::Premium, "anthropic") => "claude-opus-4-5-20250514",
 
             // ================================================================
-            // Google Gemini - Gemini 3 family (2026)
+            // Google Gemini - Gemini 2.5 family
             // ================================================================
-            (ModelTier::UltraBudget, "gemini") => "gemini-3-flash",
-            (ModelTier::Fast, "gemini") => "gemini-3-flash",
-            (ModelTier::Standard, "gemini") => "gemini-3-pro",
-            (ModelTier::Premium, "gemini") => "gemini-3-pro",
+            (ModelTier::UltraBudget, "gemini") => "gemini-2.5-flash",
+            (ModelTier::Fast, "gemini") => "gemini-2.5-flash",
+            (ModelTier::Standard, "gemini") => "gemini-2.5-pro",
+            (ModelTier::Premium, "gemini") => "gemini-2.5-pro",
 
             // ================================================================
             // GLM (ZhipuAI) - Chinese models
@@ -209,11 +211,11 @@ impl ModelTier {
             (ModelTier::Premium, "qwen") => "qwen-max",
 
             // ================================================================
-            // OpenRouter - Multi-provider gateway
+            // OpenRouter - Multi-provider gateway (no :free models — they're queue-based and unreliable)
             // ================================================================
-            (ModelTier::UltraBudget, "openrouter") => "deepseek/deepseek-r1-distill-llama-70b",
-            (ModelTier::Fast, "openrouter") => "qwen/qwen3-32b:free",
-            (ModelTier::Standard, "openrouter") => "google/gemini-3-flash",
+            (ModelTier::UltraBudget, "openrouter") => "google/gemini-flash-1.5",
+            (ModelTier::Fast, "openrouter") => "google/gemini-flash-1.5",
+            (ModelTier::Standard, "openrouter") => "google/gemini-pro-1.5",
             (ModelTier::Premium, "openrouter") => "anthropic/claude-sonnet-4",
 
             // ================================================================
@@ -249,12 +251,12 @@ impl ModelTier {
             // ================================================================
             // Ollama - Local models (all same model)
             // ================================================================
-            (_, "ollama") => "llama3.2",
+            (_, "ollama") => "qwen2.5:7b",
 
             // ================================================================
             // Default fallback
             // ================================================================
-            _ => "gpt-5.2",
+            _ => "gpt-5",
         }
     }
 
@@ -503,9 +505,15 @@ impl LlmRouter {
     /// Complete using the default provider
     #[instrument(skip(self, request))]
     pub async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse> {
-        let provider = self
-            .default_provider()
-            .ok_or_else(|| Error::NotConfigured(self.default_provider.clone()))?;
+        let provider = self.default_provider().ok_or_else(|| {
+            if self.default_provider == "auto" {
+                Error::NotConfigured(
+                    "auto (no provider resolved — check API keys or run `cratos init`)".into(),
+                )
+            } else {
+                Error::NotConfigured(self.default_provider.clone())
+            }
+        })?;
 
         provider.complete(request).await
     }
@@ -516,9 +524,15 @@ impl LlmRouter {
         &self,
         request: ToolCompletionRequest,
     ) -> Result<ToolCompletionResponse> {
-        let provider = self
-            .default_provider()
-            .ok_or_else(|| Error::NotConfigured(self.default_provider.clone()))?;
+        let provider = self.default_provider().ok_or_else(|| {
+            if self.default_provider == "auto" {
+                Error::NotConfigured(
+                    "auto (no provider resolved — check API keys or run `cratos init`)".into(),
+                )
+            } else {
+                Error::NotConfigured(self.default_provider.clone())
+            }
+        })?;
 
         if !provider.supports_tools() {
             return Err(Error::Api(format!(
@@ -812,13 +826,13 @@ impl Default for ModelRoutingConfig {
         Self {
             // UltraBudget - DeepSeek R1 Distill ($0.03/1M input, $0.09/1M output)
             trivial: ModelConfig::new("deepseek", "deepseek-r1-distill-llama-70b"),
-            // Fast - Gemini 3 Flash ($0.50/1M, fastest inference)
-            simple: ModelConfig::new("gemini", "gemini-3-flash"),
-            // Standard - Claude Sonnet 4 ($3/1M, balanced quality)
-            general: ModelConfig::new("anthropic", "claude-sonnet-4-20250514"),
-            // Premium - Claude Opus 4.5 ($15/1M, highest quality)
-            complex: ModelConfig::new("anthropic", "claude-opus-4-20250514"),
-            // Fallback to GPT-5 nano if others fail
+            // Fast - Gemini 2.5 Flash ($0.075/1M input, free tier available)
+            simple: ModelConfig::new("gemini", "gemini-2.5-flash"),
+            // Standard - Claude Sonnet 4.5 ($3/1M, balanced)
+            general: ModelConfig::new("anthropic", "claude-sonnet-4-5-20250929"),
+            // Premium - Claude Opus 4.5 ($5/$25, 67% cheaper than Opus 4!)
+            complex: ModelConfig::new("anthropic", "claude-opus-4-5-20250514"),
+            // Fallback to GPT-5-nano ($0.05/$0.40 — cheaper than GPT-4o-mini)
             fallback: Some(ModelConfig::new("openai", "gpt-5-nano")),
             auto_downgrade: true,
         }
@@ -828,16 +842,16 @@ impl Default for ModelRoutingConfig {
 impl ModelRoutingConfig {
     /// Create a config optimized for free/low-cost usage
     ///
-    /// Uses FREE providers (Groq, Novita) where possible:
-    /// - Trivial: Groq Llama 4 Scout (FREE)
-    /// - Simple: Groq Llama 4 Scout (FREE)
-    /// - General: DeepSeek Chat ($0.14/1M)
-    /// - Complex: DeepSeek Reasoner ($0.55/1M)
+    /// Uses ultra-low-cost providers (Groq, DeepSeek):
+    /// - Trivial: Groq Llama 3.1 8B ($0.05/$0.08)
+    /// - Simple: Groq GPT-OSS 20B ($0.075/$0.30, tool use support)
+    /// - General: DeepSeek Chat ($0.14/$0.28)
+    /// - Complex: DeepSeek Reasoner ($0.55/$2.19)
     #[must_use]
     pub fn free_tier() -> Self {
         Self {
-            trivial: ModelConfig::new("groq", "llama-4-scout-17b-16e-instruct"),
-            simple: ModelConfig::new("groq", "llama-4-scout-17b-16e-instruct"),
+            trivial: ModelConfig::new("groq", "llama-3.1-8b-instant"),
+            simple: ModelConfig::new("groq", "openai/gpt-oss-20b"),
             general: ModelConfig::new("deepseek", "deepseek-chat"),
             complex: ModelConfig::new("deepseek", "deepseek-reasoner"),
             fallback: Some(ModelConfig::new("novita", "qwen/qwen2.5-72b-instruct")),
@@ -847,33 +861,33 @@ impl ModelRoutingConfig {
 
     /// Create a config optimized for quality (uses premium models)
     ///
-    /// Uses Anthropic Claude 4 family for all tiers:
-    /// - Trivial: Claude 3.5 Haiku ($0.25/1M)
-    /// - Simple: Claude 3.5 Haiku ($0.25/1M)
-    /// - General: Claude Sonnet 4 ($3/1M)
-    /// - Complex: Claude Opus 4.5 ($15/1M)
+    /// Uses Anthropic Claude 4.5 family for all tiers:
+    /// - Trivial: Claude Haiku 4.5 ($1/$5)
+    /// - Simple: Claude Haiku 4.5 ($1/$5)
+    /// - General: Claude Sonnet 4.5 ($3/$15)
+    /// - Complex: Claude Opus 4.5 ($5/$25)
     #[must_use]
     pub fn quality_tier() -> Self {
         Self {
-            trivial: ModelConfig::new("anthropic", "claude-3-5-haiku-20241022"),
-            simple: ModelConfig::new("anthropic", "claude-3-5-haiku-20241022"),
-            general: ModelConfig::new("anthropic", "claude-sonnet-4-20250514"),
-            complex: ModelConfig::new("anthropic", "claude-opus-4-20250514"),
-            fallback: Some(ModelConfig::new("openai", "gpt-5.2")),
+            trivial: ModelConfig::new("anthropic", "claude-haiku-4-5-20251001"),
+            simple: ModelConfig::new("anthropic", "claude-haiku-4-5-20251001"),
+            general: ModelConfig::new("anthropic", "claude-sonnet-4-5-20250929"),
+            complex: ModelConfig::new("anthropic", "claude-opus-4-5-20250514"),
+            fallback: Some(ModelConfig::new("openai", "gpt-5")),
             auto_downgrade: false,
         }
     }
 
     /// Create a config for local-only usage (Ollama)
     ///
-    /// All tiers use the same local model (Llama 3.2)
+    /// All tiers use the same local model (Qwen 2.5 7B)
     #[must_use]
     pub fn local_only() -> Self {
         Self {
-            trivial: ModelConfig::new("ollama", "llama3.2"),
-            simple: ModelConfig::new("ollama", "llama3.2"),
-            general: ModelConfig::new("ollama", "llama3.2"),
-            complex: ModelConfig::new("ollama", "llama3.2"),
+            trivial: ModelConfig::new("ollama", "qwen2.5:7b"),
+            simple: ModelConfig::new("ollama", "qwen2.5:7b"),
+            general: ModelConfig::new("ollama", "qwen2.5:7b"),
+            complex: ModelConfig::new("ollama", "qwen2.5:7b"),
             fallback: None,
             auto_downgrade: false,
         }
@@ -922,8 +936,11 @@ impl ModelRoutingConfig {
     /// Get average price per 1M tokens for a provider at a given tier (2026 pricing)
     fn get_provider_price(provider: &str, tier: ModelTier) -> f64 {
         match (provider, tier) {
-            // Groq - FREE (rate limited)
-            ("groq", _) => 0.0,
+            // Groq - low-cost (free tier available with rate limits)
+            ("groq", ModelTier::UltraBudget) => 0.065, // llama-3.1-8b
+            ("groq", ModelTier::Fast) => 0.19,         // gpt-oss-20b
+            ("groq", ModelTier::Standard) => 0.375,    // gpt-oss-120b
+            ("groq", ModelTier::Premium) => 0.69,      // llama-3.3-70b
             // Novita - FREE tier
             ("novita", _) => 0.0,
             // DeepSeek - Ultra-low-cost
@@ -940,18 +957,18 @@ impl ModelRoutingConfig {
             // OpenAI - GPT-5 family
             ("openai", ModelTier::UltraBudget) => 0.225, // GPT-5 nano avg
             ("openai", ModelTier::Fast) => 0.225,
-            ("openai", ModelTier::Standard) => 6.25, // GPT-5.2 avg
-            ("openai", ModelTier::Premium) => 20.0,  // GPT-5 Ultra avg
-            // Anthropic - Claude 4 family
-            ("anthropic", ModelTier::UltraBudget) => 0.40, // Haiku avg
-            ("anthropic", ModelTier::Fast) => 0.40,
-            ("anthropic", ModelTier::Standard) => 9.0, // Sonnet 4 avg
-            ("anthropic", ModelTier::Premium) => 45.0, // Opus 4.5 avg
-            // Gemini - Gemini 3 family
+            ("openai", ModelTier::Standard) => 5.63, // GPT-5 avg
+            ("openai", ModelTier::Premium) => 5.63,
+            // Anthropic - Claude 4.5 family
+            ("anthropic", ModelTier::UltraBudget) => 3.0,  // Haiku 4.5 avg
+            ("anthropic", ModelTier::Fast) => 3.0,
+            ("anthropic", ModelTier::Standard) => 9.0,  // Sonnet 4.5 avg
+            ("anthropic", ModelTier::Premium) => 15.0,  // Opus 4.5 avg
+            // Gemini - Gemini 2.5 family
             ("gemini", ModelTier::UltraBudget) => 0.175, // Flash avg
-            ("gemini", ModelTier::Fast) => 1.75,
-            ("gemini", ModelTier::Standard) => 7.0, // Pro avg
-            ("gemini", ModelTier::Premium) => 7.0,
+            ("gemini", ModelTier::Fast) => 0.175,
+            ("gemini", ModelTier::Standard) => 1.25, // Pro avg
+            ("gemini", ModelTier::Premium) => 1.25,
             // GLM
             ("glm", ModelTier::UltraBudget) => 0.086,
             ("glm", _) => 0.20,
@@ -990,7 +1007,10 @@ impl LlmProvider for LlmRouter {
     }
 
     fn default_model(&self) -> &str {
-        &self.default_provider
+        self.providers
+            .get(&self.default_provider)
+            .map(|p| p.default_model())
+            .unwrap_or(&self.default_provider)
     }
 
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse> {
@@ -1068,37 +1088,37 @@ mod tests {
 
     #[test]
     fn test_model_tier_default_model() {
-        // OpenAI (GPT-5 family 2026)
+        // OpenAI (GPT-5 family)
         assert_eq!(ModelTier::UltraBudget.default_model("openai"), "gpt-5-nano");
         assert_eq!(ModelTier::Fast.default_model("openai"), "gpt-5-nano");
-        assert_eq!(ModelTier::Standard.default_model("openai"), "gpt-5.2");
-        assert_eq!(ModelTier::Premium.default_model("openai"), "gpt-5-ultra");
+        assert_eq!(ModelTier::Standard.default_model("openai"), "gpt-5");
+        assert_eq!(ModelTier::Premium.default_model("openai"), "gpt-5");
 
-        // Anthropic (Claude 4 family 2026)
+        // Anthropic (Claude 4.5 family)
         assert_eq!(
             ModelTier::UltraBudget.default_model("anthropic"),
-            "claude-3-5-haiku-20241022"
+            "claude-haiku-4-5-20251001"
         );
         assert_eq!(
             ModelTier::Fast.default_model("anthropic"),
-            "claude-3-5-haiku-20241022"
+            "claude-haiku-4-5-20251001"
         );
         assert_eq!(
             ModelTier::Standard.default_model("anthropic"),
-            "claude-sonnet-4-20250514"
+            "claude-sonnet-4-5-20250929"
         );
         assert_eq!(
             ModelTier::Premium.default_model("anthropic"),
-            "claude-opus-4-20250514"
+            "claude-opus-4-5-20250514"
         );
 
-        // Gemini (Gemini 3 family 2026)
+        // Gemini (Gemini 2.5 family)
         assert_eq!(
             ModelTier::UltraBudget.default_model("gemini"),
-            "gemini-3-flash"
+            "gemini-2.5-flash"
         );
-        assert_eq!(ModelTier::Fast.default_model("gemini"), "gemini-3-flash");
-        assert_eq!(ModelTier::Standard.default_model("gemini"), "gemini-3-pro");
+        assert_eq!(ModelTier::Fast.default_model("gemini"), "gemini-2.5-flash");
+        assert_eq!(ModelTier::Standard.default_model("gemini"), "gemini-2.5-pro");
 
         // DeepSeek (ultra-low-cost)
         assert_eq!(
@@ -1111,10 +1131,10 @@ mod tests {
             "deepseek-reasoner"
         );
 
-        // Groq (FREE - Llama 4)
+        // Groq (FREE)
         assert_eq!(
             ModelTier::UltraBudget.default_model("groq"),
-            "llama-4-scout-17b-16e-instruct"
+            "llama-3.1-8b-instant"
         );
     }
 

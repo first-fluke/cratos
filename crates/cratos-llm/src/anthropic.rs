@@ -43,12 +43,12 @@ fn sanitize_api_error(error: &str) -> String {
         return "API server error. Please try again later.".to_string();
     }
 
-    // For short, generic errors without keys, return as-is
-    if error.len() < 100 && !error.contains("sk-") && !error.contains("key") {
-        return error.to_string();
+    // Truncate overly long messages but preserve useful error info
+    if error.len() > 300 {
+        format!("{}...(truncated)", crate::util::truncate_safe(error, 300))
+    } else {
+        error.to_string()
     }
-
-    "An API error occurred. Please try again.".to_string()
 }
 
 /// Anthropic API version
@@ -56,25 +56,29 @@ const API_VERSION: &str = "2023-06-01";
 
 /// Available Anthropic models (2026)
 ///
-/// Claude 4 family pricing:
-/// - claude-3-5-haiku: $0.25/$1.25 per 1M tokens (fast, cheap)
-/// - claude-sonnet-4: $3.00/$15.00 per 1M tokens (balanced)
-/// - claude-opus-4.5: $15.00/$75.00 per 1M tokens (highest quality)
+/// Claude 4.5 family pricing (per 1M tokens):
+/// - claude-haiku-4-5: $1.00/$5.00 (fastest, cheapest 4.5)
+/// - claude-sonnet-4-5: $3.00/$15.00 (balanced)
+/// - claude-opus-4-5: $5.00/$25.00 (most capable, 67% cheaper than opus 4!)
+///
+/// Claude 4 family (legacy, still available):
+/// - claude-sonnet-4: $3.00/$15.00
+/// - claude-opus-4: $15.00/$75.00
 pub const MODELS: &[&str] = &[
-    // Claude 4 family (2026)
+    // Claude 4.5 family (latest)
+    "claude-opus-4-5-20250514",
+    "claude-sonnet-4-5-20250929",
+    "claude-haiku-4-5-20251001",
+    // Claude 4 family (legacy)
     "claude-opus-4-20250514",
     "claude-sonnet-4-20250514",
-    // Claude 3.5 family (still available)
+    // Claude 3.5 family (legacy)
     "claude-3-5-sonnet-20241022",
     "claude-3-5-haiku-20241022",
-    // Claude 3 family (legacy)
-    "claude-3-opus-20240229",
-    "claude-3-sonnet-20240229",
-    "claude-3-haiku-20240307",
 ];
 
-/// Default Anthropic model (Claude Sonnet 4 - best balance)
-pub const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+/// Default — Claude Sonnet 4.5 (same price as Sonnet 4, but newer/better)
+pub const DEFAULT_MODEL: &str = "claude-sonnet-4-5-20250929";
 
 /// Default API base URL
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -382,6 +386,11 @@ impl AnthropicProvider {
             .await
             .map_err(|e| Error::Network(e.to_string()))?;
 
+        // Capture rate limit headers before consuming the body
+        crate::quota::global_quota_tracker()
+            .update_from_headers("anthropic", response.headers())
+            .await;
+
         let status = response.status();
         let body = response
             .text()
@@ -561,8 +570,10 @@ mod tests {
 
     #[test]
     fn test_available_models() {
+        assert!(MODELS.contains(&"claude-sonnet-4-5-20250929"));
+        assert!(MODELS.contains(&"claude-opus-4-5-20250514"));
+        assert!(MODELS.contains(&"claude-haiku-4-5-20251001"));
         assert!(MODELS.contains(&"claude-3-5-sonnet-20241022"));
-        assert!(MODELS.contains(&"claude-3-opus-20240229"));
     }
 
     #[test]

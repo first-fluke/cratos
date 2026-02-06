@@ -2,15 +2,15 @@
 //!
 //! This crate provides LLM integration for Cratos:
 //! - Router: Provider trait definition and automatic routing
-//! - OpenAI: GPT-5 family (nano, 5.2, Ultra)
+//! - OpenAI: GPT-5 family (5, 5-nano) + GPT-4o (legacy)
 //! - Anthropic: Claude 4 family (Haiku, Sonnet 4, Opus 4.5)
-//! - Gemini: Google Gemini 3 family (Flash, Pro)
-//! - Ollama: Local Ollama provider (Llama 3.2, Mistral)
+//! - Gemini: Google Gemini 2.5 family (Flash, Pro)
+//! - Ollama: Local Ollama provider (Qwen 2.5, Llama 3.1)
 //! - GLM: ZhipuAI GLM-4 provider
-//! - Qwen: Alibaba Qwen 3 provider
+//! - Qwen: Alibaba Qwen provider
 //! - OpenRouter: Multi-provider gateway
 //! - Novita: Free tier LLM provider
-//! - Groq: Free tier with Llama 4 (ultra-fast inference)
+//! - Groq: Free tier with Llama 3.3 (ultra-fast inference)
 //! - DeepSeek: Ultra-low-cost provider ($0.03 ~ $0.55/1M tokens)
 //! - SiliconFlow: Cheapest provider ($0.03 ~ $0.09/1M tokens)
 //! - Fireworks: Fast inference for open-source models
@@ -20,6 +20,7 @@
 #![warn(missing_docs)]
 
 pub mod anthropic;
+pub mod cli_auth;
 pub mod completion;
 pub mod cost;
 pub mod deepseek;
@@ -36,6 +37,7 @@ pub mod novita;
 pub mod ollama;
 pub mod openai;
 pub mod openrouter;
+pub mod quota;
 pub mod qwen;
 pub mod router;
 pub mod siliconflow;
@@ -46,6 +48,9 @@ pub mod util;
 pub use cost::{
     global_tracker, CostReport, CostTracker, ModelPricing, SavingsPotential, UsageRecord,
     UsageStats,
+};
+pub use quota::{
+    format_compact_number, format_duration, global_quota_tracker, QuotaState, QuotaTracker,
 };
 pub use error::{Error, Result};
 pub use router::{

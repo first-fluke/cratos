@@ -79,11 +79,12 @@ fn sanitize_api_error(error: &str) -> String {
         return "API rate limit exceeded. Please try again later.".to_string();
     }
 
-    if error.len() < 100 {
-        return error.to_string();
+    // Truncate overly long messages but preserve useful error info
+    if error.len() > 300 {
+        format!("{}...(truncated)", crate::util::truncate_safe(error, 300))
+    } else {
+        error.to_string()
     }
-
-    "An API error occurred. Please try again.".to_string()
 }
 
 // ============================================================================
@@ -343,6 +344,11 @@ impl QwenProvider {
             .send()
             .await
             .map_err(|e| Error::Network(e.to_string()))?;
+
+        // Capture rate limit headers before consuming the body
+        crate::quota::global_quota_tracker()
+            .update_from_headers("qwen", response.headers())
+            .await;
 
         let status = response.status();
         let text = response

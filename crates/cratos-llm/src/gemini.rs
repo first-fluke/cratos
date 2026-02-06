@@ -2,6 +2,7 @@
 //!
 //! This module implements the Google Gemini provider using reqwest.
 
+use crate::cli_auth::{self, AuthSource};
 use crate::error::{Error, Result};
 use crate::router::{
     CompletionRequest, CompletionResponse, LlmProvider, Message, MessageRole, TokenUsage, ToolCall,
@@ -12,7 +13,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
-use tracing::{debug, instrument};
+use tracing::{debug, info, instrument};
 
 // ============================================================================
 // Security Utilities
@@ -46,34 +47,34 @@ fn sanitize_api_error(error: &str) -> String {
         return "API server error. Please try again later.".to_string();
     }
 
-    // For short, generic errors without keys, return as-is
-    if error.len() < 100 && !error.contains("key=") && !error.contains("key ") {
-        return error.to_string();
+    // Truncate overly long messages but preserve useful error info
+    if error.len() > 300 {
+        format!("{}...(truncated)", crate::util::truncate_safe(error, 300))
+    } else {
+        error.to_string()
     }
-
-    "An API error occurred. Please try again.".to_string()
 }
 
 /// Available Gemini models (2026)
 ///
-/// Gemini 3 family pricing:
-/// - gemini-3-flash: $0.50/$3.00 per 1M tokens (fastest, 2M context)
-/// - gemini-3-pro: $2.00/$12.00 per 1M tokens (1M context)
+/// Pricing per 1M tokens:
+/// - gemini-2.5-flash-lite: ~$0.10 (cheapest)
+/// - gemini-2.5-flash: $0.075/$0.60 (free tier available!)
+/// - gemini-2.5-pro: $1.25/$15.00 (best for coding)
 pub const MODELS: &[&str] = &[
-    // Gemini 3 family (2026)
-    "gemini-3-pro",
-    "gemini-3-flash",
-    // Gemini 2 family (still available)
+    // Gemini 2.5 family (production)
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    // Gemini 2.0 family (deprecated March 2026)
     "gemini-2.0-flash",
-    "gemini-2.0-pro",
     // Gemini 1.5 family (legacy)
     "gemini-1.5-pro",
     "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
 ];
 
-/// Default Gemini model (Gemini 3 Flash - best speed/cost)
-pub const DEFAULT_MODEL: &str = "gemini-3-flash";
+/// Default Gemini model (Gemini 2.5 Flash - best speed/cost)
+pub const DEFAULT_MODEL: &str = "gemini-2.5-flash";
 
 /// Default API base URL
 const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
@@ -203,17 +204,62 @@ struct GeminiErrorDetail {
     code: i32,
     message: String,
     status: String,
+    /// Error details array (may contain retryDelay for 429 responses)
+    #[serde(default)]
+    pub details: Option<Vec<serde_json::Value>>,
+}
+
+// ============================================================================
+// Schema Sanitization
+// ============================================================================
+
+/// Fields not supported by Gemini's OpenAPI Schema subset.
+/// See: https://ai.google.dev/api/caching#Schema
+const UNSUPPORTED_SCHEMA_FIELDS: &[&str] = &["default", "additionalProperties"];
+
+/// Recursively strip JSON Schema fields that Gemini API does not support.
+///
+/// Gemini accepts only a limited subset of OpenAPI Schema:
+/// `type`, `format`, `description`, `nullable`, `enum`, `items`,
+/// `properties`, `required`.
+/// Sending unsupported fields like `default` or `additionalProperties`
+/// causes INVALID_ARGUMENT 400 errors.
+fn strip_unsupported_schema_fields(value: &mut serde_json::Value) {
+    if let Some(obj) = value.as_object_mut() {
+        for field in UNSUPPORTED_SCHEMA_FIELDS {
+            obj.remove(*field);
+        }
+        // Recurse into nested schemas
+        for (_, v) in obj.iter_mut() {
+            strip_unsupported_schema_fields(v);
+        }
+    } else if let Some(arr) = value.as_array_mut() {
+        for v in arr.iter_mut() {
+            strip_unsupported_schema_fields(v);
+        }
+    }
 }
 
 // ============================================================================
 // Provider Implementation
 // ============================================================================
 
+/// Authentication method for Gemini API
+#[derive(Clone)]
+pub enum GeminiAuth {
+    /// Standard API key (appended as `?key=` in URL)
+    ApiKey(String),
+    /// OAuth Bearer token from Gemini CLI (Antigravity Pro)
+    OAuth(String),
+}
+
 /// Gemini provider configuration
 #[derive(Clone)]
 pub struct GeminiConfig {
-    /// API key
-    pub api_key: String,
+    /// Authentication method
+    pub auth: GeminiAuth,
+    /// Authentication source (for logging)
+    pub auth_source: AuthSource,
     /// Base URL
     pub base_url: String,
     /// Default model
@@ -224,11 +270,16 @@ pub struct GeminiConfig {
     pub timeout: Duration,
 }
 
-// SECURITY: Custom Debug implementation to mask API key
+// SECURITY: Custom Debug implementation to mask credentials
 impl fmt::Debug for GeminiConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let masked_auth = match &self.auth {
+            GeminiAuth::ApiKey(key) => format!("ApiKey({})", mask_api_key(key)),
+            GeminiAuth::OAuth(token) => format!("OAuth({})", mask_api_key(token)),
+        };
         f.debug_struct("GeminiConfig")
-            .field("api_key", &mask_api_key(&self.api_key))
+            .field("auth", &masked_auth)
+            .field("auth_source", &self.auth_source)
             .field("base_url", &self.base_url)
             .field("default_model", &self.default_model)
             .field("default_max_tokens", &self.default_max_tokens)
@@ -242,7 +293,8 @@ impl GeminiConfig {
     #[must_use]
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
-            api_key: api_key.into(),
+            auth: GeminiAuth::ApiKey(api_key.into()),
+            auth_source: AuthSource::ApiKey,
             base_url: DEFAULT_BASE_URL.to_string(),
             default_model: DEFAULT_MODEL.to_string(),
             default_max_tokens: 8192,
@@ -250,26 +302,50 @@ impl GeminiConfig {
         }
     }
 
-    /// Create configuration from environment variables
+    /// Create configuration from environment variables.
+    ///
+    /// Priority:
+    /// 1. `GOOGLE_API_KEY` / `GEMINI_API_KEY` env var → `GeminiAuth::ApiKey`
+    /// 2. `~/.gemini/oauth_creds.json` (Gemini CLI) → `GeminiAuth::OAuth`
     pub fn from_env() -> Result<Self> {
-        let api_key = std::env::var("GOOGLE_API_KEY")
-            .or_else(|_| std::env::var("GEMINI_API_KEY"))
-            .map_err(|_| {
-                Error::NotConfigured("GOOGLE_API_KEY or GEMINI_API_KEY not set".to_string())
-            })?;
-
         let base_url =
             std::env::var("GEMINI_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
         let default_model =
             std::env::var("GEMINI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
-        Ok(Self {
-            api_key,
-            base_url,
-            default_model,
-            default_max_tokens: 8192,
-            timeout: Duration::from_secs(60),
-        })
+        // 1. Try explicit API key
+        if let Ok(api_key) = std::env::var("GOOGLE_API_KEY")
+            .or_else(|_| std::env::var("GEMINI_API_KEY"))
+        {
+            return Ok(Self {
+                auth: GeminiAuth::ApiKey(api_key),
+                auth_source: AuthSource::ApiKey,
+                base_url,
+                default_model,
+                default_max_tokens: 8192,
+                timeout: Duration::from_secs(60),
+            });
+        }
+
+        // 2. Try Gemini CLI OAuth credentials
+        if let Some(creds) = cli_auth::read_gemini_oauth() {
+            if cli_auth::is_token_expired(creds.expiry_date) {
+                info!("Gemini CLI token expired, will attempt refresh on first request");
+            }
+            return Ok(Self {
+                auth: GeminiAuth::OAuth(creds.access_token),
+                auth_source: AuthSource::GeminiCli,
+                base_url,
+                default_model,
+                default_max_tokens: 8192,
+                timeout: Duration::from_secs(60),
+            });
+        }
+
+        Err(Error::NotConfigured(
+            "GOOGLE_API_KEY or GEMINI_API_KEY not set, and Gemini CLI credentials not found"
+                .to_string(),
+        ))
     }
 
     /// Set the base URL
@@ -382,10 +458,14 @@ impl GeminiProvider {
     fn convert_tools(tools: &[ToolDefinition]) -> Vec<GeminiTool> {
         let declarations: Vec<FunctionDeclaration> = tools
             .iter()
-            .map(|tool| FunctionDeclaration {
-                name: tool.name.clone(),
-                description: tool.description.clone(),
-                parameters: tool.parameters.clone(),
+            .map(|tool| {
+                let mut params = tool.parameters.clone();
+                strip_unsupported_schema_fields(&mut params);
+                FunctionDeclaration {
+                    name: tool.name.clone(),
+                    description: tool.description.clone(),
+                    parameters: params,
+                }
             })
             .collect();
 
@@ -426,22 +506,40 @@ impl GeminiProvider {
 
     /// Send request to Gemini API
     async fn send_request(&self, model: &str, request: GeminiRequest) -> Result<GeminiResponse> {
-        let url = format!(
-            "{}/models/{}:generateContent?key={}",
-            self.config.base_url, model, self.config.api_key
-        );
-
-        // SECURITY: Don't log the full URL (contains API key)
+        // SECURITY: Don't log the full URL (may contain API key)
         debug!("Sending request to Gemini model: {}", model);
 
-        let response = self
-            .client
-            .post(&url)
-            .header("content-type", "application/json")
+        let mut request_builder = match &self.config.auth {
+            GeminiAuth::ApiKey(key) => {
+                let url = format!(
+                    "{}/models/{}:generateContent?key={}",
+                    self.config.base_url, model, key
+                );
+                self.client.post(&url)
+            }
+            GeminiAuth::OAuth(token) => {
+                let url = format!(
+                    "{}/models/{}:generateContent",
+                    self.config.base_url, model
+                );
+                self.client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", token))
+            }
+        };
+
+        request_builder = request_builder.header("content-type", "application/json");
+
+        let response = request_builder
             .json(&request)
             .send()
             .await
             .map_err(|e| Error::Network(e.to_string()))?;
+
+        // Gemini doesn't send standard rate limit headers, but capture any present
+        crate::quota::global_quota_tracker()
+            .update_from_headers("gemini", response.headers())
+            .await;
 
         let status = response.status();
         let body = response
@@ -450,8 +548,36 @@ impl GeminiProvider {
             .map_err(|e| Error::Network(e.to_string()))?;
 
         if !status.is_success() {
+            // Log raw status for debugging (no sensitive data in status code)
+            tracing::warn!(
+                status = %status,
+                "Gemini API error response"
+            );
             if let Ok(error) = serde_json::from_str::<GeminiError>(&body) {
+                // Log error status/code/message for debugging (no API keys in these fields)
+                tracing::warn!(
+                    error_status = %error.error.status,
+                    error_code = error.error.code,
+                    error_message = %error.error.message,
+                    "Gemini API error detail"
+                );
                 if status.as_u16() == 429 {
+                    // Parse retryDelay from Gemini error body if present
+                    if let Some(details) = error.error.details.as_ref() {
+                        for detail in details {
+                            if let Some(delay) = detail.get("retryDelay").and_then(|v| v.as_str())
+                            {
+                                // Gemini uses e.g. "30s" format
+                                if let Some(secs_str) = delay.strip_suffix('s') {
+                                    if let Ok(secs) = secs_str.parse::<u64>() {
+                                        crate::quota::global_quota_tracker()
+                                            .update_from_retry_after("gemini", secs)
+                                            .await;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     return Err(Error::RateLimit);
                 }
                 // SECURITY: Sanitize error messages
@@ -634,7 +760,11 @@ mod tests {
             .with_max_tokens(4096)
             .with_timeout(Duration::from_secs(30));
 
-        assert_eq!(config.api_key, "test-key");
+        match &config.auth {
+            GeminiAuth::ApiKey(key) => assert_eq!(key, "test-key"),
+            _ => panic!("Expected ApiKey auth"),
+        }
+        assert_eq!(config.auth_source, AuthSource::ApiKey);
         assert_eq!(config.default_model, "gemini-1.5-pro");
         assert_eq!(config.default_max_tokens, 4096);
         assert_eq!(config.timeout, Duration::from_secs(30));
@@ -689,5 +819,93 @@ mod tests {
 
         assert!(!debug_str.contains("1234567890"));
         assert!(debug_str.contains("AIza...ghij"));
+    }
+
+    #[test]
+    fn test_config_debug_masks_oauth_token() {
+        let config = GeminiConfig {
+            auth: GeminiAuth::OAuth("ya29.long-oauth-token-1234567890".to_string()),
+            auth_source: AuthSource::GeminiCli,
+            base_url: DEFAULT_BASE_URL.to_string(),
+            default_model: DEFAULT_MODEL.to_string(),
+            default_max_tokens: 8192,
+            timeout: Duration::from_secs(60),
+        };
+        let debug_str = format!("{:?}", config);
+
+        assert!(!debug_str.contains("long-oauth-token"));
+        assert!(debug_str.contains("OAuth(ya29...7890)"));
+    }
+
+    #[test]
+    fn test_strip_unsupported_schema_fields() {
+        let mut schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path",
+                    "default": "/tmp"
+                },
+                "options": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                        "recursive": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                }
+            },
+            "required": ["path"],
+            "additionalProperties": false
+        });
+
+        strip_unsupported_schema_fields(&mut schema);
+
+        let obj = schema.as_object().unwrap();
+        // Top-level additionalProperties removed
+        assert!(!obj.contains_key("additionalProperties"));
+        // Supported fields preserved
+        assert!(obj.contains_key("type"));
+        assert!(obj.contains_key("properties"));
+        assert!(obj.contains_key("required"));
+
+        let path_prop = &schema["properties"]["path"];
+        assert_eq!(path_prop.get("type").unwrap(), "string");
+        assert_eq!(path_prop.get("description").unwrap(), "File path");
+        assert!(path_prop.get("default").is_none());
+
+        let options_prop = &schema["properties"]["options"];
+        assert!(options_prop.get("additionalProperties").is_none());
+
+        let recursive_prop = &schema["properties"]["options"]["properties"]["recursive"];
+        assert_eq!(recursive_prop.get("type").unwrap(), "boolean");
+        assert!(recursive_prop.get("default").is_none());
+    }
+
+    #[test]
+    fn test_convert_tools_strips_unsupported_fields() {
+        let tools = vec![ToolDefinition {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "default": 10
+                    }
+                }
+            }),
+        }];
+
+        let gemini_tools = GeminiProvider::convert_tools(&tools);
+        let params = &gemini_tools[0].function_declarations[0].parameters;
+        // default should be stripped
+        assert!(params["properties"]["count"].get("default").is_none());
+        // type should remain
+        assert_eq!(params["properties"]["count"]["type"], "integer");
     }
 }

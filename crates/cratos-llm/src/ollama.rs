@@ -41,28 +41,27 @@ fn sanitize_api_error(error: &str) -> String {
             .to_string();
     }
 
-    // For short, generic errors, return as-is
-    if error.len() < 100 {
-        return error.to_string();
+    // Truncate overly long messages but preserve useful error info
+    if error.len() > 300 {
+        format!("{}...(truncated)", crate::util::truncate_safe(error, 300))
+    } else {
+        error.to_string()
     }
-
-    "An error occurred. Please try again.".to_string()
 }
 
 /// Default Ollama models (varies by installation)
 pub const SUGGESTED_MODELS: &[&str] = &[
-    "llama3.2",
-    "llama3.1",
-    "llama3",
-    "mistral",
+    "qwen2.5:7b",
+    "llama3.1:8b",
+    "gemma2:9b",
+    "mistral:7b",
     "mixtral",
     "codellama",
     "phi3",
-    "qwen2.5",
 ];
 
-/// Default Ollama model
-pub const DEFAULT_MODEL: &str = "llama3.2";
+/// Default Ollama model (7B+ recommended for tool calling)
+pub const DEFAULT_MODEL: &str = "qwen2.5:7b";
 
 /// Default Ollama API URL
 const DEFAULT_BASE_URL: &str = "http://localhost:11434";
