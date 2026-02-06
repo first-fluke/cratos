@@ -23,11 +23,11 @@ The installer automatically:
 
 - **Lightweight**: Runs immediately with embedded SQLite (`~/.cratos/cratos.db`)
 - **Automatic Skill Generation**: Learns usage patterns to automatically create workflow skills
-- **Multi-LLM Support**: OpenAI, Anthropic, Gemini, Ollama, GLM, Qwen, OpenRouter, Novita, Groq, DeepSeek
+- **Multi-LLM Support**: OpenAI, Anthropic, Gemini, DeepSeek, Groq, Fireworks, SiliconFlow, GLM, Qwen, Moonshot, Novita, OpenRouter, Ollama (13 providers)
 - **Smart Routing**: Automatic model selection by task type reduces costs by 70%
 - **Free Model Support**: Free LLMs via OpenRouter, Novita (Llama, Qwen, GLM)
 - **Replay Engine**: All executions stored as events, timeline view and replay
-- **Tool System**: 11 built-in tools (file, HTTP, Git, GitHub, command execution)
+- **Tool System**: 15 built-in tools (file, HTTP, Git, GitHub, command execution, browser, WoL, config)
 - **Channel Adapters**: Telegram, Slack, Discord, Matrix support
 - **Security**: Docker sandbox, credential encryption, prompt injection defense
 - **Olympus OS**: Mythology-based 3-layer agent organization (Pantheon/Decrees/Chronicles)
@@ -82,10 +82,10 @@ git clone https://github.com/first-fluke/cratos.git
 cd cratos
 
 # Run the setup wizard
-cargo run -- wizard
-
-# Or use the classic init
 cargo run -- init
+
+# With Korean language
+cargo run -- init --lang ko
 ```
 
 ### Option 3: Build from Source
@@ -102,18 +102,17 @@ cargo build --release
 cargo run --release
 
 # Health check
-curl http://localhost:9742/health
+curl http://localhost:8090/health
 ```
 
 Data is automatically stored in `~/.cratos/cratos.db`.
 
-### Wizard vs Init
+### Setup
 
 | Command | Description |
 |---------|-------------|
-| `cratos wizard` | User-friendly setup with step-by-step instructions and links (recommended for beginners) |
-| `cratos wizard --lang ko` | Setup wizard in Korean |
-| `cratos init` | Classic setup for experienced users |
+| `cratos init` | Unified interactive setup wizard (auto-detects language) |
+| `cratos init --lang ko` | Setup wizard in Korean |
 
 ## Project Structure
 
@@ -131,9 +130,14 @@ cratos/
 │   └── cratos-canvas/    # Canvas (future)
 ├── config/
 │   ├── default.toml      # Default configuration
-│   ├── pantheon/         # Persona TOML files (5 core personas)
+│   ├── pantheon/         # Persona TOML files (14 personas: 5 core + 9 extended)
 │   └── decrees/          # Laws, ranks, development rules
-└── src/main.rs           # Application entry point
+├── src/
+│   ├── main.rs           # Application entry point
+│   ├── cli/              # CLI commands (init, doctor, quota, tui, pantheon, decrees, chronicle)
+│   ├── api/              # REST API (config, tools, executions, scheduler, quota)
+│   ├── websocket/        # WebSocket handlers (chat, events)
+│   └── server.rs         # Server initialization
 
 ~/.cratos/                # Data directory (auto-created)
 ├── cratos.db             # SQLite main DB (events, execution history)
@@ -205,7 +209,7 @@ Cratos features a mythology-based 3-layer agent organization system:
 
 | Layer | Name | Purpose |
 |-------|------|---------|
-| WHO | **Pantheon** | Agent personas (Cratos, Athena, Sindri, Heimdall, Mimir) |
+| WHO | **Pantheon** | 14 agent personas (5 core + 9 extended) |
 | HOW | **Decrees** | Laws, ranks, development rules |
 | WHAT | **Chronicles** | Achievement records and evaluations |
 
@@ -218,6 +222,20 @@ Cratos features a mythology-based 3-layer agent organization system:
 | DEV | **Sindri** | Development, implementation (Lv1) |
 | QA | **Heimdall** | Quality, security (Lv2) |
 | RESEARCHER | **Mimir** | Research, analysis (Lv4) |
+
+### Extended Personas
+
+| Role | Name | Domain |
+|------|------|--------|
+| PO | **Odin** | Product owner (Lv5) |
+| HR | **Hestia** | People, organization (Lv2) |
+| BA | **Norns** | Business analysis (Lv3) |
+| UX | **Apollo** | UX design (Lv3) |
+| CS | **Freya** | Customer support (Lv2) |
+| LEGAL | **Tyr** | Legal, compliance (Lv4) |
+| MARKETING | **Nike** | Marketing (Lv2) |
+| DEVOPS | **Thor** | Infrastructure, ops (Lv3) |
+| DEV | **Brok** | Development (Lv1) |
 
 ### @mention Routing
 
@@ -237,21 +255,30 @@ Response format: `[Persona LvN] Per Laws Article N...`
 
 ```bash
 # Setup
-cratos wizard                     # User-friendly setup wizard
-cratos wizard --lang ko           # Setup wizard in Korean
-cratos init                       # Classic setup
+cratos init                       # Interactive setup wizard (auto-detects language)
+cratos init --lang ko             # Setup wizard in Korean
 
 # System
 cratos serve                      # Start the server
 cratos doctor                     # Run diagnostics
+cratos quota                      # Show provider quota/cost status
+cratos tui                        # Launch interactive TUI chat
 
 # Pantheon (Personas)
 cratos pantheon list              # List personas
 cratos pantheon show sindri       # Show persona details
+cratos pantheon summon sindri     # Summon (activate) a persona
+cratos pantheon dismiss           # Dismiss active persona
 
 # Decrees (Rules)
 cratos decrees show laws          # Show laws
 cratos decrees show ranks         # Show rank system
+cratos decrees show warfare       # Show development rules
+cratos decrees show alliance      # Show collaboration rules
+cratos decrees show tribute       # Show reward/cost rules
+cratos decrees show judgment      # Show evaluation framework
+cratos decrees show culture       # Show culture/values
+cratos decrees show operations    # Show operational procedures
 cratos decrees validate           # Validate rule compliance
 
 # Chronicles (Achievement Records)
@@ -311,7 +338,11 @@ Automatically detects and blocks malicious prompts:
 | `git_commit` | Git commit creation | Medium |
 | `git_branch` | Git branch management | Medium |
 | `git_diff` | Git diff check | Low |
+| `git_push` | Git push to remote | High |
 | `github_api` | GitHub API integration | Medium |
+| `browser` | Browser automation | Medium |
+| `wol` | Wake-on-LAN | Medium |
+| `config` | Natural language configuration | Medium |
 
 ## Testing
 

@@ -23,11 +23,11 @@ irm https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.ps
 
 - **경량 설치**: 내장 SQLite로 설치 즉시 실행 (`~/.cratos/cratos.db`)
 - **자동 스킬 생성**: 사용 패턴을 학습하여 자동으로 워크플로우 스킬 생성
-- **멀티 LLM 지원**: OpenAI, Anthropic, Gemini, Ollama, GLM, Qwen, OpenRouter, Novita, Groq, DeepSeek
+- **멀티 LLM 지원**: OpenAI, Anthropic, Gemini, DeepSeek, Groq, Fireworks, SiliconFlow, GLM, Qwen, Moonshot, Novita, OpenRouter, Ollama (13개 프로바이더)
 - **스마트 라우팅**: 작업 유형별 자동 모델 선택으로 비용 70% 절감
 - **무료 모델 지원**: OpenRouter, Novita를 통한 무료 LLM 사용 (Llama, Qwen, GLM)
 - **리플레이 엔진**: 모든 실행 기록을 이벤트로 저장, 타임라인 조회 및 재실행
-- **도구 시스템**: 파일, HTTP, Git, GitHub, 명령 실행 등 11개 빌트인 도구
+- **도구 시스템**: 파일, HTTP, Git, GitHub, 명령 실행, 브라우저, WoL, 설정 등 15개 빌트인 도구
 - **채널 어댑터**: Telegram, Slack, Discord, Matrix 지원
 - **보안 강화**: Docker 샌드박스, 자격증명 암호화, 프롬프트 인젝션 방어
 - **올림푸스 OS**: 신화 기반 3-레이어 에이전트 조직 체계 (Pantheon/Decrees/Chronicles)
@@ -82,9 +82,9 @@ git clone https://github.com/first-fluke/cratos.git
 cd cratos
 
 # 설정 마법사 실행 (한국어)
-cargo run -- wizard --lang ko
+cargo run -- init --lang ko
 
-# 또는 기존 init 사용
+# 영어 설정
 cargo run -- init
 ```
 
@@ -102,18 +102,17 @@ cargo build --release
 cargo run --release
 
 # 헬스체크
-curl http://localhost:9742/health
+curl http://localhost:8090/health
 ```
 
 데이터는 자동으로 `~/.cratos/cratos.db`에 저장됩니다.
 
-### Wizard vs Init
+### 설정
 
 | 명령어 | 설명 |
 |--------|------|
-| `cratos wizard` | 단계별 설명과 링크가 포함된 친절한 설정 (초보자 권장) |
-| `cratos wizard --lang ko` | 한국어 설정 마법사 |
-| `cratos init` | 경험자를 위한 기존 설정 |
+| `cratos init` | 통합 대화형 설정 마법사 (언어 자동 감지) |
+| `cratos init --lang ko` | 한국어 설정 마법사 |
 
 ### Docker로 실행 (선택)
 
@@ -141,9 +140,14 @@ cratos/
 │   └── cratos-canvas/    # 캔버스 (future)
 ├── config/
 │   ├── default.toml      # 기본 설정
-│   ├── pantheon/         # 페르소나 TOML 파일 (5개 코어 페르소나)
+│   ├── pantheon/         # 페르소나 TOML 파일 (14개: 5 코어 + 9 확장)
 │   └── decrees/          # 율법, 계급, 개발 규칙
-└── src/main.rs           # 애플리케이션 진입점
+├── src/
+│   ├── main.rs           # 애플리케이션 진입점
+│   ├── cli/              # CLI 명령어 (init, doctor, quota, tui, pantheon, decrees, chronicle)
+│   ├── api/              # REST API (config, tools, executions, scheduler, quota)
+│   ├── websocket/        # WebSocket 핸들러 (chat, events)
+│   └── server.rs         # 서버 초기화
 
 ~/.cratos/                # 데이터 디렉토리 (자동 생성)
 ├── cratos.db             # SQLite 메인 DB (이벤트, 실행 기록)
@@ -181,19 +185,19 @@ cratos/
 
 | 프로바이더 | 모델 | 특징 |
 |-----------|------|------|
-| **OpenAI** | GPT-5.2, GPT-5.2-mini | 범용, 도구 호출 우수 |
-| **Anthropic** | Claude 3.5 Sonnet/Haiku | 코드 생성 우수 |
-| **Gemini** | Gemini 1.5 Pro/Flash | 긴 컨텍스트 |
-| **GLM** | GLM-4-9B, GLM-Z1-9B | 중국어 특화 |
-| **Qwen** | Qwen-Turbo/Plus/Max | 다국어, 코딩 |
-| **DeepSeek** | DeepSeek-V3, DeepSeek-R1 | 초저가 ($0.14/1M 토큰) |
+| **OpenAI** | GPT-5.2, GPT-5.1, GPT-5 | 최신 세대, 코딩 |
+| **Anthropic** | Claude Sonnet 4.5, Claude Haiku 4.5, Claude Opus 4.5 | 코드 생성 우수 |
+| **Gemini** | Gemini 3 Pro, Gemini 3 Flash, Gemini 2.5 Pro | 긴 컨텍스트, 멀티모달 |
+| **GLM** | GLM-4.7, GLM-4-Flash | ZhipuAI 모델 |
+| **Qwen** | Qwen3-Max, Qwen3-Plus, Qwen3-Flash, Qwen3-Coder | 다국어, 코딩, 추론 |
+| **DeepSeek** | DeepSeek-V3.2, DeepSeek-R1 | 초저가, 추론 |
 
 ### 무료/저가 프로바이더
 
 | 프로바이더 | 모델 | 제한 |
 |-----------|------|------|
-| **OpenRouter** | Qwen3-32B, Llama 3.2, Gemma 2 | 1000회/일 |
-| **Novita** | Qwen2.5-7B, GLM-4-9B, Llama 3.2 | 무료 가입 |
+| **OpenRouter** | Qwen3-Max, Llama 3.3 70B, Gemma 3 27B | 1000회/일 |
+| **Novita** | Qwen3-Plus, GLM-4-9B, Llama 3.3 70B | 무료 가입 |
 | **Groq** | Llama 3.3 70B, Mixtral 8x7B | 무료, 초고속 추론 |
 | **Ollama** | 모든 로컬 모델 | 무제한 (하드웨어 의존) |
 
@@ -215,7 +219,7 @@ cratos/
 
 | Layer | 이름 | 목적 |
 |-------|------|------|
-| WHO | **Pantheon** | 에이전트 페르소나 (Cratos, Athena, Sindri, Heimdall, Mimir) |
+| WHO | **Pantheon** | 14개 에이전트 페르소나 (5 코어 + 9 확장) |
 | HOW | **Decrees** | 율법, 계급, 개발 규칙 |
 | WHAT | **Chronicles** | 전공 기록 및 평가 |
 
@@ -228,6 +232,20 @@ cratos/
 | DEV | **Sindri** | 개발, 구현 (Lv1) |
 | QA | **Heimdall** | 품질, 보안 (Lv2) |
 | RESEARCHER | **Mimir** | 리서치, 분석 (Lv4) |
+
+### 확장 페르소나
+
+| 역할 | 이름 | 도메인 |
+|------|------|--------|
+| PO | **Odin** | 프로덕트 오너 (Lv5) |
+| HR | **Hestia** | 인사, 조직 관리 (Lv2) |
+| BA | **Norns** | 비즈니스 분석 (Lv3) |
+| UX | **Apollo** | UX 디자인 (Lv3) |
+| CS | **Freya** | 고객 지원 (Lv2) |
+| LEGAL | **Tyr** | 법무, 규정 (Lv4) |
+| MARKETING | **Nike** | 마케팅 (Lv2) |
+| DEVOPS | **Thor** | 인프라, 운영 (Lv3) |
+| DEV | **Brok** | 개발 (Lv1) |
 
 ### @mention 라우팅
 
@@ -247,21 +265,30 @@ cratos/
 
 ```bash
 # 설정
-cratos wizard                     # 친절한 설정 마법사
-cratos wizard --lang ko           # 한국어 설정 마법사
-cratos init                       # 기존 설정
+cratos init                       # 통합 대화형 설정 마법사 (언어 자동 감지)
+cratos init --lang ko             # 한국어 설정 마법사
 
 # 시스템
 cratos serve                      # 서버 시작
 cratos doctor                     # 진단 실행
+cratos quota                      # 프로바이더 할당량/비용 조회
+cratos tui                        # 대화형 TUI 채팅
 
 # Pantheon (페르소나)
 cratos pantheon list              # 페르소나 목록
 cratos pantheon show sindri       # 페르소나 상세 보기
+cratos pantheon summon sindri     # 페르소나 소환 (활성화)
+cratos pantheon dismiss           # 활성 페르소나 해제
 
 # Decrees (규약)
 cratos decrees show laws          # 율법 보기
 cratos decrees show ranks         # 계급 체계 보기
+cratos decrees show warfare       # 개발 규칙
+cratos decrees show alliance      # 협업 규칙
+cratos decrees show tribute       # 보상/비용 규칙
+cratos decrees show judgment      # 평가 프레임워크
+cratos decrees show culture       # 문화/가치관
+cratos decrees show operations    # 운영 절차
 cratos decrees validate           # 규칙 준수 검증
 
 # Chronicles (전공 기록)
@@ -321,7 +348,11 @@ API 키를 OS 키체인에 안전하게 저장합니다:
 | `git_commit` | Git 커밋 생성 | Medium |
 | `git_branch` | Git 브랜치 관리 | Medium |
 | `git_diff` | Git diff 조회 | Low |
+| `git_push` | Git 원격 푸시 | High |
 | `github_api` | GitHub API 연동 | Medium |
+| `browser` | 브라우저 자동화 | Medium |
+| `wol` | Wake-on-LAN | Medium |
+| `config` | 자연어 설정 변경 | Medium |
 
 ## 테스트
 

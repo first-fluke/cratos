@@ -14,6 +14,10 @@ Cratos는 Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트�
 | **모델 라우팅** | 작업별 자동 모델 선택, 비용 최적화 |
 | **원격 개발 E2E** | Issue → PR 완전 자동화 |
 | **Tool Doctor** | 자기 진단 + 해결 체크리스트 |
+| **비용/할당량 모니터링** | CostTracker + QuotaTracker, 프로바이더별 사용량 추적 |
+| **TUI 채팅** | ratatui 기반 대화형 터미널 인터페이스 |
+| **스케줄러** | ProactiveScheduler (Cron/Interval/OneTime) |
+| **REST API + WebSocket** | `/api/v1/*` REST 엔드포인트, `/ws/chat`, `/ws/events` 실시간 통신 |
 
 ## 기술 스택
 
@@ -22,9 +26,9 @@ Cratos는 Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트�
 - **웹**: Axum 0.7
 - **DB**: SQLite (sqlx, 내장), Redis (세션용, 선택)
 - **채널**: teloxide (Telegram), slack-morphism (Slack), serenity (Discord), matrix-sdk (Matrix)
-- **LLM**: async-openai (OpenAI), reqwest (Anthropic), tiktoken-rs (토큰 카운팅)
-- **임베딩/검색**: fastembed (로컬 임베딩), usearch (벡터 인덱스)
-- **오디오**: cpal, rodio (선택적)
+- **LLM**: 13개 프로바이더 (OpenAI, Anthropic, Gemini, DeepSeek, Groq, Fireworks, SiliconFlow, GLM, Qwen, Moonshot, Novita, OpenRouter, Ollama)
+- **임베딩/검색**: tract-onnx (pure Rust ONNX 임베딩), usearch (벡터 인덱스)
+- **오디오**: cpal, rodio, hound + candle (로컬 Whisper STT) + Edge TTS (선택적)
 - **데이터**: `~/.cratos/cratos.db` (이벤트), `~/.cratos/skills.db` (스킬)
 
 ## 프로젝트 구조
@@ -32,7 +36,7 @@ Cratos는 Telegram/Slack에서 자연어로 명령을 내리면 AI 에이전트�
 ```
 cratos/
 ├── .agent/                 # Antigravity 호환 스킬 시스템
-│   ├── skills/             # 11개 코어 스킬
+│   ├── skills/             # 12개 코어 스킬
 │   └── workflows/          # 7개 워크플로우
 ├── .claude/                # Claude Code 플러그인
 │   ├── agents/             # 4개 에이전트
@@ -40,7 +44,7 @@ cratos/
 │   └── skills/             # 5개 스킬
 ├── config/
 │   ├── default.toml        # 기본 설정
-│   ├── pantheon/           # 페르소나 TOML (5개 코어)
+│   ├── pantheon/           # 페르소나 TOML (14개: 5 코어 + 9 확장)
 │   └── decrees/            # 율법, 계급, 개발 규칙
 ├── crates/                 # Rust workspace
 │   ├── cratos-core/        # 핵심 오케스트레이션, 보안, 자격증명
@@ -78,7 +82,9 @@ cratos/
 | HOW | **Decrees** | 율법, 계급, 개발 규칙 |
 | WHAT | **Chronicles** | 전공 기록 및 평가 |
 
-### 페르소나 시스템
+### 페르소나 시스템 (14개)
+
+#### 코어 페르소나
 
 | 역할 | 이름 | 도메인 |
 |------|------|--------|
@@ -87,6 +93,20 @@ cratos/
 | DEV | Sindri | 개발, 구현 (Lv1) |
 | QA | Heimdall | 품질, 보안 (Lv2) |
 | RESEARCHER | Mimir | 리서치 (Lv4) |
+
+#### 확장 페르소나
+
+| 역할 | 이름 | 도메인 |
+|------|------|--------|
+| PO | Odin | 프로덕트 오너 (Lv5) |
+| HR | Hestia | 인사, 조직 관리 (Lv2) |
+| BA | Norns | 비즈니스 분석 (Lv3) |
+| UX | Apollo | UX 디자인 (Lv3) |
+| CS | Freya | 고객 지원 (Lv2) |
+| LEGAL | Tyr | 법무, 규정 (Lv4) |
+| MARKETING | Nike | 마케팅 (Lv2) |
+| DEVOPS | Thor | 인프라, 운영 (Lv3) |
+| DEV | Brok | 개발 (Lv1) |
 
 ### @mention 라우팅
 
@@ -98,14 +118,27 @@ cratos/
 @cratos 상황 정리해줘             # Orchestrator
 ```
 
-### CLI 명령어 (Olympus OS)
+### CLI 명령어
 
 | 명령어 | 설명 |
 |--------|------|
+| `cratos init` | 통합 대화형 설정 마법사 |
+| `cratos serve` | 서버 시작 |
+| `cratos doctor` | 시스템 진단 |
+| `cratos quota` | 프로바이더 할당량/비용 조회 |
+| `cratos tui` | 대화형 TUI 채팅 |
 | `cratos pantheon list` | 페르소나 목록 |
 | `cratos pantheon show <name>` | 페르소나 상세 |
+| `cratos pantheon summon <name>` | 페르소나 소환 (활성화) |
+| `cratos pantheon dismiss` | 활성 페르소나 해제 |
 | `cratos decrees show laws` | 율법 보기 |
 | `cratos decrees show ranks` | 계급 체계 |
+| `cratos decrees show warfare` | 개발 규칙 |
+| `cratos decrees show alliance` | 협업 규칙 |
+| `cratos decrees show tribute` | 보상/비용 규칙 |
+| `cratos decrees show judgment` | 평가 프레임워크 |
+| `cratos decrees show culture` | 문화/가치관 |
+| `cratos decrees show operations` | 운영 절차 |
 | `cratos decrees validate` | 규칙 검증 |
 | `cratos chronicle list` | 전공 기록 목록 |
 | `cratos chronicle show <name>` | 개별 기록 |
@@ -127,7 +160,32 @@ cratos/
 | pm-agent | 계획 수립 |
 | commit | Git 커밋/PR |
 | orchestrator | 멀티-에이전트 실행 |
-| config | 설정 변경 (LLM, 언어, WoL 등) |
+| workflow-guide | 워크플로우 가이드 |
+
+## REST API & WebSocket
+
+### REST 엔드포인트 (`/api/v1/*`)
+
+| Method | Path | 설명 |
+|--------|------|------|
+| GET | `/health` | 헬스체크 (간단) |
+| GET | `/health/detailed` | 상세 헬스체크 (DB/Redis 상태) |
+| GET | `/metrics` | Prometheus 형식 메트릭 |
+| GET/PUT | `/api/v1/config` | 설정 조회/변경 |
+| GET | `/api/v1/tools` | 도구 목록 조회 |
+| GET | `/api/v1/executions` | 실행 목록 조회 |
+| GET | `/api/v1/executions/{id}` | 실행 상세 조회 |
+| GET | `/api/v1/executions/{id}/replay` | 리플레이 이벤트 조회 |
+| POST | `/api/v1/executions/{id}/rerun` | 재실행 |
+| GET/POST/PUT/DELETE | `/api/v1/scheduler/tasks` | 스케줄러 작업 관리 |
+| GET | `/api/v1/quota` | 프로바이더 할당량 조회 |
+
+### WebSocket 엔드포인트
+
+| Path | 설명 |
+|------|------|
+| `/ws/chat` | 대화형 채팅 |
+| `/ws/events` | 이벤트 스트림 (실시간 알림) |
 
 ## 코딩 규칙
 
