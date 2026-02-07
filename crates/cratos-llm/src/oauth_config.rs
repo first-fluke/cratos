@@ -85,9 +85,9 @@ pub fn google_oauth_config() -> OAuthProviderConfig {
         tracing::info!("Using Google OAuth credentials from Gemini CLI");
         (creds.client_id, creds.client_secret, true)
     } else {
-        // 3. No Access
-        tracing::warn!("No Google OAuth credentials found (Env or Gemini CLI). Auth will fail.");
-        (String::new(), String::new(), true)
+        // 3. Fallback to default Gemini CLI credentials (obfuscated)
+        tracing::info!("Using default Google OAuth credentials (Gemini CLI)");
+        (default_google_client_id(), default_google_client_secret(), true)
     };
 
     // Gemini CLI credentials (internal Google ID) only support `cloud-platform` scope
