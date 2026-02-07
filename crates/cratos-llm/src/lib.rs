@@ -43,6 +43,8 @@ pub mod router;
 pub mod siliconflow;
 pub mod oauth;
 pub mod oauth_config;
+/// Gemini CLI credential extraction module.
+pub mod gemini_auth;
 pub mod token;
 pub mod tools;
 pub mod util;
