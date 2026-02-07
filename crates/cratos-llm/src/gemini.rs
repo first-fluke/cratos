@@ -337,9 +337,25 @@ impl GeminiConfig {
             if cli_auth::is_token_expired(tokens.expiry_date) {
                 info!("Cratos Google OAuth token expired, will attempt refresh on first request");
             }
+            // Determine the source of the token based on configuration.
+            // If CRATOS_GOOGLE_CLIENT_ID is set AND distinct from the default (restricted) ID, 
+            // we assume a custom client ID (standard API).
+            // Otherwise, we assume the token was obtained using the default/extracted Gemini CLI ID (Code Assist API).
+            let is_custom_client = if let Ok(id) = std::env::var("CRATOS_GOOGLE_CLIENT_ID") {
+                id != crate::oauth_config::default_google_client_id()
+            } else {
+                false
+            };
+            
+            let auth_source = if is_custom_client {
+                AuthSource::CratosOAuth
+            } else {
+                AuthSource::GeminiCli
+            };
+
             return Ok(Self {
                 auth: GeminiAuth::OAuth(tokens.access_token),
-                auth_source: AuthSource::CratosOAuth,
+                auth_source,
                 base_url,
                 default_model,
                 default_max_tokens: 8192,
@@ -707,9 +723,10 @@ impl GeminiProvider {
     /// Send request to Gemini API
     async fn send_request(&self, model: &str, request: GeminiRequest) -> Result<GeminiResponse> {
         // SECURITY: Don't log the full URL (may contain API key)
-        debug!("Sending request to Gemini model: {}", model);
+        debug!("Sending request to Gemini model: {} (auth_source={:?})", model, self.config.auth_source);
 
-        let is_code_assist = matches!(&self.config.auth, GeminiAuth::OAuth(_));
+        // Only GeminiCli uses Code Assist API; CratosOAuth uses standard API with Bearer token
+        let is_code_assist = self.config.auth_source == AuthSource::GeminiCli;
 
         let mut request_builder = match &self.config.auth {
             GeminiAuth::ApiKey(key) => {
@@ -719,11 +736,21 @@ impl GeminiProvider {
                 );
                 self.client.post(&url)
             }
-            GeminiAuth::OAuth(token) => {
-                // OAuth uses Code Assist endpoint (same as Gemini CLI)
+            GeminiAuth::OAuth(token) if is_code_assist => {
+                // GeminiCli OAuth uses Code Assist endpoint
                 let url = format!(
                     "{}/{}:generateContent",
                     CODE_ASSIST_BASE_URL, CODE_ASSIST_API_VERSION
+                );
+                self.client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", token))
+            }
+            GeminiAuth::OAuth(token) => {
+                // CratosOAuth uses standard Gemini API with Bearer token
+                let url = format!(
+                    "{}/models/{}:generateContent",
+                    self.config.base_url, model
                 );
                 self.client
                     .post(&url)
@@ -736,8 +763,10 @@ impl GeminiProvider {
         // Code Assist wraps request: {model, project, request: {...}}
         let response = if is_code_assist {
             let project_id = self.get_code_assist_project().await?;
+            // Code Assist API expects model name without "models/" prefix (e.g. "gemini-2.5-flash")
+            // The `model` variable usually comes as "gemini-2.5-flash" from constants.
             let wrapped = serde_json::json!({
-                "model": format!("models/{}", model),
+                "model": model, 
                 "project": project_id,
                 "request": &request,
             });
@@ -779,6 +808,17 @@ impl GeminiProvider {
                     error_message = %error.error.message,
                     "Gemini API error detail"
                 );
+                if status.as_u16() == 403
+                    && error.error.message.contains("insufficient authentication scopes")
+                    && self.config.auth_source == AuthSource::CratosOAuth
+                {
+                    tracing::error!(
+                        "OAuth token missing required scopes. Please re-run `cratos init` to re-authenticate."
+                    );
+                    return Err(Error::Api(
+                        "OAuth token missing required scopes. Please re-run `cratos init` to re-authenticate with Google.".to_string(),
+                    ));
+                }
                 if status.as_u16() == 429 {
                     // Parse retryDelay from Gemini error body if present
                     if let Some(details) = error.error.details.as_ref() {
