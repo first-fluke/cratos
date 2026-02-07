@@ -99,6 +99,12 @@ pub struct Texts {
     pub persona_prompt: &'static str,
     pub persona_help: &'static str,
 
+    // gcloud CLI
+    pub gcloud_detected_title: &'static str,
+    pub gcloud_detected_desc: &'static str,
+    pub gcloud_use_prompt: &'static str,
+    pub gcloud_success: &'static str,
+
     // Ollama guide
     pub ollama_install_guide: &'static str,
     pub ollama_not_running: &'static str,
@@ -325,6 +331,11 @@ Tips:
     enabled: "enabled",
     disabled: "disabled",
     cancel_msg: "Setup cancelled.",
+
+    gcloud_detected_title: "Google Cloud SDK Detected",
+    gcloud_detected_desc: "You can use your existing gcloud credentials instead of logging in again.",
+    gcloud_use_prompt: "Use gcloud credentials?",
+    gcloud_success: "Successfully verified gcloud credentials!",
 };
 
 pub const TEXTS_KO: Texts = Texts {
@@ -494,6 +505,11 @@ pub const TEXTS_KO: Texts = Texts {
     enabled: "활성화",
     disabled: "비활성화",
     cancel_msg: "설정이 취소되었습니다.",
+
+    gcloud_detected_title: "Google Cloud SDK 감지됨",
+    gcloud_detected_desc: "기존 gcloud 로그인 정보를 사용하여 다시 로그인할 필요가 없습니다.",
+    gcloud_use_prompt: "gcloud 자격 증명을 사용할까요?",
+    gcloud_success: "gcloud 자격 증명 확인 성공!",
 };
 
 pub fn get_texts(lang: Language) -> &'static Texts {

@@ -272,6 +272,8 @@ pub struct GeminiConfig {
     pub default_max_tokens: u32,
     /// Request timeout
     pub timeout: Duration,
+    /// Google Cloud Project ID (optional, for GcloudCli)
+    pub project_id: Option<String>,
 }
 
 // SECURITY: Custom Debug implementation to mask credentials
@@ -288,6 +290,7 @@ impl fmt::Debug for GeminiConfig {
             .field("default_model", &self.default_model)
             .field("default_max_tokens", &self.default_max_tokens)
             .field("timeout", &self.timeout)
+            .field("project_id", &self.project_id)
             .finish()
     }
 }
@@ -303,6 +306,7 @@ impl GeminiConfig {
             default_model: DEFAULT_MODEL.to_string(),
             default_max_tokens: 8192,
             timeout: Duration::from_secs(60),
+            project_id: None,
         }
     }
 
@@ -329,6 +333,7 @@ impl GeminiConfig {
                 default_model,
                 default_max_tokens: 8192,
                 timeout: Duration::from_secs(60),
+                project_id: None,
             });
         }
 
@@ -360,10 +365,29 @@ impl GeminiConfig {
                 default_model,
                 default_max_tokens: 8192,
                 timeout: Duration::from_secs(60),
+                project_id: None,
             });
         }
 
-        // 3. Try Gemini CLI OAuth credentials
+        // 3. Try gcloud CLI
+        if let Ok(token) = cli_auth::get_gcloud_access_token_blocking() {
+            info!("Using Google Cloud SDK (gcloud) credentials");
+            let project_id = cli_auth::get_gcloud_project_id_blocking().ok();
+            if let Some(ref p) = project_id {
+                info!("Using gcloud project: {}", p);
+            }
+            return Ok(Self {
+                auth: GeminiAuth::OAuth(token),
+                auth_source: AuthSource::GcloudCli,
+                base_url,
+                default_model,
+                default_max_tokens: 8192,
+                timeout: Duration::from_secs(60),
+                project_id,
+            });
+        }
+
+        // 4. Try Gemini CLI OAuth credentials
         if let Some(creds) = cli_auth::read_gemini_oauth() {
             if cli_auth::is_token_expired(creds.expiry_date) {
                 info!("Gemini CLI token expired, will attempt refresh on first request");
@@ -375,11 +399,12 @@ impl GeminiConfig {
                 default_model,
                 default_max_tokens: 8192,
                 timeout: Duration::from_secs(60),
+                project_id: None,
             });
         }
 
         Err(Error::NotConfigured(
-            "GOOGLE_API_KEY or GEMINI_API_KEY not set, and no OAuth credentials found"
+            "GOOGLE_API_KEY, GEMINI_API_KEY, Cratos OAuth, Gemini OAuth, or gcloud credentials not found"
                 .to_string(),
         ))
     }
@@ -720,8 +745,32 @@ impl GeminiProvider {
         }
     }
 
-    /// Send request to Gemini API
+    /// Send request to Gemini API (with retry on 429)
     async fn send_request(&self, model: &str, request: GeminiRequest) -> Result<GeminiResponse> {
+        const MAX_RETRIES: u32 = 3;
+        let mut last_err = None;
+
+        for attempt in 0..=MAX_RETRIES {
+            match self.send_request_once(model, &request).await {
+                Ok(resp) => return Ok(resp),
+                Err(Error::RateLimit) if attempt < MAX_RETRIES => {
+                    let delay_secs = 1u64 << attempt; // 1s, 2s, 4s
+                    tracing::info!(
+                        attempt = attempt + 1,
+                        delay_secs,
+                        "Gemini rate limited, retrying"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+                    last_err = Some(Error::RateLimit);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(last_err.unwrap_or(Error::RateLimit))
+    }
+
+    /// Single attempt to send request to Gemini API
+    async fn send_request_once(&self, model: &str, request: &GeminiRequest) -> Result<GeminiResponse> {
         // SECURITY: Don't log the full URL (may contain API key)
         debug!("Sending request to Gemini model: {} (auth_source={:?})", model, self.config.auth_source);
 
@@ -748,13 +797,21 @@ impl GeminiProvider {
             }
             GeminiAuth::OAuth(token) => {
                 // CratosOAuth uses standard Gemini API with Bearer token
+                // GcloudCli uses standard API but helps to identify project for quota
                 let url = format!(
                     "{}/models/{}:generateContent",
                     self.config.base_url, model
                 );
-                self.client
+                let mut rb = self.client
                     .post(&url)
-                    .header("Authorization", format!("Bearer {}", token))
+                    .header("Authorization", format!("Bearer {}", token));
+                
+                if self.config.auth_source == AuthSource::GcloudCli {
+                    if let Some(ref project_id) = self.config.project_id {
+                        rb = rb.header("x-goog-user-project", project_id);
+                    }
+                }
+                rb
             }
         };
 
@@ -1097,6 +1154,7 @@ mod tests {
             default_model: DEFAULT_MODEL.to_string(),
             default_max_tokens: 8192,
             timeout: Duration::from_secs(60),
+            project_id: None,
         };
         let debug_str = format!("{:?}", config);
 

@@ -17,7 +17,10 @@ const OAUTH_TIMEOUT_SECS: u64 = 300;
 #[derive(Clone)]
 struct CallbackState {
     /// Oneshot sender wrapped to be Clone-compatible for axum handlers.
-    code_tx: Arc<Mutex<Option<oneshot::Sender<String>>>>,
+    /// Sends `Ok(code)` on success or `Err(message)` on failure.
+    code_tx: Arc<Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
+    /// Expected CSRF state parameter for validation.
+    expected_state: String,
 }
 
 /// Run a complete OAuth2 PKCE flow: start server, open browser, wait for callback.
@@ -30,11 +33,13 @@ pub async fn run_oauth_flow(
     texts: &super::i18n::Texts,
 ) -> anyhow::Result<OAuthTokens> {
     let pkce = oauth::generate_pkce();
+    let csrf_state = oauth::generate_state();
 
     // Create oneshot channel for the authorization code
-    let (code_tx, mut code_rx) = oneshot::channel::<String>();
+    let (code_tx, mut code_rx) = oneshot::channel::<Result<String, String>>();
     let state = CallbackState {
         code_tx: Arc::new(Mutex::new(Some(code_tx))),
+        expected_state: csrf_state.clone(),
     };
 
     // Build callback route
@@ -46,14 +51,21 @@ pub async fn run_oauth_flow(
     // Bind to random port on localhost
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
-    let redirect_uri = format!("http://127.0.0.1:{}{}", addr.port(), config.redirect_path);
+    // Use 'localhost' instead of '127.0.0.1' as it's more commonly whitelisted for OAuth apps (like gcloud)
+    let redirect_uri = format!("http://localhost:{}{}", addr.port(), config.redirect_path);
 
-    // Build authorization URL
-    let auth_url = oauth::build_auth_url(config, &redirect_uri, &pkce);
+    // Build authorization URL with CSRF state
+    let auth_url = oauth::build_auth_url(config, &redirect_uri, &pkce, &csrf_state);
 
-    // Start server in background
+    // Create shutdown signal for graceful server termination
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+
+    // Start server in background with graceful shutdown
     let server_handle = tokio::spawn(async move {
         axum::serve(listener, callback_router.into_make_service())
+            .with_graceful_shutdown(async {
+                let _ = shutdown_rx.await;
+            })
             .await
             .ok();
     });
@@ -86,7 +98,8 @@ pub async fn run_oauth_flow(
         tokio::select! {
             res = &mut code_rx => {
                 match res {
-                    Ok(c) => break c,
+                    Ok(Ok(c)) => break c,
+                    Ok(Err(e)) => return Err(anyhow::anyhow!("OAuth callback error: {}", e)),
                     Err(_) => return Err(anyhow::anyhow!("OAuth callback channel closed")),
                 }
             }
@@ -99,17 +112,26 @@ pub async fn run_oauth_flow(
                         let trimmed = line.trim();
                         if trimmed.is_empty() { continue; }
 
-                        // Try to parse valid URL and extract code
+                        // Try to parse valid URL and extract code + state
                         if let Ok(url) = reqwest::Url::parse(trimmed) {
-                            if let Some((_, val)) = url.query_pairs().find(|(k, _)| k == "code") {
-                                break val.to_string();
+                            let pairs: HashMap<_, _> = url.query_pairs().collect();
+                            if let Some(code_val) = pairs.get("code") {
+                                // Verify state if present in the URL
+                                if let Some(url_state) = pairs.get("state") {
+                                    if url_state.as_ref() != csrf_state {
+                                        println!("  CSRF state mismatch. Please try again.");
+                                        println!("  {}", texts.oauth_paste_prompt);
+                                        continue;
+                                    }
+                                }
+                                break code_val.to_string();
                             }
                         }
                         // Fallback: assume the input IS the code if it looks like one
                         if !trimmed.starts_with("http") && trimmed.len() > 10 {
                              break trimmed.to_string();
                         }
-                        
+
                         println!("  Invalid input. Please paste the full redirected URL.");
                         println!("  {}", texts.oauth_paste_prompt);
                     }
@@ -128,8 +150,10 @@ pub async fn run_oauth_flow(
     // Save tokens
     oauth::save_tokens(&config.token_file, &tokens)?;
 
-    // Abort the server after tokens are saved
-    server_handle.abort();
+    // Graceful shutdown: give the browser time to receive the HTML response
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let _ = shutdown_tx.send(());
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), server_handle).await;
 
     Ok(tokens)
 }
@@ -139,17 +163,49 @@ async fn callback_handler(
     State(state): State<CallbackState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Html<String> {
+    // Check for OAuth error response
+    if let Some(error) = params.get("error") {
+        let description = params
+            .get("error_description")
+            .cloned()
+            .unwrap_or_else(|| error.clone());
+        if let Some(tx) = state.code_tx.lock().ok().and_then(|mut opt| opt.take()) {
+            let _ = tx.send(Err(description.clone()));
+        }
+        return Html(error_html(&description));
+    }
+
+    // Verify CSRF state parameter
+    match params.get("state") {
+        Some(received_state) if received_state == &state.expected_state => {}
+        Some(_) => {
+            let msg = "CSRF state mismatch — possible cross-site request forgery".to_string();
+            if let Some(tx) = state.code_tx.lock().ok().and_then(|mut opt| opt.take()) {
+                let _ = tx.send(Err(msg.clone()));
+            }
+            return Html(error_html(&msg));
+        }
+        None => {
+            let msg = "Missing state parameter in callback".to_string();
+            if let Some(tx) = state.code_tx.lock().ok().and_then(|mut opt| opt.take()) {
+                let _ = tx.send(Err(msg.clone()));
+            }
+            return Html(error_html(&msg));
+        }
+    }
+
+    // Extract authorization code
     if let Some(code) = params.get("code") {
         if let Some(tx) = state.code_tx.lock().ok().and_then(|mut opt| opt.take()) {
-            let _ = tx.send(code.clone());
+            let _ = tx.send(Ok(code.clone()));
         }
         Html(success_html())
     } else {
-        let err = params
-            .get("error")
-            .cloned()
-            .unwrap_or_else(|| "unknown error".to_string());
-        Html(error_html(&err))
+        let msg = "Missing authorization code in callback".to_string();
+        if let Some(tx) = state.code_tx.lock().ok().and_then(|mut opt| opt.take()) {
+            let _ = tx.send(Err(msg.clone()));
+        }
+        Html(error_html(&msg))
     }
 }
 

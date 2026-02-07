@@ -344,8 +344,12 @@ pub(crate) fn load_config() -> Result<AppConfig> {
             .required(false),
         )
         // 3. Environment variables (highest priority)
+        // prefix_separator("_") ensures CRATOS_LLM__X works (single _ after prefix).
+        // Without it, config-rs 0.14 defaults prefix_separator to separator ("__"),
+        // requiring CRATOS__LLM__X which doesn't match .env convention.
         .add_source(
             Environment::with_prefix("CRATOS")
+                .prefix_separator("_")
                 .separator("__")
                 .try_parsing(true),
         )

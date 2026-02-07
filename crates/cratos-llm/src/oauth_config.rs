@@ -56,40 +56,29 @@ pub fn google_oauth_config() -> OAuthProviderConfig {
     let gemini_creds = crate::gemini_auth::resolve_gemini_cli_credentials();
 
     let (client_id, client_secret, is_gemini_cli) = if let (Some(id), Some(secret)) = (env_id, env_secret) {
-        // Check if the env var matches the Gemini CLI ID (if available)
-        if let Some(ref creds) = gemini_creds {
-             if id == creds.client_id {
-                // The env var matches the Gemini CLI's ID -> It IS the default/restricted one.
-                tracing::info!("Found default credentials in env (verified against Gemini CLI)");
-                (creds.client_id.clone(), creds.client_secret.clone(), true)
-            } else {
-                 // Custom ID
-                 (id, secret, false)
-            }
-        } else {
-            // No Gemini CLI found. We assume the env var is a custom ID.
-            // (If it happens to be the restricted default ID, it will fail with 403, 
-            // but we can't verify it without hardcoding the ID).
-            (id, secret, false)
-        }
+        tracing::debug!("Using custom Google OAuth credentials from Environment");
+        (id, secret, false)
     } else if let Some(creds) = gemini_creds {
-        // 2. Extracted from Gemini CLI (OpenClaw strategy)
-        tracing::info!("Using Google OAuth credentials from Gemini CLI");
+        tracing::info!("Using Google OAuth credentials from Gemini CLI installation");
         (creds.client_id, creds.client_secret, true)
     } else {
-        // 3. Fallback to default Gemini CLI credentials (obfuscated)
         let default_id = default_google_client_id();
-        tracing::info!("Using default Google OAuth credentials (Gemini CLI). ID: {}", default_id);
+        tracing::info!("Using default Google OAuth credentials (Google Cloud SDK). ID: {}", default_id);
         (default_id, default_google_client_secret(), true)
     };
 
-    // Gemini CLI credentials (internal Google ID) only support `cloud-platform` scope
-    // and must be used with the Code Assist API endpoint.
-    // Custom Client IDs usually support `generative-language` for the standard API.
+    // Restricted scopes for internal/CLI IDs (Gemini CLI, gcloud SDK).
+    // These IDs often reject `generative-language` and `userinfo.profile`.
+    // We restrict to `cloud-platform` and `userinfo.email`.
+    let restricted_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email";
+    
+    // Standard scopes for Custom Client IDs (User created).
+    let standard_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
+
     let scopes = if is_gemini_cli {
-        "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile".to_string()
+        restricted_scopes.to_string()
     } else {
-        "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile".to_string()
+        standard_scopes.to_string()
     };
 
     OAuthProviderConfig {
@@ -138,7 +127,8 @@ mod tests {
         let id = default_google_client_id();
         assert!(id.contains("apps.googleusercontent.com"));
         let secret = default_google_client_secret();
-        assert!(secret.starts_with("GOCSPX-"));
+        // gcloud SDK secret is "notasecret"
+        assert_eq!(secret, "notasecret");
     }
 
     #[test]
@@ -146,7 +136,8 @@ mod tests {
         let cfg = google_oauth_config();
         assert!(cfg.client_id.contains("apps.googleusercontent.com"));
         assert!(!cfg.client_secret.is_empty());
-        assert!(cfg.scopes.contains("generative-language"));
+        // Default credentials (gcloud SDK / Gemini CLI) use restricted scopes
+        assert!(cfg.scopes.contains("cloud-platform"));
         assert_eq!(cfg.redirect_path, "/oauth2callback");
         assert_eq!(cfg.token_file, "google_oauth.json");
     }

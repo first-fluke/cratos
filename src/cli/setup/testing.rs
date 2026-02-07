@@ -250,8 +250,9 @@ pub async fn test_google_oauth_token(access_token: &str) -> bool {
     }
 }
 
-/// Test Google Gemini with OAuth token (Cratos OAuth → Gemini CLI fallback).
+/// Test Google Gemini with OAuth token (Cratos OAuth → gcloud → Gemini CLI fallback).
 async fn test_gemini_oauth() -> bool {
+    // 1. Cratos OAuth
     if let Some(tokens) = cratos_llm::cli_auth::read_cratos_google_oauth() {
         if test_google_oauth_token(&tokens.access_token).await {
             return true;
@@ -267,7 +268,19 @@ async fn test_gemini_oauth() -> bool {
         }
     }
 
-    // Fallback: try Gemini CLI tokens (read-only, no subprocess)
+    // 2. gcloud CLI
+    if let Ok(token) = cratos_llm::cli_auth::get_gcloud_access_token().await {
+        let project_id = cratos_llm::cli_auth::get_gcloud_project_id_blocking().ok();
+        if test_gemini_bearer(&token, project_id.as_deref()).await {
+             return true;
+        }
+        // Fallback: try Code Assist endpoint if Gemini API fails (just in case)
+        if test_google_oauth_token(&token).await {
+             return true;
+        }
+    }
+
+    // 3. Fallback: try Gemini CLI tokens (read-only, no subprocess)
     if let Some(creds) = cratos_llm::cli_auth::read_gemini_oauth() {
         if test_google_oauth_token(&creds.access_token).await {
             return true;
@@ -275,6 +288,45 @@ async fn test_gemini_oauth() -> bool {
     }
 
     false
+}
+
+/// Test Gemini API with Bearer token (and optional project ID for gcloud).
+async fn test_gemini_bearer(token: &str, project_id: Option<&str>) -> bool {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+    let body = serde_json::json!({
+        "contents": [{"parts": [{"text": "Say OK"}]}],
+        "generationConfig": {"maxOutputTokens": 5}
+    });
+
+    let mut rb = client.post(url)
+        .header("Authorization", format!("Bearer {}", token));
+
+    if let Some(pid) = project_id {
+        rb = rb.header("x-goog-user-project", pid);
+    }
+
+    match rb.json(&body).send().await {
+        Ok(resp) => {
+            if !resp.status().is_success() {
+                 let body = resp.text().await.unwrap_or_default();
+                 tracing::debug!("Gemini Bearer test failed: {}", body);
+                 return false;
+            }
+            true
+        },
+        Err(e) => {
+            tracing::debug!("Gemini Bearer test network error: {}", e);
+            false
+        }
+    }
 }
 
 /// Test OpenAI with OAuth token (Cratos OAuth → Codex CLI fallback).

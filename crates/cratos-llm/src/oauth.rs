@@ -2,10 +2,15 @@
 //!
 //! Provides OAuth2 Authorization Code flow with PKCE (S256)
 //! for desktop applications. Handles code generation, token exchange,
-//! refresh, and secure token storage.
+//! refresh, and secure token storage with AES-256-GCM encryption.
 
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
@@ -74,8 +79,20 @@ pub fn generate_pkce() -> PkcePair {
     }
 }
 
+/// Generate a cryptographically random CSRF state parameter.
+pub fn generate_state() -> String {
+    let mut buf = [0u8; 32];
+    getrandom::getrandom(&mut buf).expect("failed to generate random bytes");
+    URL_SAFE_NO_PAD.encode(buf)
+}
+
 /// Build the full authorization URL for the user's browser.
-pub fn build_auth_url(config: &OAuthProviderConfig, redirect_uri: &str, pkce: &PkcePair) -> String {
+pub fn build_auth_url(
+    config: &OAuthProviderConfig,
+    redirect_uri: &str,
+    pkce: &PkcePair,
+    state: &str,
+) -> String {
     let mut params = vec![
         ("client_id", config.client_id.as_str()),
         ("redirect_uri", redirect_uri),
@@ -83,6 +100,7 @@ pub fn build_auth_url(config: &OAuthProviderConfig, redirect_uri: &str, pkce: &P
         ("scope", config.scopes.as_str()),
         ("code_challenge", pkce.code_challenge.as_str()),
         ("code_challenge_method", "S256"),
+        ("state", state),
     ];
 
     // Collect references to extra params
@@ -203,14 +221,18 @@ pub async fn refresh_token(
     Ok(tokens)
 }
 
-/// Save tokens to `~/.cratos/<filename>` with restrictive permissions.
+/// Save tokens to `~/.cratos/<filename>` with AES-256-GCM encryption and restrictive permissions.
 pub fn save_tokens(filename: &str, tokens: &OAuthTokens) -> crate::Result<()> {
     let path = cratos_dir()?.join(filename);
 
     let json = serde_json::to_string_pretty(tokens)
         .map_err(|e| crate::Error::OAuth(format!("Failed to serialize tokens: {}", e)))?;
 
-    std::fs::write(&path, &json)
+    let encrypted = encrypt_token_data(json.as_bytes())
+        .map_err(|e| crate::Error::OAuth(format!("Failed to encrypt tokens: {}", e)))?;
+    let encoded = URL_SAFE_NO_PAD.encode(&encrypted);
+
+    std::fs::write(&path, &encoded)
         .map_err(|e| crate::Error::OAuth(format!("Failed to write {}: {}", path.display(), e)))?;
 
     // Set file permissions to 0600 (owner read/write only) on Unix
@@ -221,11 +243,14 @@ pub fn save_tokens(filename: &str, tokens: &OAuthTokens) -> crate::Result<()> {
         std::fs::set_permissions(&path, perms).ok();
     }
 
-    debug!("Saved OAuth tokens to {}", path.display());
+    debug!("Saved encrypted OAuth tokens to {}", path.display());
     Ok(())
 }
 
 /// Read tokens from `~/.cratos/<filename>`.
+///
+/// Supports transparent migration: if the file contains plaintext JSON (legacy format),
+/// it will be read successfully and automatically re-saved in encrypted format.
 pub fn read_tokens(filename: &str) -> Option<OAuthTokens> {
     let path = cratos_dir().ok()?.join(filename);
     let content = match std::fs::read_to_string(&path) {
@@ -236,9 +261,28 @@ pub fn read_tokens(filename: &str) -> Option<OAuthTokens> {
         }
     };
 
+    // Try encrypted format first: base64url decode → AES-256-GCM decrypt → JSON parse
+    if let Ok(encrypted) = URL_SAFE_NO_PAD.decode(content.trim()) {
+        if let Ok(decrypted) = decrypt_token_data(&encrypted) {
+            if let Ok(tokens) = serde_json::from_slice::<OAuthTokens>(&decrypted) {
+                if !tokens.access_token.is_empty() {
+                    debug!("Read encrypted OAuth tokens from {}", path.display());
+                    return Some(tokens);
+                }
+            }
+        }
+    }
+
+    // Fallback: try plaintext JSON (legacy format)
     match serde_json::from_str::<OAuthTokens>(&content) {
         Ok(tokens) if !tokens.access_token.is_empty() => {
-            debug!("Read OAuth tokens from {}", path.display());
+            debug!("Read legacy plaintext OAuth tokens from {}", path.display());
+            // Auto-migrate to encrypted format
+            if let Err(e) = save_tokens(filename, &tokens) {
+                warn!("Failed to auto-migrate tokens to encrypted format: {}", e);
+            } else {
+                debug!("Auto-migrated tokens to encrypted format");
+            }
             Some(tokens)
         }
         Ok(_) => {
@@ -246,10 +290,81 @@ pub fn read_tokens(filename: &str) -> Option<OAuthTokens> {
             None
         }
         Err(e) => {
-            warn!("Failed to parse OAuth tokens from {}: {}", path.display(), e);
+            warn!(
+                "Failed to parse OAuth tokens from {}: {}",
+                path.display(),
+                e
+            );
             None
         }
     }
+}
+
+// ── Token Encryption (AES-256-GCM) ──
+
+/// Derive a 256-bit encryption key for token storage.
+///
+/// Uses `CRATOS_MASTER_KEY` env var if set, otherwise falls back to
+/// machine-specific data (hostname + username) for basic protection.
+/// Uses a separate salt from credentials.rs to keep key spaces independent.
+fn derive_token_encryption_key() -> [u8; 32] {
+    let master_key = std::env::var("CRATOS_MASTER_KEY").unwrap_or_else(|_| {
+        let hostname = hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "cratos-default".to_string());
+        let username = std::env::var("USER")
+            .or_else(|_| std::env::var("USERNAME"))
+            .unwrap_or_else(|_| "cratos-user".to_string());
+        format!("cratos-auto-key-{}-{}", hostname, username)
+    });
+
+    let mut hasher = Sha256::new();
+    hasher.update(master_key.as_bytes());
+    hasher.update(b"cratos-oauth-token-store-v1");
+    let result = hasher.finalize();
+
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&result);
+    key
+}
+
+/// Encrypt data using AES-256-GCM with a random 12-byte nonce.
+/// Returns nonce (12 bytes) || ciphertext.
+fn encrypt_token_data(plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    let key_bytes = derive_token_encryption_key();
+    let cipher = Aes256Gcm::new_from_slice(&key_bytes)
+        .map_err(|e| format!("Failed to create cipher: {}", e))?;
+
+    let mut nonce_bytes = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext)
+        .map_err(|e| format!("Encryption failed: {}", e))?;
+
+    let mut result = nonce_bytes.to_vec();
+    result.extend(ciphertext);
+    Ok(result)
+}
+
+/// Decrypt data encrypted with `encrypt_token_data`.
+/// Expects nonce (12 bytes) || ciphertext.
+fn decrypt_token_data(encrypted: &[u8]) -> Result<Vec<u8>, String> {
+    if encrypted.len() < 12 {
+        return Err("Invalid encrypted data: too short".to_string());
+    }
+
+    let key_bytes = derive_token_encryption_key();
+    let cipher = Aes256Gcm::new_from_slice(&key_bytes)
+        .map_err(|e| format!("Failed to create cipher: {}", e))?;
+
+    let (nonce_bytes, ciphertext) = encrypted.split_at(12);
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|e| format!("Decryption failed: {}", e))
 }
 
 // ── Helpers ──
@@ -331,6 +446,16 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_state() {
+        let state1 = generate_state();
+        let state2 = generate_state();
+        // base64url-encoded 32 bytes = 43 chars
+        assert_eq!(state1.len(), 43);
+        // Each call produces a unique value
+        assert_ne!(state1, state2);
+    }
+
+    #[test]
     fn test_build_auth_url() {
         let config = OAuthProviderConfig {
             client_id: "test-client".to_string(),
@@ -347,11 +472,12 @@ mod tests {
             code_challenge: "challenge".to_string(),
         };
 
-        let url = build_auth_url(&config, "http://127.0.0.1:9999/callback", &pkce);
+        let url = build_auth_url(&config, "http://127.0.0.1:9999/callback", &pkce, "test-state");
         assert!(url.starts_with("https://example.com/auth?"));
         assert!(url.contains("client_id=test-client"));
         assert!(url.contains("code_challenge=challenge"));
         assert!(url.contains("code_challenge_method=S256"));
+        assert!(url.contains("state=test-state"));
         assert!(url.contains("access_type=offline"));
     }
 
@@ -375,5 +501,25 @@ mod tests {
         assert_eq!(urlencoded("hello world"), "hello%20world");
         assert_eq!(urlencoded("foo@bar.com"), "foo%40bar.com");
         assert_eq!(urlencoded("a-b_c.d~e"), "a-b_c.d~e");
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_roundtrip() {
+        let plaintext = b"secret token data for testing";
+        let encrypted = encrypt_token_data(plaintext).unwrap();
+        // Encrypted should be longer (nonce + ciphertext + tag)
+        assert!(encrypted.len() > plaintext.len());
+        let decrypted = decrypt_token_data(&encrypted).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_decrypt_invalid_data() {
+        // Too short
+        assert!(decrypt_token_data(&[0u8; 5]).is_err());
+        // Random data (wrong key / corrupted)
+        let mut bad = [0u8; 64];
+        getrandom::getrandom(&mut bad).unwrap();
+        assert!(decrypt_token_data(&bad).is_err());
     }
 }

@@ -405,14 +405,11 @@ async fn resolve_google_auth(
 ) -> anyhow::Result<String> {
     use cratos_llm::cli_auth::*;
 
-    // Ensure OAuth credentials are available before any OAuth calls
-    // (.env is not yet written at this point, so set env vars directly)
-    if std::env::var("CRATOS_GOOGLE_CLIENT_ID").is_err() {
-        std::env::set_var("CRATOS_GOOGLE_CLIENT_ID", cratos_llm::oauth_config::default_google_client_id());
-    }
-    if std::env::var("CRATOS_GOOGLE_CLIENT_SECRET").is_err() {
-        std::env::set_var("CRATOS_GOOGLE_CLIENT_SECRET", cratos_llm::oauth_config::default_google_client_secret());
-    }
+    // google_oauth_config() handles credential resolution internally:
+    // 1. CRATOS_GOOGLE_CLIENT_ID/SECRET env vars (user override)
+    // 2. Gemini CLI credentials (auto-detected)
+    // 3. Embedded gcloud SDK credentials (fallback)
+    // No need to pre-set env vars here.
 
     // 1. Check existing Cratos OAuth token
     match check_cratos_google_oauth_status() {
@@ -450,7 +447,21 @@ async fn resolve_google_auth(
         CratosOAuthStatus::NotFound => {}
     }
 
-    // 2. Browser OAuth login
+    // 2. Check for gcloud CLI
+    if let Ok(_token) = get_gcloud_access_token().await {
+        println!();
+        print_header(t.gcloud_detected_title);
+        println!("  {}", t.gcloud_detected_desc);
+        
+        if prompts::confirm(t.gcloud_use_prompt, true, None)? {
+            // Verify token is valid (non-empty is checked by get_gcloud_access_token)
+            // We use the token to check validity implicitly, but get_gcloud_access_token() essentially does that by running the command.
+             println!("  {}", t.gcloud_success);
+             return Ok(String::new());
+        }
+    }
+
+    // 3. Browser OAuth login
     let headless = is_headless();
     
     if headless {

@@ -71,6 +71,8 @@ pub enum AuthSource {
     GeminiCli,
     /// Bearer token from Codex CLI (ChatGPT Pro/Plus)
     CodexCli,
+    /// Bearer token from Google Cloud SDK (gcloud)
+    GcloudCli,
 }
 
 impl std::fmt::Display for AuthSource {
@@ -80,6 +82,7 @@ impl std::fmt::Display for AuthSource {
             AuthSource::CratosOAuth => write!(f, "Cratos OAuth"),
             AuthSource::GeminiCli => write!(f, "OAuth: Gemini CLI"),
             AuthSource::CodexCli => write!(f, "Codex CLI auth"),
+            AuthSource::GcloudCli => write!(f, "Google Cloud SDK (gcloud)"),
         }
     }
 }
@@ -388,6 +391,113 @@ pub async fn refresh_gemini_token() -> crate::Result<GeminiOAuthCreds> {
             "Gemini CLI refresh succeeded but credentials file not readable".to_string(),
         )
     })
+}
+
+// ============================================================================
+// Google Cloud SDK Integration
+// ============================================================================
+
+/// Attempt to get an access token from Google Cloud SDK (`gcloud`).
+///
+/// Runs `gcloud auth print-access-token`.
+pub async fn get_gcloud_access_token() -> crate::Result<String> {
+    use tokio::process::Command;
+
+    debug!("Attempting to get token from gcloud CLI");
+
+    let output = Command::new("gcloud")
+        .args(["auth", "print-access-token"])
+        .output()
+        .await
+        .map_err(|e| {
+            crate::Error::NotConfigured(format!(
+                "gcloud CLI not found. ({})",
+                e
+            ))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(crate::Error::NotConfigured(format!(
+            "gcloud token fetch failed. Run `gcloud auth login` or `gcloud auth application-default login`. ({})",
+            crate::util::truncate_safe(&stderr, 200)
+        )));
+    }
+
+    let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if token.is_empty() {
+        return Err(crate::Error::NotConfigured(
+            "gcloud returned empty token".to_string(),
+        ));
+    }
+
+    Ok(token)
+}
+
+/// Blocking version of `get_gcloud_access_token` for use in synchronous configuration loading.
+pub fn get_gcloud_access_token_blocking() -> crate::Result<String> {
+    use std::process::Command;
+
+    debug!("Attempting to get token from gcloud CLI (blocking)");
+
+    let output = Command::new("gcloud")
+        .args(["auth", "print-access-token"])
+        .output()
+        .map_err(|e| {
+            crate::Error::NotConfigured(format!(
+                "gcloud CLI not found. ({})",
+                e
+            ))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(crate::Error::NotConfigured(format!(
+            "gcloud token fetch failed. Run `gcloud auth login` or `gcloud auth application-default login`. ({})",
+            crate::util::truncate_safe(&stderr, 200)
+        )));
+    }
+
+    let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if token.is_empty() {
+        return Err(crate::Error::NotConfigured(
+            "gcloud returned empty token".to_string(),
+        ));
+    }
+
+    Ok(token)
+}
+
+/// Get the current Google Cloud project ID (blocking).
+pub fn get_gcloud_project_id_blocking() -> crate::Result<String> {
+    use std::process::Command;
+
+    debug!("Attempting to get project ID from gcloud CLI (blocking)");
+
+    let output = Command::new("gcloud")
+        .args(["config", "get-value", "project"])
+        .output()
+        .map_err(|e| {
+            crate::Error::NotConfigured(format!(
+                "gcloud CLI not found. ({})",
+                e
+            ))
+        })?;
+
+    if !output.status.success() {
+        return Err(crate::Error::NotConfigured(
+            "gcloud project fetch failed".to_string(),
+        ));
+    }
+
+    let project = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if project.is_empty() {
+        return Err(crate::Error::NotConfigured(
+            "No project set in gcloud config. Run `gcloud config set project <PROJECT_ID>`".to_string(),
+        ));
+    }
+    
+    Ok(project)
 }
 
 #[cfg(test)]
