@@ -267,19 +267,14 @@ async fn test_gemini_oauth() -> bool {
         }
     }
 
-    let creds = match cratos_llm::cli_auth::read_gemini_oauth() {
-        Some(c) => c,
-        None => return false,
-    };
-
-    if test_google_oauth_token(&creds.access_token).await {
-        return true;
+    // Fallback: try Gemini CLI tokens (read-only, no subprocess)
+    if let Some(creds) = cratos_llm::cli_auth::read_gemini_oauth() {
+        if test_google_oauth_token(&creds.access_token).await {
+            return true;
+        }
     }
 
-    match cratos_llm::cli_auth::refresh_gemini_token().await {
-        Ok(refreshed) => test_google_oauth_token(&refreshed.access_token).await,
-        Err(_) => false,
-    }
+    false
 }
 
 /// Test OpenAI with OAuth token (Cratos OAuth → Codex CLI fallback).

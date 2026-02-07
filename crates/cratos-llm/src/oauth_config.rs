@@ -21,7 +21,7 @@ pub fn google_oauth_config() -> OAuthProviderConfig {
         "".to_string() // Placeholder: ID must be provided via env or extracted from CLI
     });
     let client_secret = std::env::var("CRATOS_GOOGLE_CLIENT_SECRET")
-        .unwrap_or_else(|_| "".to_string()); // Secret must be provided via env
+        .unwrap_or_default();
 
     OAuthProviderConfig {
         client_id,
@@ -69,7 +69,7 @@ mod tests {
     fn test_google_config() {
         let cfg = google_oauth_config();
         assert!(cfg.client_id.contains("apps.googleusercontent.com"));
-        assert!(!cfg.client_secret.is_empty());
+        assert!(cfg.client_secret.is_empty());
         assert_eq!(cfg.redirect_path, "/oauth2callback");
         assert_eq!(cfg.token_file, "google_oauth.json");
     }

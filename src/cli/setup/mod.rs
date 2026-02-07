@@ -399,9 +399,14 @@ async fn resolve_google_auth(
             if let Some(tokens) = read_cratos_google_oauth() {
                 if let Some(ref rt) = tokens.refresh_token {
                     let config = cratos_llm::oauth_config::google_oauth_config();
-                    if let Ok(_refreshed) = oauth_server::refresh_and_save(&config, rt).await {
-                        println!("  {}", t.oauth_refresh_success);
-                        return Ok(String::new());
+                    match oauth_server::refresh_and_save(&config, rt).await {
+                        Ok(_) => {
+                            println!("  {}", t.oauth_refresh_success);
+                            return Ok(String::new());
+                        }
+                        Err(e) => {
+                            tracing::warn!("Google OAuth refresh failed: {}", e);
+                        }
                     }
                 }
             }
@@ -454,9 +459,14 @@ async fn resolve_openai_auth(
             if let Some(tokens) = read_cratos_openai_oauth() {
                 if let Some(ref rt) = tokens.refresh_token {
                     let config = cratos_llm::oauth_config::openai_oauth_config();
-                    if let Ok(_refreshed) = oauth_server::refresh_and_save(&config, rt).await {
-                        println!("  {}", t.oauth_refresh_success);
-                        return Ok(String::new());
+                    match oauth_server::refresh_and_save(&config, rt).await {
+                        Ok(_) => {
+                            println!("  {}", t.oauth_refresh_success);
+                            return Ok(String::new());
+                        }
+                        Err(e) => {
+                            tracing::warn!("OpenAI OAuth refresh failed: {}", e);
+                        }
                     }
                 }
             }

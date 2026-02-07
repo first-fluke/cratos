@@ -64,14 +64,14 @@ pub async fn run_oauth_flow(config: &OAuthProviderConfig) -> anyhow::Result<OAut
     .map_err(|_| anyhow::anyhow!("OAuth timeout ({}s)", OAUTH_TIMEOUT_SECS))?
     .map_err(|_| anyhow::anyhow!("OAuth callback channel closed"))?;
 
-    // Abort the server
-    server_handle.abort();
-
     // Exchange code for tokens
     let tokens = oauth::exchange_code(config, &code, &redirect_uri, &pkce.code_verifier).await?;
 
     // Save tokens
     oauth::save_tokens(&config.token_file, &tokens)?;
+
+    // Abort the server after tokens are saved
+    server_handle.abort();
 
     Ok(tokens)
 }
