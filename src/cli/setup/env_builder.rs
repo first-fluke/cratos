@@ -28,7 +28,19 @@ pub fn build_env(
     } else {
         c.push_str(&format!("{}={}\n", provider.env_var, api_key));
     }
-    c.push_str(&format!("CRATOS_DEFAULT_PROVIDER={}\n", provider.name));
+    c.push_str(&format!("CRATOS_LLM__DEFAULT_PROVIDER={}\n", provider.name));
+
+    // Google OAuth credentials (needed for token exchange)
+    if provider.name == "google" {
+        c.push_str(&format!(
+            "CRATOS_GOOGLE_CLIENT_ID={}\n",
+            cratos_llm::oauth_config::default_google_client_id()
+        ));
+        c.push_str(&format!(
+            "CRATOS_GOOGLE_CLIENT_SECRET={}\n",
+            cratos_llm::oauth_config::default_google_client_secret()
+        ));
+    }
 
     // Default Persona
     c.push_str("\n# ===================\n");

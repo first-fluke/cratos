@@ -7,6 +7,7 @@ use axum::{extract::Query, extract::State, response::Html, routing::get, Router}
 use cratos_llm::oauth::{self, OAuthProviderConfig, OAuthTokens};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::oneshot;
 
 /// Timeout for waiting for the OAuth callback (5 minutes).
@@ -22,11 +23,16 @@ struct CallbackState {
 /// Run a complete OAuth2 PKCE flow: start server, open browser, wait for callback.
 ///
 /// Returns the exchanged `OAuthTokens` on success.
-pub async fn run_oauth_flow(config: &OAuthProviderConfig) -> anyhow::Result<OAuthTokens> {
+/// Supports manual flow for headless environments via stdin.
+pub async fn run_oauth_flow(
+    config: &OAuthProviderConfig,
+    headless: bool,
+    texts: &super::i18n::Texts,
+) -> anyhow::Result<OAuthTokens> {
     let pkce = oauth::generate_pkce();
 
     // Create oneshot channel for the authorization code
-    let (code_tx, code_rx) = oneshot::channel::<String>();
+    let (code_tx, mut code_rx) = oneshot::channel::<String>();
     let state = CallbackState {
         code_tx: Arc::new(Mutex::new(Some(code_tx))),
     };
@@ -52,17 +58,69 @@ pub async fn run_oauth_flow(config: &OAuthProviderConfig) -> anyhow::Result<OAut
             .ok();
     });
 
-    // Open browser
-    open_browser(&auth_url);
+    // Handle browser / instructions
+    let mut manual_mode = headless;
+    if !headless {
+        if let Err(e) = try_open_browser(&auth_url) {
+            println!("\n  Could not open browser automatically: {}", e);
+            manual_mode = true;
+        }
+    }
 
-    // Wait for callback with timeout
-    let code = tokio::time::timeout(
-        std::time::Duration::from_secs(OAUTH_TIMEOUT_SECS),
-        code_rx,
-    )
-    .await
-    .map_err(|_| anyhow::anyhow!("OAuth timeout ({}s)", OAUTH_TIMEOUT_SECS))?
-    .map_err(|_| anyhow::anyhow!("OAuth callback channel closed"))?;
+    if manual_mode {
+        println!("\n  {}", texts.oauth_manual_instructions);
+        println!("\n    {}\n", auth_url);
+        println!("  {}", texts.oauth_paste_prompt);
+    } else {
+        println!("  {}", texts.oauth_waiting);
+    }
+
+    // Race between server callback and stdin (if manual mode or fallback)
+    // Even in non-headless, user might fail to trigger callback and paste manually.
+    let code = loop {
+        let mut stdin = BufReader::new(tokio::io::stdin());
+        let mut line = String::new();
+
+        // We use select! to wait for either callback or stdin
+        // Note: checking stdin requires user to press Enter.
+        tokio::select! {
+            res = &mut code_rx => {
+                match res {
+                    Ok(c) => break c,
+                    Err(_) => return Err(anyhow::anyhow!("OAuth callback channel closed")),
+                }
+            }
+            res = stdin.read_line(&mut line) => {
+                // If read_line returns (user pasted something), process it.
+                // If it's empty, ignore.
+                match res {
+                    Ok(0) => continue, // EOF?
+                    Ok(_) => {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() { continue; }
+
+                        // Try to parse valid URL and extract code
+                        if let Ok(url) = reqwest::Url::parse(trimmed) {
+                            if let Some((_, val)) = url.query_pairs().find(|(k, _)| k == "code") {
+                                break val.to_string();
+                            }
+                        }
+                        // Fallback: assume the input IS the code if it looks like one
+                        if !trimmed.starts_with("http") && trimmed.len() > 10 {
+                             break trimmed.to_string();
+                        }
+                        
+                        println!("  Invalid input. Please paste the full redirected URL.");
+                        println!("  {}", texts.oauth_paste_prompt);
+                    }
+                    Err(_) => continue,
+                }
+            }
+             _ = tokio::time::sleep(std::time::Duration::from_secs(OAUTH_TIMEOUT_SECS)) => {
+                 return Err(anyhow::anyhow!("OAuth timeout ({}s)", OAUTH_TIMEOUT_SECS));
+             }
+        }
+    };
 
     // Exchange code for tokens
     let tokens = oauth::exchange_code(config, &code, &redirect_uri, &pkce.code_verifier).await?;
@@ -105,43 +163,30 @@ pub async fn refresh_and_save(
     Ok(tokens)
 }
 
-/// Open a URL in the user's default browser.
-fn open_browser(url: &str) {
-    let result = {
-        #[cfg(target_os = "macos")]
-        {
-            std::process::Command::new("open").arg(url).spawn()
-        }
-        #[cfg(target_os = "linux")]
-        {
-            std::process::Command::new("xdg-open").arg(url).spawn()
-        }
-        #[cfg(target_os = "windows")]
-        {
-            std::process::Command::new("cmd")
-                .args(["/C", "start", url])
-                .spawn()
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-        {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "unsupported platform",
-            ))
-        }
-    };
-
-    match result {
-        Ok(_) => {}
-        Err(e) => {
-            println!();
-            println!("  Could not open browser automatically ({})", e);
-            println!("  Please open this URL manually:");
-            println!();
-            println!("    {}", url);
-            println!();
-        }
+/// Try to open a URL in the user's default browser.
+fn try_open_browser(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(url).spawn()?;
     }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open").arg(url).spawn()?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", url])
+            .spawn()?;
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "unsupported platform",
+        ));
+    }
+    Ok(())
 }
 
 /// HTML page shown on successful OAuth callback.

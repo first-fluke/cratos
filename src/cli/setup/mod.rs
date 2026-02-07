@@ -50,6 +50,25 @@ fn print_box(title: &str, content: &str) {
         }
     }
     println!();
+    println!();
+}
+
+/// Detect if running in a headless environment (SSH, VPS, etc.)
+fn is_headless() -> bool {
+    // SSH session
+    if std::env::var("SSH_CLIENT").is_ok() || std::env::var("SSH_TTY").is_ok() {
+        return true;
+    }
+    
+    // Linux without display server
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var("DISPLAY").is_err() && std::env::var("WAYLAND_DISPLAY").is_err() {
+            return true;
+        }
+    }
+    
+    false
 }
 
 /// Run the unified setup wizard. Called by `cratos init` and `cratos serve` (when no .env).
@@ -386,43 +405,67 @@ async fn resolve_google_auth(
 ) -> anyhow::Result<String> {
     use cratos_llm::cli_auth::*;
 
+    // Ensure OAuth credentials are available before any OAuth calls
+    // (.env is not yet written at this point, so set env vars directly)
+    if std::env::var("CRATOS_GOOGLE_CLIENT_ID").is_err() {
+        std::env::set_var("CRATOS_GOOGLE_CLIENT_ID", cratos_llm::oauth_config::default_google_client_id());
+    }
+    if std::env::var("CRATOS_GOOGLE_CLIENT_SECRET").is_err() {
+        std::env::set_var("CRATOS_GOOGLE_CLIENT_SECRET", cratos_llm::oauth_config::default_google_client_secret());
+    }
+
     // 1. Check existing Cratos OAuth token
     match check_cratos_google_oauth_status() {
         CratosOAuthStatus::Valid => {
             println!("\n  {} {}", t.oauth_detected, t.oauth_token_valid);
-            return Ok(String::new());
+            
+            // Ask if user wants to reuse existing token
+            if prompts::confirm(t.oauth_reuse_prompt, true, None)? {
+                return Ok(String::new());
+            }
         }
         CratosOAuthStatus::Expired => {
             println!("\n  {} {}", t.oauth_detected, t.oauth_token_expired);
-            println!("  {}", t.oauth_refreshing);
+            
+            if prompts::confirm(t.oauth_reuse_prompt, true, None)? {
+                println!("  {}", t.oauth_refreshing);
 
-            if let Some(tokens) = read_cratos_google_oauth() {
-                if let Some(ref rt) = tokens.refresh_token {
-                    let config = cratos_llm::oauth_config::google_oauth_config();
-                    match oauth_server::refresh_and_save(&config, rt).await {
-                        Ok(_) => {
-                            println!("  {}", t.oauth_refresh_success);
-                            return Ok(String::new());
-                        }
-                        Err(e) => {
-                            tracing::warn!("Google OAuth refresh failed: {}", e);
+                if let Some(tokens) = read_cratos_google_oauth() {
+                    if let Some(ref rt) = tokens.refresh_token {
+                        let config = cratos_llm::oauth_config::google_oauth_config();
+                        match oauth_server::refresh_and_save(&config, rt).await {
+                            Ok(_) => {
+                                println!("  {}", t.oauth_refresh_success);
+                                return Ok(String::new());
+                            }
+                            Err(e) => {
+                                tracing::warn!("Google OAuth refresh failed: {}", e);
+                            }
                         }
                     }
                 }
+                println!("  {}", t.oauth_refresh_failed);
             }
-            println!("  {}", t.oauth_refresh_failed);
         }
         CratosOAuthStatus::NotFound => {}
     }
 
     // 2. Browser OAuth login
+    let headless = is_headless();
+    
+    if headless {
+        println!("\n  {}", t.oauth_remote_detected);
+    }
+    
     println!("\n  {}", t.oauth_browser_login_google);
+    println!("  {}", t.oauth_restricted_client_hint);
+    
     if prompts::confirm(t.oauth_browser_login_prompt, true, None)? {
         println!("  {}", t.oauth_starting);
-        println!("  {}", t.oauth_waiting);
-
+        // Note: oauth_waiting is printed inside run_oauth_flow for normal mode
+        
         let config = cratos_llm::oauth_config::google_oauth_config();
-        match oauth_server::run_oauth_flow(&config).await {
+        match oauth_server::run_oauth_flow(&config, headless, t).await {
             Ok(_) => {
                 println!("  {}", t.oauth_login_success);
                 return Ok(String::new());
@@ -450,7 +493,11 @@ async fn resolve_openai_auth(
     match check_cratos_openai_oauth_status() {
         CratosOAuthStatus::Valid => {
             println!("\n  {} {}", t.oauth_detected, t.oauth_token_valid);
-            return Ok(String::new());
+            
+            // Ask if user wants to reuse existing token
+            if prompts::confirm(t.oauth_reuse_prompt, true, None)? {
+                return Ok(String::new());
+            }
         }
         CratosOAuthStatus::Expired => {
             println!("\n  {} {}", t.oauth_detected, t.oauth_token_expired);
@@ -476,13 +523,18 @@ async fn resolve_openai_auth(
     }
 
     // 2. Browser OAuth login
+    let headless = is_headless();
+    
+    if headless {
+        println!("\n  {}", t.oauth_remote_detected);
+    }
+
     println!("\n  {}", t.oauth_browser_login_openai);
     if prompts::confirm(t.oauth_browser_login_prompt, true, None)? {
         println!("  {}", t.oauth_starting);
-        println!("  {}", t.oauth_waiting);
-
+        
         let config = cratos_llm::oauth_config::openai_oauth_config();
-        match oauth_server::run_oauth_flow(&config).await {
+        match oauth_server::run_oauth_flow(&config, headless, t).await {
             Ok(_) => {
                 println!("  {}", t.oauth_login_success);
                 return Ok(String::new());

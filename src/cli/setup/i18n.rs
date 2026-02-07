@@ -145,6 +145,13 @@ pub struct Texts {
     pub oauth_login_success: &'static str,
     pub oauth_login_failed: &'static str,
 
+    // OAuth improvements
+    pub oauth_reuse_prompt: &'static str,
+    pub oauth_remote_detected: &'static str,
+    pub oauth_manual_instructions: &'static str,
+    pub oauth_paste_prompt: &'static str,
+    pub oauth_restricted_client_hint: &'static str,
+
     // Common
     pub enabled: &'static str,
     pub disabled: &'static str,
@@ -309,6 +316,12 @@ Tips:
     oauth_login_success: "Login successful!",
     oauth_login_failed: "Login failed. You can enter an API key instead.",
 
+    oauth_reuse_prompt: "Existing token found. Use it?",
+    oauth_remote_detected: "Remote environment detected.",
+    oauth_manual_instructions: "Open this URL in your local browser, log in, and paste the redirected URL here:",
+    oauth_paste_prompt: "Paste redirected URL:",
+    oauth_restricted_client_hint: "Note: If you encounter an 'Access Blocked' error, please skip browser login and use an API Key.",
+
     enabled: "enabled",
     disabled: "disabled",
     cancel_msg: "Setup cancelled.",
@@ -471,6 +484,12 @@ pub const TEXTS_KO: Texts = Texts {
     oauth_waiting: "브라우저 로그인 대기 중...",
     oauth_login_success: "로그인 성공!",
     oauth_login_failed: "로그인 실패. API 키를 직접 입력할 수 있습니다.",
+
+    oauth_reuse_prompt: "기존 토큰이 발견되었습니다. 그대로 사용할까요?",
+    oauth_remote_detected: "원격 환경이 감지되었습니다.",
+    oauth_manual_instructions: "아래 URL을 복사하여 로컬 브라우저에서 로그인하세요. 로그인 후 리다이렉트된 주소 전체를 여기에 붙여넣으세요. (주의: URL이 올바른 Google/OpenAI 주소인지 반드시 확인하세요!)",
+    oauth_paste_prompt: "리다이렉트 URL 붙여넣기:",
+    oauth_restricted_client_hint: "참고: 브라우저에서 '액세스 차단됨(Access Blocked)' 오류가 발생하면, 여기서 취소(n)하고 API 키를 입력하세요.",
 
     enabled: "활성화",
     disabled: "비활성화",
