@@ -444,6 +444,8 @@ pub struct GeminiProvider {
     config: GeminiConfig,
     /// Lazily resolved Code Assist project ID (for OAuth auth).
     code_assist_project: tokio::sync::OnceCell<String>,
+    /// Last retry-after delay reported by Gemini (seconds), used for smart backoff.
+    last_retry_after: std::sync::atomic::AtomicU64,
 }
 
 // Code Assist API types for OAuth auth (same API as Gemini CLI)
@@ -503,6 +505,7 @@ impl GeminiProvider {
             client,
             config,
             code_assist_project: tokio::sync::OnceCell::new(),
+            last_retry_after: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -747,26 +750,27 @@ impl GeminiProvider {
 
     /// Send request to Gemini API (with retry on 429)
     async fn send_request(&self, model: &str, request: GeminiRequest) -> Result<GeminiResponse> {
-        const MAX_RETRIES: u32 = 3;
-        let mut last_err = None;
+        const MAX_RETRIES: u32 = 2;
 
         for attempt in 0..=MAX_RETRIES {
             match self.send_request_once(model, &request).await {
                 Ok(resp) => return Ok(resp),
                 Err(Error::RateLimit) if attempt < MAX_RETRIES => {
-                    let delay_secs = 1u64 << attempt; // 1s, 2s, 4s
+                    // Use Gemini's reported retry-after, with minimum 2s and max 30s
+                    let gemini_delay = self.last_retry_after.load(std::sync::atomic::Ordering::Relaxed);
+                    let delay_secs = gemini_delay.clamp(2, 30);
                     tracing::info!(
                         attempt = attempt + 1,
                         delay_secs,
-                        "Gemini rate limited, retrying"
+                        gemini_reported = gemini_delay,
+                        "Gemini rate limited, retrying after reported delay"
                     );
                     tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
-                    last_err = Some(Error::RateLimit);
                 }
                 Err(e) => return Err(e),
             }
         }
-        Err(last_err.unwrap_or(Error::RateLimit))
+        Err(Error::RateLimit)
     }
 
     /// Single attempt to send request to Gemini API
@@ -877,21 +881,36 @@ impl GeminiProvider {
                     ));
                 }
                 if status.as_u16() == 429 {
-                    // Parse retryDelay from Gemini error body if present
+                    let mut retry_secs: u64 = 0;
+                    // Parse retryDelay from Gemini error details if present
                     if let Some(details) = error.error.details.as_ref() {
                         for detail in details {
                             if let Some(delay) = detail.get("retryDelay").and_then(|v| v.as_str())
                             {
-                                // Gemini uses e.g. "30s" format
                                 if let Some(secs_str) = delay.strip_suffix('s') {
                                     if let Ok(secs) = secs_str.parse::<u64>() {
-                                        crate::quota::global_quota_tracker()
-                                            .update_from_retry_after("gemini", secs)
-                                            .await;
+                                        retry_secs = secs;
                                     }
                                 }
                             }
                         }
+                    }
+                    // Also parse from message: "Your quota will reset after Xs."
+                    if retry_secs == 0 {
+                        if let Some(after_pos) = error.error.message.find("reset after ") {
+                            let rest = &error.error.message[after_pos + 12..];
+                            if let Some(s_pos) = rest.find('s') {
+                                if let Ok(secs) = rest[..s_pos].trim().parse::<u64>() {
+                                    retry_secs = secs;
+                                }
+                            }
+                        }
+                    }
+                    if retry_secs > 0 {
+                        self.last_retry_after.store(retry_secs, std::sync::atomic::Ordering::Relaxed);
+                        crate::quota::global_quota_tracker()
+                            .update_from_retry_after("gemini", retry_secs)
+                            .await;
                     }
                     return Err(Error::RateLimit);
                 }
