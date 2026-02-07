@@ -20,7 +20,7 @@ impl BrowserEngine {
     #[must_use]
     pub fn mcp_command(&self) -> (&'static str, Vec<&'static str>) {
         match self {
-            Self::Playwright => ("npx", vec!["-y", "@anthropic-ai/mcp-server-playwright"]),
+            Self::Playwright => ("npx", vec!["-y", "@playwright/mcp", "--stdio"]),
             Self::Puppeteer => ("npx", vec!["-y", "@anthropic-ai/mcp-server-puppeteer"]),
         }
     }
@@ -143,7 +143,7 @@ mod tests {
     fn test_browser_engine_mcp_command() {
         let (cmd, args) = BrowserEngine::Playwright.mcp_command();
         assert_eq!(cmd, "npx");
-        assert!(args.contains(&"@anthropic-ai/mcp-server-playwright"));
+        assert!(args.contains(&"@playwright/mcp"));
     }
 
     #[test]
