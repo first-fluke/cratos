@@ -149,6 +149,7 @@ reqwest.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 futures-util = "0.3"
+regex = { workspace = true }
 
 [dev-dependencies]
 tokio-test.workspace = true
