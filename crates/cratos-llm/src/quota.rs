@@ -14,6 +14,17 @@ use tokio::sync::RwLock;
 // Types
 // ============================================================================
 
+/// How the quota information was obtained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuotaSource {
+    /// Parsed from HTTP response headers (most providers).
+    ResponseHeaders,
+    /// Polled from a dedicated quota API (e.g. Gemini).
+    PolledApi,
+    /// Derived from a 429 retry-after header.
+    RetryAfter,
+}
+
 /// Rate limit state for a single provider.
 #[derive(Debug, Clone)]
 pub struct QuotaState {
@@ -31,6 +42,12 @@ pub struct QuotaState {
     pub reset_at: Option<DateTime<Utc>>,
     /// When this state was last updated
     pub updated_at: DateTime<Utc>,
+    /// How this state was obtained.
+    pub source: QuotaSource,
+    /// Remaining fraction (0.0–1.0), if known from a polled API.
+    pub remaining_fraction: Option<f64>,
+    /// Tier label (e.g. "free", "pay-as-you-go"), if known.
+    pub tier_label: Option<String>,
 }
 
 impl QuotaState {
@@ -54,6 +71,20 @@ impl QuotaState {
             }
             _ => None,
         }
+    }
+
+    /// Remaining percentage (0.0–100.0), preferring `remaining_fraction`
+    /// if available, otherwise computed from requests remaining/limit.
+    #[must_use]
+    pub fn remaining_pct(&self) -> Option<f64> {
+        self.remaining_fraction
+            .map(|f| f * 100.0)
+            .or_else(|| {
+                match (self.requests_remaining, self.requests_limit) {
+                    (Some(r), Some(l)) if l > 0 => Some(r as f64 / l as f64 * 100.0),
+                    _ => None,
+                }
+            })
     }
 
     /// Returns `true` when remaining requests or tokens drop below
@@ -140,6 +171,9 @@ impl QuotaTracker {
             tokens_limit: None,
             reset_at: None,
             updated_at: now,
+            source: QuotaSource::ResponseHeaders,
+            remaining_fraction: None,
+            tier_label: None,
         });
 
         if let Some(v) = partial.requests_remaining {
@@ -173,10 +207,20 @@ impl QuotaTracker {
             tokens_limit: None,
             reset_at: None,
             updated_at: now,
+            source: QuotaSource::RetryAfter,
+            remaining_fraction: None,
+            tier_label: None,
         });
         state.requests_remaining = Some(0);
         state.reset_at = Some(reset_at);
+        state.source = QuotaSource::RetryAfter;
         state.updated_at = now;
+    }
+
+    /// Directly inject a full quota state (used by pollers like Gemini quota API).
+    pub async fn update_state(&self, state: QuotaState) {
+        let mut states = self.states.write().await;
+        states.insert(state.provider.clone(), state);
     }
 
     /// Get the current state for a specific provider.
@@ -604,6 +648,9 @@ mod tests {
             tokens_limit: Some(100_000),
             reset_at: None,
             updated_at: Utc::now(),
+            source: QuotaSource::ResponseHeaders,
+            remaining_fraction: None,
+            tier_label: None,
         };
         assert!((state.requests_usage_pct().unwrap() - 90.0).abs() < 0.01);
         assert!((state.tokens_usage_pct().unwrap() - 50.0).abs() < 0.01);
@@ -619,6 +666,9 @@ mod tests {
             tokens_limit: Some(100_000),
             reset_at: None,
             updated_at: Utc::now(),
+            source: QuotaSource::ResponseHeaders,
+            remaining_fraction: None,
+            tier_label: None,
         };
         // 95% usage, threshold 20% -> near limit
         assert!(state.is_near_limit(20.0));
@@ -648,5 +698,82 @@ mod tests {
         let state = tracker.get_state("gemini").await.unwrap();
         assert_eq!(state.requests_remaining, Some(0));
         assert!(state.reset_at.is_some());
+        assert_eq!(state.source, QuotaSource::RetryAfter);
+    }
+
+    #[test]
+    fn test_remaining_pct_from_fraction() {
+        let state = QuotaState {
+            provider: "gemini".to_string(),
+            requests_remaining: None,
+            requests_limit: None,
+            tokens_remaining: None,
+            tokens_limit: None,
+            reset_at: None,
+            updated_at: Utc::now(),
+            source: QuotaSource::PolledApi,
+            remaining_fraction: Some(0.85),
+            tier_label: None,
+        };
+        let pct = state.remaining_pct().unwrap();
+        assert!((pct - 85.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_remaining_pct_from_requests() {
+        let state = QuotaState {
+            provider: "anthropic".to_string(),
+            requests_remaining: Some(750),
+            requests_limit: Some(1000),
+            tokens_remaining: None,
+            tokens_limit: None,
+            reset_at: None,
+            updated_at: Utc::now(),
+            source: QuotaSource::ResponseHeaders,
+            remaining_fraction: None,
+            tier_label: None,
+        };
+        let pct = state.remaining_pct().unwrap();
+        assert!((pct - 75.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_remaining_pct_none() {
+        let state = QuotaState {
+            provider: "unknown".to_string(),
+            requests_remaining: None,
+            requests_limit: None,
+            tokens_remaining: None,
+            tokens_limit: None,
+            reset_at: None,
+            updated_at: Utc::now(),
+            source: QuotaSource::ResponseHeaders,
+            remaining_fraction: None,
+            tier_label: None,
+        };
+        assert!(state.remaining_pct().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_state_direct() {
+        let tracker = QuotaTracker::new();
+        let state = QuotaState {
+            provider: "gemini".to_string(),
+            requests_remaining: None,
+            requests_limit: None,
+            tokens_remaining: None,
+            tokens_limit: None,
+            reset_at: None,
+            updated_at: Utc::now(),
+            source: QuotaSource::PolledApi,
+            remaining_fraction: Some(0.42),
+            tier_label: Some("free".to_string()),
+        };
+        tracker.update_state(state).await;
+
+        let retrieved = tracker.get_state("gemini").await.unwrap();
+        assert_eq!(retrieved.source, QuotaSource::PolledApi);
+        assert!((retrieved.remaining_fraction.unwrap() - 0.42).abs() < 0.001);
+        assert_eq!(retrieved.tier_label.as_deref(), Some("free"));
     }
 }
