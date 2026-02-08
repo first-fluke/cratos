@@ -1,0 +1,20 @@
+[package]
+name = "cratos-crypto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "E2E encryption for Cratos sessions (AES-256-GCM + X25519 key exchange)"
+
+[dependencies]
+aes-gcm = { workspace = true }
+x25519-dalek = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+zeroize = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

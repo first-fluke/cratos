@@ -6,6 +6,8 @@ use axum::{routing::get, Json, Router};
 use cratos_llm::{global_quota_tracker, global_tracker};
 use serde::Serialize;
 
+use crate::middleware::auth::RequireAuth;
+
 /// Response for GET /api/v1/quota
 #[derive(Debug, Serialize)]
 pub struct QuotaResponse {
@@ -43,8 +45,8 @@ pub struct TodaySummary {
     pub total_tokens: u64,
 }
 
-/// GET /api/v1/quota handler.
-async fn get_quota() -> Json<QuotaResponse> {
+/// GET /api/v1/quota handler (requires authentication).
+async fn get_quota(RequireAuth(_auth): RequireAuth) -> Json<QuotaResponse> {
     let tracker = global_quota_tracker();
     let cost_tracker = global_tracker();
 

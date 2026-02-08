@@ -32,12 +32,13 @@ toml = "0.8"        # Config file parsing
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 # Credential security
-# keyring = "3.0"     # OS keychain (enable when needed)
+keyring = { version = "3.6", optional = true }  # Cross-platform keychain (Linux Secret Service, Windows Credential Manager)
 zeroize = { version = "1.8", features = ["derive"] }  # Cryptographic memory wiping
 
 # Scheduler
 tokio-cron-scheduler = "0.13"  # Cron scheduling (disabled for now, using simplified impl)
 subtle = "2.5"  # Constant-time comparison for secrets
+ed25519-dalek = { workspace = true }  # Device authentication (Ed25519 signatures)
 aes-gcm = "0.10"    # AES-256-GCM encryption for EncryptedFile backend
 rand = "0.8"        # Secure random nonce generation
 base64 = "0.22"     # Encoding encrypted data
@@ -48,6 +49,7 @@ hostname = "0.4"    # Machine-specific key derivation fallback
 [features]
 default = []
 redis-tests = []  # Enable Redis integration tests (requires running Redis)
+native-keyring = ["dep:keyring"]  # Enable native OS keyring (Linux Secret Service, Windows Credential Manager)
 
 [dev-dependencies]
 mockall.workspace = true

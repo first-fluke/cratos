@@ -66,6 +66,18 @@ pub enum Error {
     #[error("replay error: {0}")]
     Replay(#[from] cratos_replay::Error),
 
+    /// Resource not found
+    #[error("not found: {0}")]
+    NotFound(String),
+
+    /// Unauthorized access
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
+
+    /// Invalid state for the requested operation
+    #[error("invalid state: {0}")]
+    InvalidState(String),
+
     /// Internal error (Redis, serialization, etc.)
     #[error("internal error: {0}")]
     Internal(String),
@@ -129,6 +141,15 @@ impl UserFriendlyError for Error {
             }
             Error::Replay(e) => {
                 format!("📼 Replay error: {}", e)
+            }
+            Error::NotFound(msg) => {
+                format!("🔍 Not found: {}", msg)
+            }
+            Error::Unauthorized(msg) => {
+                format!("🔒 Unauthorized: {}", msg)
+            }
+            Error::InvalidState(msg) => {
+                format!("⚠️ Invalid state: {}", msg)
             }
             Error::Internal(msg) => {
                 format!("❌ Internal error: {}", msg)

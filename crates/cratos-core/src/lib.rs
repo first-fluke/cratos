@@ -16,13 +16,20 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod a2a;
 pub mod agents;
 pub mod approval;
+pub mod auth;
 pub mod chronicles;
+pub mod device_auth;
+pub mod external_auth;
 pub mod credentials;
 pub mod decrees;
 pub mod error;
+pub mod event_bus;
 pub mod memory;
+pub mod nodes;
+
 pub mod olympus_hooks;
 pub mod orchestrator;
 pub mod pantheon;
@@ -30,15 +37,36 @@ pub mod permissions;
 pub mod planner;
 pub mod scheduler;
 pub mod security;
+pub mod session_manager;
 pub mod shutdown;
+pub mod tool_policy;
 pub mod telemetry;
 pub mod utils;
 
-pub use approval::{ApprovalManager, ApprovalRequest, ApprovalStatus, SharedApprovalManager};
+pub use a2a::{A2aMessage, A2aMessageSummary, A2aRouter};
+pub use approval::{
+    ApprovalError, ApprovalManager, ApprovalRequest, ApprovalStatus, SharedApprovalManager,
+};
+pub use auth::{
+    admin_scopes, default_user_scopes, ApiKeyInfo, AuthContext, AuthError, AuthMethod, AuthStore,
+    Scope,
+};
 pub use credentials::{
     get_api_key, Credential, CredentialBackend, CredentialError, CredentialStore, SecureString,
 };
 pub use error::{format_error_for_chat, format_error_for_cli, Error, Result, UserFriendlyError};
+pub use event_bus::{EventBus, OrchestratorEvent};
+pub use nodes::{Node, NodeError, NodeRegistry, NodeRegisterParams, NodeStatus, NodeSummary, Platform};
+pub use session_manager::{SessionManager, SessionStatus, SessionSummary};
+pub use tool_policy::{PolicyDenial, ToolPolicy};
+pub use device_auth::{
+    generate_challenge, generate_device_keypair, sign_challenge, verify_signature,
+    ChallengeStore, DeviceAuthError,
+};
+pub use external_auth::{
+    ExternalAuthError, ExternalAuthRegistry, ExternalAuthResult, ExternalAuthVerifier,
+    TailscaleVerifier,
+};
 pub use memory::{
     MemoryStore, RedisStore, SessionBackend, SessionBackendConfig, SessionContext, SessionStore,
     SqliteStore, ToolExecution, WorkingMemory,

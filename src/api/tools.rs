@@ -6,6 +6,7 @@ use axum::{routing::get, Json, Router};
 use serde::Serialize;
 
 use super::config::ApiResponse;
+use crate::middleware::auth::RequireAuth;
 
 /// Tool information for API response
 #[derive(Debug, Clone, Serialize)]
@@ -22,8 +23,8 @@ pub struct ToolInfo {
     pub parameters: serde_json::Value,
 }
 
-/// List all available tools
-async fn list_tools() -> Json<ApiResponse<Vec<ToolInfo>>> {
+/// List all available tools (requires authentication)
+async fn list_tools(RequireAuth(_auth): RequireAuth) -> Json<ApiResponse<Vec<ToolInfo>>> {
     // Return built-in tools info
     // In production, this would be populated from the ToolRegistry
     let tools = vec![
@@ -174,10 +175,21 @@ pub fn tools_routes() -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cratos_core::auth::{AuthContext, AuthMethod, Scope};
+
+    fn test_auth() -> RequireAuth {
+        RequireAuth(AuthContext {
+            user_id: "test".to_string(),
+            method: AuthMethod::ApiKey,
+            scopes: vec![Scope::Admin],
+            session_id: None,
+            device_id: None,
+        })
+    }
 
     #[tokio::test]
     async fn test_list_tools() {
-        let response = list_tools().await;
+        let response = list_tools(test_auth()).await;
         assert!(response.0.success);
         let tools = response.0.data.unwrap();
         assert!(!tools.is_empty());

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::config::ApiResponse;
+use crate::middleware::auth::RequireAuth;
 
 /// Query parameters for listing executions
 #[derive(Debug, Deserialize)]
@@ -84,8 +85,9 @@ pub struct ToolCallSummary {
     pub error: Option<String>,
 }
 
-/// List recent executions
+/// List recent executions (requires authentication)
 async fn list_executions(
+    RequireAuth(_auth): RequireAuth,
     Query(query): Query<ListExecutionsQuery>,
 ) -> Json<ApiResponse<Vec<ExecutionSummary>>> {
     // In production, this would query the EventStore
@@ -130,8 +132,11 @@ async fn list_executions(
     Json(ApiResponse::success(filtered))
 }
 
-/// Get execution details by ID
-async fn get_execution(Path(id): Path<Uuid>) -> Json<ApiResponse<ExecutionDetail>> {
+/// Get execution details by ID (requires authentication)
+async fn get_execution(
+    RequireAuth(_auth): RequireAuth,
+    Path(id): Path<Uuid>,
+) -> Json<ApiResponse<ExecutionDetail>> {
     // In production, this would query the EventStore
     // For now, return mock data
     let detail = ExecutionDetail {
@@ -198,6 +203,17 @@ pub fn executions_routes() -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cratos_core::auth::{AuthContext, AuthMethod, Scope};
+
+    fn test_auth() -> RequireAuth {
+        RequireAuth(AuthContext {
+            user_id: "test".to_string(),
+            method: AuthMethod::ApiKey,
+            scopes: vec![Scope::Admin],
+            session_id: None,
+            device_id: None,
+        })
+    }
 
     #[tokio::test]
     async fn test_list_executions() {
@@ -208,14 +224,14 @@ mod tests {
             from: None,
             to: None,
         };
-        let response = list_executions(Query(query)).await;
+        let response = list_executions(test_auth(), Query(query)).await;
         assert!(response.0.success);
     }
 
     #[tokio::test]
     async fn test_get_execution() {
         let id = Uuid::new_v4();
-        let response = get_execution(Path(id)).await;
+        let response = get_execution(test_auth(), Path(id)).await;
         assert!(response.0.success);
         let detail = response.0.data.unwrap();
         assert_eq!(detail.id, id);

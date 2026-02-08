@@ -10,6 +10,7 @@ pub mod config;
 pub mod executions;
 pub mod quota;
 pub mod scheduler;
+pub mod sessions;
 pub mod tools;
 
 use axum::Router;
@@ -18,6 +19,7 @@ pub use config::config_routes;
 pub use executions::executions_routes;
 pub use quota::quota_routes;
 pub use scheduler::scheduler_routes;
+pub use sessions::sessions_routes;
 pub use tools::tools_routes;
 
 /// Create the API router with all endpoints
@@ -28,4 +30,5 @@ pub fn api_router() -> Router {
         .merge(executions_routes())
         .merge(scheduler_routes())
         .merge(quota_routes())
+        .merge(sessions_routes())
 }

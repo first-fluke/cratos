@@ -66,6 +66,12 @@ pub enum Commands {
         #[arg(short, long)]
         persona: Option<String>,
     },
+    /// Start ACP bridge (stdin/stdout JSON-lines for IDE integration)
+    Acp {
+        /// Auth token (optional, defaults to localhost trust if auth disabled)
+        #[arg(long)]
+        token: Option<String>,
+    },
 }
 
 /// Pantheon subcommands
@@ -167,6 +173,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             crate::server::run().await
         }
         Some(Commands::Tui { persona }) => tui::run(persona).await,
+        Some(Commands::Acp { token }) => crate::acp::bridge::run_acp(token).await,
         None => {
             let mut cmd = <Cli as clap::CommandFactory>::command();
             cmd.print_help()?;

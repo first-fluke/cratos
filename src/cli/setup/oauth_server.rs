@@ -18,6 +18,7 @@ const OAUTH_TIMEOUT_SECS: u64 = 300;
 struct CallbackState {
     /// Oneshot sender wrapped to be Clone-compatible for axum handlers.
     /// Sends `Ok(code)` on success or `Err(message)` on failure.
+    #[allow(clippy::type_complexity)]
     code_tx: Arc<Mutex<Option<oneshot::Sender<Result<String, String>>>>>,
     /// Expected CSRF state parameter for validation.
     expected_state: String,

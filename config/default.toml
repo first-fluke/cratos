@@ -164,6 +164,34 @@ auto_promotion = true
 # Security Configuration
 # ============================================================================
 
+# ============================================================================
+# Authentication & Rate Limiting
+# ============================================================================
+
+[server.auth]
+# Enable authentication for HTTP/WS endpoints
+# false = all endpoints open (development only)
+# true = require Bearer token or X-API-Key
+enabled = false
+
+# Auto-generate an admin API key on first run (printed to stdout)
+auto_generate_key = true
+
+# Where to store API keys: "keychain" | "encrypted_file" | "memory"
+key_storage = "keychain"
+
+[server.rate_limit]
+# Enable rate limiting
+enabled = true
+# REST requests per minute per token/IP
+requests_per_minute = 60
+# WebSocket messages per minute per connection
+ws_messages_per_minute = 120
+# Maximum WebSocket message size in bytes (1MB)
+max_ws_message_bytes = 1048576
+# Global requests per minute (all users combined)
+global_requests_per_minute = 1000
+
 [security]
 # Sandbox policy: strict | moderate | disabled
 # - strict: All tool executions sandboxed

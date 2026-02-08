@@ -8,8 +8,11 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{oneshot, RwLock};
 use uuid::Uuid;
+
+use crate::auth::AuthContext;
+use crate::event_bus::{EventBus, OrchestratorEvent};
 
 /// Status of an approval request
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,6 +33,8 @@ pub enum ApprovalStatus {
 pub struct ApprovalRequest {
     /// Unique request ID
     pub id: Uuid,
+    /// One-time nonce for replay defense — must match when resolving
+    pub nonce: Uuid,
     /// Execution ID this belongs to
     pub execution_id: Uuid,
     /// Channel type
@@ -73,6 +78,7 @@ impl ApprovalRequest {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
+            nonce: Uuid::new_v4(),
             execution_id,
             channel_type: channel_type.into(),
             channel_id: channel_id.into(),
@@ -195,9 +201,37 @@ impl ApprovalRequest {
     }
 }
 
+/// Error from approval resolution
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApprovalError {
+    /// Request not found
+    NotFound,
+    /// Nonce doesn't match (replay attempt)
+    InvalidNonce,
+    /// Responder not authorized
+    Unauthorized,
+    /// Request already resolved or expired
+    Expired,
+}
+
+impl std::fmt::Display for ApprovalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => write!(f, "approval request not found"),
+            Self::InvalidNonce => write!(f, "invalid nonce (possible replay)"),
+            Self::Unauthorized => write!(f, "unauthorized responder"),
+            Self::Expired => write!(f, "approval request expired"),
+        }
+    }
+}
+
+impl std::error::Error for ApprovalError {}
+
 /// Manager for approval requests
 pub struct ApprovalManager {
     requests: RwLock<HashMap<Uuid, ApprovalRequest>>,
+    /// oneshot senders keyed by request ID — resolvers notify waiters
+    resolvers: RwLock<HashMap<Uuid, oneshot::Sender<ApprovalStatus>>>,
     /// Default timeout in seconds
     default_timeout_secs: i64,
 }
@@ -214,6 +248,7 @@ impl ApprovalManager {
     pub fn new() -> Self {
         Self {
             requests: RwLock::new(HashMap::new()),
+            resolvers: RwLock::new(HashMap::new()),
             default_timeout_secs: 300, // 5 minutes
         }
     }
@@ -223,6 +258,7 @@ impl ApprovalManager {
     pub fn with_timeout_secs(timeout_secs: i64) -> Self {
         Self {
             requests: RwLock::new(HashMap::new()),
+            resolvers: RwLock::new(HashMap::new()),
             default_timeout_secs: timeout_secs,
         }
     }
@@ -251,6 +287,121 @@ impl ApprovalManager {
         requests.insert(request.id, request.clone());
 
         request
+    }
+
+    /// Create a request with EventBus notification and oneshot-based resolution.
+    ///
+    /// Returns `(ApprovalRequest, Receiver)`. Use `wait_async()` on the receiver
+    /// to await the user's decision without polling.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_request_async(
+        &self,
+        execution_id: Uuid,
+        channel_type: impl Into<String>,
+        channel_id: impl Into<String>,
+        user_id: impl Into<String>,
+        action: impl Into<String>,
+        risk_description: impl Into<String>,
+        event_bus: Option<&EventBus>,
+    ) -> (ApprovalRequest, oneshot::Receiver<ApprovalStatus>) {
+        let request = ApprovalRequest::new(
+            execution_id,
+            channel_type,
+            channel_id,
+            user_id,
+            action,
+            risk_description,
+            self.default_timeout_secs,
+        );
+
+        let (tx, rx) = oneshot::channel();
+
+        {
+            let mut requests = self.requests.write().await;
+            requests.insert(request.id, request.clone());
+        }
+        {
+            let mut resolvers = self.resolvers.write().await;
+            resolvers.insert(request.id, tx);
+        }
+
+        // Publish ApprovalRequired event
+        if let Some(bus) = event_bus {
+            bus.publish(OrchestratorEvent::ApprovalRequired {
+                execution_id,
+                request_id: request.id,
+            });
+        }
+
+        (request, rx)
+    }
+
+    /// Resolve an approval request with nonce verification and ownership check.
+    ///
+    /// **Security checks**:
+    /// 1. Request exists
+    /// 2. Nonce matches (replay defense)
+    /// 3. Responder is the owner or Admin
+    /// 4. Request is still pending (not expired)
+    pub async fn resolve(
+        &self,
+        request_id: Uuid,
+        nonce: Uuid,
+        decision: ApprovalStatus,
+        responder: &AuthContext,
+    ) -> std::result::Result<ApprovalRequest, ApprovalError> {
+        let mut requests = self.requests.write().await;
+        let request = requests.get_mut(&request_id).ok_or(ApprovalError::NotFound)?;
+
+        // Check 1: Nonce must match (replay defense)
+        if request.nonce != nonce {
+            return Err(ApprovalError::InvalidNonce);
+        }
+
+        // Check 2: Ownership (original user or Admin)
+        if request.user_id != responder.user_id
+            && !responder.has_scope(&crate::auth::Scope::Admin)
+        {
+            return Err(ApprovalError::Unauthorized);
+        }
+
+        // Check 3: Must still be pending
+        if !request.is_pending() {
+            return Err(ApprovalError::Expired);
+        }
+
+        // Apply the decision
+        request.status = decision;
+        request.responder_id = Some(responder.user_id.clone());
+        request.responded_at = Some(Utc::now());
+
+        let resolved = request.clone();
+        drop(requests);
+
+        // Notify the waiter via oneshot
+        let mut resolvers = self.resolvers.write().await;
+        if let Some(tx) = resolvers.remove(&request_id) {
+            let _ = tx.send(decision);
+        }
+
+        Ok(resolved)
+    }
+
+    /// Wait for a request to be resolved via oneshot (no polling).
+    ///
+    /// Returns the decision, or `Rejected` on timeout.
+    pub async fn wait_async(
+        rx: oneshot::Receiver<ApprovalStatus>,
+        timeout: std::time::Duration,
+    ) -> ApprovalStatus {
+        tokio::select! {
+            result = rx => {
+                result.unwrap_or(ApprovalStatus::Rejected)
+            }
+            _ = tokio::time::sleep(timeout) => {
+                ApprovalStatus::Rejected
+            }
+        }
     }
 
     /// Get a request by ID
@@ -520,6 +671,223 @@ mod tests {
         let approved = manager.get(request.id).await.unwrap();
         assert_eq!(approved.status, ApprovalStatus::Approved);
         assert_eq!(approved.responder_id, Some("456".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_with_valid_nonce() {
+        use crate::auth::{AuthContext, AuthMethod, Scope};
+        let manager = ApprovalManager::new();
+
+        let (request, _rx) = manager
+            .create_request_async(
+                Uuid::new_v4(),
+                "telegram",
+                "123",
+                "user1",
+                "Delete file",
+                "Risky",
+                None,
+            )
+            .await;
+
+        let auth = AuthContext {
+            user_id: "user1".to_string(),
+            method: AuthMethod::ApiKey,
+            scopes: vec![Scope::ApprovalRespond],
+            session_id: None,
+            device_id: None,
+        };
+
+        let result = manager
+            .resolve(request.id, request.nonce, ApprovalStatus::Approved, &auth)
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().status, ApprovalStatus::Approved);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_with_invalid_nonce() {
+        use crate::auth::{AuthContext, AuthMethod, Scope};
+        let manager = ApprovalManager::new();
+
+        let (request, _rx) = manager
+            .create_request_async(
+                Uuid::new_v4(),
+                "telegram",
+                "123",
+                "user1",
+                "Delete file",
+                "Risky",
+                None,
+            )
+            .await;
+
+        let auth = AuthContext {
+            user_id: "user1".to_string(),
+            method: AuthMethod::ApiKey,
+            scopes: vec![Scope::ApprovalRespond],
+            session_id: None,
+            device_id: None,
+        };
+
+        // Wrong nonce → replay defense
+        let result = manager
+            .resolve(request.id, Uuid::new_v4(), ApprovalStatus::Approved, &auth)
+            .await;
+        assert_eq!(result.unwrap_err(), ApprovalError::InvalidNonce);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_unauthorized_user() {
+        use crate::auth::{AuthContext, AuthMethod, Scope};
+        let manager = ApprovalManager::new();
+
+        let (request, _rx) = manager
+            .create_request_async(
+                Uuid::new_v4(),
+                "telegram",
+                "123",
+                "user1",
+                "Delete file",
+                "Risky",
+                None,
+            )
+            .await;
+
+        let other_user = AuthContext {
+            user_id: "attacker".to_string(),
+            method: AuthMethod::ApiKey,
+            scopes: vec![Scope::ApprovalRespond],
+            session_id: None,
+            device_id: None,
+        };
+
+        let result = manager
+            .resolve(request.id, request.nonce, ApprovalStatus::Approved, &other_user)
+            .await;
+        assert_eq!(result.unwrap_err(), ApprovalError::Unauthorized);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_admin_can_override() {
+        use crate::auth::{AuthContext, AuthMethod, Scope};
+        let manager = ApprovalManager::new();
+
+        let (request, _rx) = manager
+            .create_request_async(
+                Uuid::new_v4(),
+                "telegram",
+                "123",
+                "user1",
+                "Delete file",
+                "Risky",
+                None,
+            )
+            .await;
+
+        let admin = AuthContext {
+            user_id: "admin".to_string(),
+            method: AuthMethod::ApiKey,
+            scopes: vec![Scope::Admin],
+            session_id: None,
+            device_id: None,
+        };
+
+        let result = manager
+            .resolve(request.id, request.nonce, ApprovalStatus::Approved, &admin)
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_wait_async_resolved() {
+        use crate::auth::{AuthContext, AuthMethod, Scope};
+        let manager = Arc::new(ApprovalManager::new());
+
+        let (request, rx) = manager
+            .create_request_async(
+                Uuid::new_v4(),
+                "telegram",
+                "123",
+                "user1",
+                "Test",
+                "Test",
+                None,
+            )
+            .await;
+
+        let mgr = manager.clone();
+        let nonce = request.nonce;
+        let req_id = request.id;
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            let auth = AuthContext {
+                user_id: "user1".to_string(),
+                method: AuthMethod::ApiKey,
+                scopes: vec![Scope::ApprovalRespond],
+                session_id: None,
+                device_id: None,
+            };
+            let _ = mgr.resolve(req_id, nonce, ApprovalStatus::Approved, &auth).await;
+        });
+
+        let result = ApprovalManager::wait_async(rx, std::time::Duration::from_secs(5)).await;
+        assert_eq!(result, ApprovalStatus::Approved);
+    }
+
+    #[tokio::test]
+    async fn test_wait_async_timeout() {
+        let manager = ApprovalManager::new();
+
+        let (_request, rx) = manager
+            .create_request_async(
+                Uuid::new_v4(),
+                "telegram",
+                "123",
+                "user1",
+                "Test",
+                "Test",
+                None,
+            )
+            .await;
+
+        // Very short timeout → should get Rejected
+        let result =
+            ApprovalManager::wait_async(rx, std::time::Duration::from_millis(10)).await;
+        assert_eq!(result, ApprovalStatus::Rejected);
+    }
+
+    #[tokio::test]
+    async fn test_create_request_async_emits_event() {
+        use crate::event_bus::EventBus;
+        let manager = ApprovalManager::new();
+        let bus = EventBus::new(16);
+        let mut rx = bus.subscribe();
+
+        let exec_id = Uuid::new_v4();
+        let (request, _) = manager
+            .create_request_async(
+                exec_id,
+                "telegram",
+                "123",
+                "user1",
+                "Test",
+                "Test",
+                Some(&bus),
+            )
+            .await;
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            OrchestratorEvent::ApprovalRequired {
+                execution_id,
+                request_id,
+            } => {
+                assert_eq!(execution_id, exec_id);
+                assert_eq!(request_id, request.id);
+            }
+            _ => panic!("expected ApprovalRequired event"),
+        }
     }
 
     #[tokio::test]

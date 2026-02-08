@@ -9,8 +9,10 @@ use clap::Parser;
 use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod acp;
 mod api;
 mod cli;
+mod middleware;
 mod server;
 mod websocket;
 
@@ -51,6 +53,7 @@ async fn main() -> Result<()> {
         Some(cli::Commands::Init { .. })
             | Some(cli::Commands::Serve)
             | Some(cli::Commands::Tui { .. })
+            | Some(cli::Commands::Acp { .. })
     );
 
     if cli.command.is_some() && !skip_startup_log {

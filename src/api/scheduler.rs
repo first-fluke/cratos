@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::config::ApiResponse;
+use crate::middleware::auth::RequireAuth;
 
 /// Task view for API responses
 #[derive(Debug, Clone, Serialize)]
@@ -62,8 +63,8 @@ pub struct UpdateTaskRequest {
     pub priority: Option<i32>,
 }
 
-/// List all scheduled tasks
-async fn list_tasks() -> Json<ApiResponse<Vec<TaskView>>> {
+/// List all scheduled tasks (requires authentication)
+async fn list_tasks(RequireAuth(_auth): RequireAuth) -> Json<ApiResponse<Vec<TaskView>>> {
     // In production, this would query the SchedulerStore
     // For now, return mock data
     let tasks = vec![
@@ -109,8 +110,11 @@ async fn list_tasks() -> Json<ApiResponse<Vec<TaskView>>> {
     Json(ApiResponse::success(tasks))
 }
 
-/// Create a new scheduled task
-async fn create_task(Json(request): Json<CreateTaskRequest>) -> Json<ApiResponse<TaskView>> {
+/// Create a new scheduled task (requires authentication)
+async fn create_task(
+    RequireAuth(_auth): RequireAuth,
+    Json(request): Json<CreateTaskRequest>,
+) -> Json<ApiResponse<TaskView>> {
     // Validate trigger type
     if !is_valid_trigger_type(&request.trigger_type) {
         return Json(ApiResponse::error(format!(
@@ -148,8 +152,8 @@ async fn create_task(Json(request): Json<CreateTaskRequest>) -> Json<ApiResponse
     Json(ApiResponse::success(task))
 }
 
-/// Get task details
-async fn get_task(Path(id): Path<Uuid>) -> Json<ApiResponse<TaskView>> {
+/// Get task details (requires authentication)
+async fn get_task(RequireAuth(_auth): RequireAuth, Path(id): Path<Uuid>) -> Json<ApiResponse<TaskView>> {
     // In production, this would query the SchedulerStore
     let task = TaskView {
         id,
@@ -171,8 +175,9 @@ async fn get_task(Path(id): Path<Uuid>) -> Json<ApiResponse<TaskView>> {
     Json(ApiResponse::success(task))
 }
 
-/// Update a task
+/// Update a task (requires authentication)
 async fn update_task(
+    RequireAuth(_auth): RequireAuth,
     Path(id): Path<Uuid>,
     Json(request): Json<UpdateTaskRequest>,
 ) -> Json<ApiResponse<TaskView>> {
@@ -201,8 +206,8 @@ async fn update_task(
     Json(ApiResponse::success(task))
 }
 
-/// Delete a task
-async fn delete_task(Path(id): Path<Uuid>) -> Json<ApiResponse<()>> {
+/// Delete a task (requires authentication)
+async fn delete_task(RequireAuth(_auth): RequireAuth, Path(id): Path<Uuid>) -> Json<ApiResponse<()>> {
     // In production, this would delete via SchedulerStore
     tracing::info!("Deleting task: {}", id);
     Json(ApiResponse::success(()))
@@ -235,10 +240,21 @@ pub fn scheduler_routes() -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cratos_core::auth::{AuthContext, AuthMethod, Scope};
+
+    fn test_auth() -> RequireAuth {
+        RequireAuth(AuthContext {
+            user_id: "test".to_string(),
+            method: AuthMethod::ApiKey,
+            scopes: vec![Scope::Admin],
+            session_id: None,
+            device_id: None,
+        })
+    }
 
     #[tokio::test]
     async fn test_list_tasks() {
-        let response = list_tasks().await;
+        let response = list_tasks(test_auth()).await;
         assert!(response.0.success);
     }
 
@@ -254,7 +270,7 @@ mod tests {
             enabled: true,
             priority: 0,
         };
-        let response = create_task(Json(request)).await;
+        let response = create_task(test_auth(), Json(request)).await;
         assert!(response.0.success);
     }
 

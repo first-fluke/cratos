@@ -5,6 +5,7 @@
 
 use crate::approval::SharedApprovalManager;
 use crate::error::Result;
+use crate::event_bus::{EventBus, OrchestratorEvent};
 use crate::memory::{MemoryStore, SessionContext, SessionStore, WorkingMemory};
 use crate::olympus_hooks::OlympusHooks;
 use crate::planner::{Planner, PlannerConfig};
@@ -179,6 +180,7 @@ pub struct Orchestrator {
     runner: ToolRunner,
     memory: Arc<dyn SessionStore>,
     event_store: Option<Arc<dyn EventStoreTrait>>,
+    event_bus: Option<Arc<EventBus>>,
     approval_manager: Option<SharedApprovalManager>,
     olympus_hooks: Option<OlympusHooks>,
     config: OrchestratorConfig,
@@ -200,6 +202,7 @@ impl Orchestrator {
             runner,
             memory: Arc::new(MemoryStore::new()),
             event_store: None,
+            event_bus: None,
             approval_manager: None,
             olympus_hooks: None,
             config,
@@ -210,6 +213,18 @@ impl Orchestrator {
     pub fn with_event_store(mut self, store: Arc<dyn EventStoreTrait>) -> Self {
         self.event_store = Some(store);
         self
+    }
+
+    /// Set the event bus for real-time event broadcasting
+    pub fn with_event_bus(mut self, bus: Arc<EventBus>) -> Self {
+        self.event_bus = Some(bus);
+        self
+    }
+
+    /// Get a reference to the event bus (if set)
+    #[must_use]
+    pub fn event_bus(&self) -> Option<&Arc<EventBus>> {
+        self.event_bus.as_ref()
     }
 
     /// Set the memory store
@@ -251,6 +266,12 @@ impl Orchestrator {
             text = %input.text,
             "Starting execution"
         );
+
+        // Emit execution started event
+        self.emit(OrchestratorEvent::ExecutionStarted {
+            execution_id,
+            session_key: session_key.clone(),
+        });
 
         // Create execution record in event store (required before logging events)
         if let Some(store) = &self.event_store {
@@ -329,6 +350,12 @@ impl Orchestrator {
                 "Planning step"
             );
 
+            // Emit planning started event
+            self.emit(OrchestratorEvent::PlanningStarted {
+                execution_id,
+                iteration,
+            });
+
             // Plan the next step
             let plan_response = match self.planner.plan_step(&messages, &tools).await {
                 Ok(response) => response,
@@ -345,6 +372,10 @@ impl Orchestrator {
                     .await;
 
                     let error_msg = format!("I encountered an error: {}", e);
+                    self.emit(OrchestratorEvent::ExecutionFailed {
+                        execution_id,
+                        error: error_msg.clone(),
+                    });
                     // Update execution status in DB
                     if let Some(store) = &self.event_store {
                         let _ = store
@@ -381,6 +412,11 @@ impl Orchestrator {
             // Check if this is a final response
             if plan_response.is_final {
                 if let Some(content) = plan_response.content {
+                    self.emit(OrchestratorEvent::ChatDelta {
+                        execution_id,
+                        delta: content.clone(),
+                        is_final: true,
+                    });
                     final_response = content;
                 }
                 break;
@@ -461,6 +497,9 @@ impl Orchestrator {
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
+        // Emit execution completed event
+        self.emit(OrchestratorEvent::ExecutionCompleted { execution_id });
+
         info!(
             execution_id = %execution_id,
             iterations = %iteration,
@@ -509,6 +548,13 @@ impl Orchestrator {
                 tool = %call.name,
                 "Executing tool"
             );
+
+            // Emit tool started event
+            self.emit(OrchestratorEvent::ToolStarted {
+                execution_id,
+                tool_name: call.name.clone(),
+                tool_call_id: call.id.clone(),
+            });
 
             // Log tool call event
             self.log_event(
@@ -571,6 +617,14 @@ impl Orchestrator {
             )
             .await;
 
+            // Emit tool completed event
+            self.emit(OrchestratorEvent::ToolCompleted {
+                execution_id,
+                tool_call_id: call.id.clone(),
+                success,
+                duration_ms,
+            });
+
             // Record in working memory
             working_memory.record_tool_execution(
                 &call.name,
@@ -593,6 +647,13 @@ impl Orchestrator {
         }
 
         results
+    }
+
+    /// Publish an event to the event bus (no-op if no bus is set).
+    fn emit(&self, event: OrchestratorEvent) {
+        if let Some(bus) = &self.event_bus {
+            bus.publish(event);
+        }
     }
 
     /// Log an event to the event store

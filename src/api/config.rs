@@ -3,10 +3,13 @@
 //! GET  /api/v1/config - Get current configuration
 //! PUT  /api/v1/config - Update configuration
 
-use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+use cratos_core::auth::Scope;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+use crate::middleware::auth::{require_scope, RequireAuth};
 
 /// Configuration state shared across API handlers
 #[derive(Clone)]
@@ -111,17 +114,26 @@ impl<T> ApiResponse<T> {
     }
 }
 
-/// Get current configuration
-async fn get_config(State(state): State<ConfigState>) -> Json<ApiResponse<AppConfigView>> {
+/// Get current configuration (requires ConfigRead scope)
+async fn get_config(
+    RequireAuth(auth): RequireAuth,
+    State(state): State<ConfigState>,
+) -> impl IntoResponse {
+    if let Err(rejection) = require_scope(&auth, &Scope::ConfigRead) {
+        return rejection.into_response();
+    }
     let config = state.config.read().await.clone();
-    Json(ApiResponse::success(config))
+    Json(ApiResponse::success(config)).into_response()
 }
 
-/// Update configuration
+/// Update configuration (requires ConfigWrite scope)
 async fn update_config(
+    RequireAuth(auth): RequireAuth,
     State(state): State<ConfigState>,
     Json(request): Json<ConfigUpdateRequest>,
 ) -> Result<Json<ApiResponse<AppConfigView>>, StatusCode> {
+    auth.require_scope(&Scope::ConfigWrite)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
     let mut config = state.config.write().await;
 
     // Apply updates

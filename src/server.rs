@@ -7,10 +7,12 @@ use axum::{routing::get, Extension, Json, Router};
 use config::{Config, Environment, File, FileFormat};
 use cratos_channels::{TelegramAdapter, TelegramConfig};
 use cratos_core::{
-    metrics_global, shutdown_signal_with_controller, ApprovalManager, OlympusConfig, OlympusHooks,
-    Orchestrator, OrchestratorConfig, PlannerConfig, RedisStore, SchedulerConfig, SchedulerEngine,
+    admin_scopes, metrics_global, shutdown_signal_with_controller,
+    ApprovalManager, AuthStore, EventBus, OlympusConfig, OlympusHooks, Orchestrator,
+    OrchestratorConfig, PlannerConfig, RedisStore, SchedulerConfig, SchedulerEngine,
     SchedulerStore, SessionStore, ShutdownController,
 };
+use crate::middleware::rate_limit::{RateLimitLayer, RateLimitSettings};
 use cratos_llm::{
     AnthropicConfig, AnthropicProvider, DeepSeekConfig, DeepSeekProvider, EmbeddingProvider,
     GeminiConfig, GeminiProvider, GlmConfig, GlmProvider, GroqConfig, GroqProvider, LlmProvider,
@@ -78,6 +80,39 @@ fn default_max_concurrent() -> usize {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    #[serde(default)]
+    pub auth: AuthConfig,
+    #[serde(default)]
+    pub rate_limit: RateLimitSettings,
+}
+
+/// Authentication configuration
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct AuthConfig {
+    /// Enable authentication
+    #[serde(default)]
+    pub enabled: bool,
+    /// Auto-generate admin API key on first run
+    #[serde(default = "default_true")]
+    pub auto_generate_key: bool,
+    /// Key storage backend: keychain | encrypted_file | memory
+    #[serde(default = "default_key_storage")]
+    pub key_storage: String,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            auto_generate_key: true,
+            key_storage: "keychain".to_string(),
+        }
+    }
+}
+
+fn default_key_storage() -> String {
+    "keychain".to_string()
 }
 
 /// Redis configuration
@@ -560,6 +595,13 @@ fn validate_production_config(config: &AppConfig) -> Result<()> {
         );
     }
 
+    if !config.server.auth.enabled && config.server.host != "127.0.0.1" {
+        warn!(
+            "SECURITY WARNING: Authentication is DISABLED while server is exposed externally. \
+             Enable [server.auth] enabled = true in production!"
+        );
+    }
+
     if config.redis.url.starts_with("redis://") && !config.redis.url.contains('@') && is_production
     {
         warn!(
@@ -775,9 +817,13 @@ pub async fn run() -> Result<()> {
     let olympus_hooks = OlympusHooks::new(OlympusConfig::default());
     info!("Olympus OS hooks initialized");
 
+    let event_bus = Arc::new(EventBus::new(256));
+    info!("EventBus initialized (capacity: 256)");
+
     let orchestrator = Arc::new(
         Orchestrator::new(llm_provider, tool_registry, orchestrator_config)
             .with_event_store(event_store.clone())
+            .with_event_bus(event_bus.clone())
             .with_memory(session_store)
             .with_approval_manager(approval_manager)
             .with_olympus_hooks(olympus_hooks),
@@ -883,19 +929,79 @@ pub async fn run() -> Result<()> {
 
     let redis_url_for_health = config.redis.url.clone();
 
+    // ================================================================
+    // Authentication
+    // ================================================================
+    let auth_enabled = config.server.auth.enabled;
+    let auth_store = Arc::new(AuthStore::new(auth_enabled));
+
+    if auth_enabled && config.server.auth.auto_generate_key && auth_store.active_key_count() == 0 {
+        // Auto-generate admin API key on first run
+        match auth_store.generate_api_key("admin", admin_scopes(), "auto-generated admin key") {
+            Ok((key, _hash)) => {
+                info!("==========================================================");
+                info!("  AUTO-GENERATED ADMIN API KEY (save this, shown once!):");
+                info!("  {}", key.expose());
+                info!("==========================================================");
+            }
+            Err(e) => {
+                warn!("Failed to auto-generate API key: {}", e);
+            }
+        }
+    }
+
+    if auth_enabled {
+        info!("Authentication ENABLED - API key required for all endpoints");
+    } else {
+        info!("Authentication DISABLED - all endpoints open (development mode)");
+    }
+
+    // ================================================================
+    // Rate Limiting
+    // ================================================================
+    let rate_limit_layer = RateLimitLayer::new(&config.server.rate_limit);
+    if config.server.rate_limit.enabled {
+        rate_limit_layer.state().spawn_cleanup();
+        info!(
+            "Rate limiting ENABLED ({}rpm/token, {}rpm global)",
+            config.server.rate_limit.requests_per_minute,
+            config.server.rate_limit.global_requests_per_minute
+        );
+    } else {
+        info!("Rate limiting DISABLED");
+    }
+
+    // ================================================================
+    // Node Registry (Phase 9)
+    // ================================================================
+    let node_registry = Arc::new(cratos_core::NodeRegistry::new());
+    info!("Node registry initialized");
+
+    // ================================================================
+    // A2A Router (Phase 11)
+    // ================================================================
+    let a2a_router = Arc::new(cratos_core::A2aRouter::default());
+    info!("A2A router initialized");
+
     // Build the main router with all endpoints
     let app = Router::new()
-        // Health and metrics endpoints
+        // Health and metrics endpoints (no auth required for load balancers)
         .route("/health", get(health_check))
         .route("/health/detailed", get(detailed_health_check))
         .route("/metrics", get(metrics_endpoint))
-        // API routes
+        // Root endpoint (no auth)
+        .route("/", get(|| async { "Cratos AI Assistant" }))
+        // API routes (auth applied per-handler via RequireAuth extractor)
         .merge(crate::api::api_router())
         // WebSocket routes
         .merge(crate::websocket::websocket_router())
-        // Root endpoint
-        .route("/", get(|| async { "Cratos AI Assistant" }))
-        .layer(Extension(redis_url_for_health));
+        // Layers (applied to all routes)
+        .layer(Extension(redis_url_for_health))
+        .layer(Extension(auth_store))
+        .layer(Extension(event_bus))
+        .layer(Extension(node_registry))
+        .layer(Extension(a2a_router))
+        .layer(rate_limit_layer);
 
     let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)
         .parse()
