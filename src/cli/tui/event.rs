@@ -1,10 +1,13 @@
 //! Crossterm event handling for the TUI
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use std::time::Duration;
 
 use super::app::App;
+
+/// Mouse scroll lines per event.
+const MOUSE_SCROLL_LINES: u32 = 3;
 
 /// Poll crossterm events and update app state.
 /// Returns `true` if the app should quit.
@@ -13,8 +16,10 @@ pub fn handle_events(app: &mut App, timeout: Duration) -> Result<()> {
     app.poll_responses();
 
     if event::poll(timeout)? {
-        if let Event::Key(key) = event::read()? {
-            handle_key(app, key);
+        match event::read()? {
+            Event::Key(key) => handle_key(app, key),
+            Event::Mouse(mouse) => handle_mouse(app, mouse),
+            _ => {}
         }
     }
 
@@ -38,9 +43,19 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         }
         (_, KeyCode::F(1)) => app.toggle_sidebar(),
 
-        // ── Scroll chat ────────────────────────────────────────
-        (_, KeyCode::Up) => app.scroll_up(),
-        (_, KeyCode::Down) => app.scroll_down(),
+        // ── Scroll / History (Up/Down depend on input state) ──
+        (_, KeyCode::Up) if app.is_input_empty() => {
+            if app.has_history() {
+                app.history_up();
+            } else {
+                app.scroll_up();
+            }
+        }
+        (_, KeyCode::Down) if app.is_input_empty() => {
+            app.scroll_down();
+        }
+        (_, KeyCode::Up) => app.history_up(),
+        (_, KeyCode::Down) => app.history_down(),
         (_, KeyCode::PageUp) => {
             for _ in 0..10 {
                 app.scroll_up();
@@ -59,32 +74,25 @@ fn handle_key(app: &mut App, key: KeyEvent) {
             }
         }
 
-        // ── Line editing (Emacs-style) ─────────────────────────
-        (KeyModifiers::CONTROL, KeyCode::Char('a')) => app.move_cursor_home(),
-        (KeyModifiers::CONTROL, KeyCode::Char('e')) => app.move_cursor_end(),
-        (KeyModifiers::CONTROL, KeyCode::Char('u')) => app.clear_to_start(),
-        (KeyModifiers::CONTROL, KeyCode::Char('k')) => app.clear_to_end(),
-        (KeyModifiers::CONTROL, KeyCode::Char('w')) => app.delete_word_before_cursor(),
-
-        // ── Word navigation (Alt+Arrow) ────────────────────────
-        (KeyModifiers::ALT, KeyCode::Left) => app.move_cursor_word_left(),
-        (KeyModifiers::ALT, KeyCode::Right) => app.move_cursor_word_right(),
-        // Alt+Backspace = delete word backward
-        (KeyModifiers::ALT, KeyCode::Backspace) => app.delete_word_before_cursor(),
-
-        // ── Cursor movement ────────────────────────────────────
-        (_, KeyCode::Left) => app.move_cursor_left(),
-        (_, KeyCode::Right) => app.move_cursor_right(),
-        (_, KeyCode::Home) => app.move_cursor_home(),
-        (_, KeyCode::End) => app.move_cursor_end(),
-        (_, KeyCode::Backspace) => app.delete_char_before_cursor(),
-        (_, KeyCode::Delete) => app.delete_char_after_cursor(),
-
-        // ── Character input (allowed while loading) ────────────
-        (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
-            app.insert_char(c);
+        // ── Delegate everything else to textarea ────────────────
+        _ => {
+            app.textarea.input(Event::Key(key));
         }
+    }
+}
 
+fn handle_mouse(app: &mut App, mouse: MouseEvent) {
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            for _ in 0..MOUSE_SCROLL_LINES {
+                app.scroll_up();
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            for _ in 0..MOUSE_SCROLL_LINES {
+                app.scroll_down();
+            }
+        }
         _ => {}
     }
 }

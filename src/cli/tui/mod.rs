@@ -12,6 +12,7 @@ use cratos_core::{ApprovalManager, Orchestrator, OrchestratorConfig, PlannerConf
 use cratos_replay::EventStore;
 use cratos_tools::{register_builtins, RunnerConfig, ToolRegistry};
 use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -74,7 +75,20 @@ pub async fn run(persona: Option<String>) -> Result<()> {
     let orch_config = OrchestratorConfig::new()
         .with_max_iterations(10)
         .with_logging(true)
-        .with_planner_config(PlannerConfig::default())
+        .with_planner_config({
+            let (prov_name, model_name) = if llm_provider.name() == "router" {
+                let model = llm_provider.default_model();
+                let name = if config.llm.default_provider.is_empty() || config.llm.default_provider == "auto" {
+                    "auto-selected"
+                } else {
+                    config.llm.default_provider.as_str()
+                };
+                (name.to_string(), model.to_string())
+            } else {
+                (llm_provider.name().to_string(), llm_provider.default_model().to_string())
+            };
+            PlannerConfig::default().with_provider_info(&prov_name, &model_name)
+        })
         .with_runner_config(RunnerConfig::default());
 
     let orchestrator = Arc::new(
@@ -84,11 +98,16 @@ pub async fn run(persona: Option<String>) -> Result<()> {
             .with_approval_manager(Arc::new(ApprovalManager::new())),
     );
 
+    // ── Gemini quota poller (if OAuth token available) ─────────────
+
+    let _gemini_quota_shutdown = cratos_llm::start_gemini_quota_poller().await;
+
     // ── Terminal setup ──────────────────────────────────────────────
 
     enable_raw_mode().context("Failed to enable raw mode")?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).context("Failed to enter alternate screen")?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
+        .context("Failed to enter alternate screen")?;
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("Failed to create terminal")?;
@@ -114,8 +133,12 @@ pub async fn run(persona: Option<String>) -> Result<()> {
     // ── Restore terminal ────────────────────────────────────────────
 
     disable_raw_mode().context("Failed to disable raw mode")?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)
-        .context("Failed to leave alternate screen")?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )
+    .context("Failed to leave alternate screen")?;
     terminal.show_cursor().context("Failed to show cursor")?;
 
     run_result

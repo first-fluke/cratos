@@ -50,11 +50,18 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         String::new()
     };
 
-    // Right: quota
-    let right = if app.quota_line.is_empty() {
+    // Right: cost + quota
+    let mut right_parts: Vec<String> = Vec::new();
+    if !app.cost_line.is_empty() {
+        right_parts.push(app.cost_line.clone());
+    }
+    if !app.quota_status_line.is_empty() {
+        right_parts.push(app.quota_status_line.clone());
+    }
+    let right = if right_parts.is_empty() {
         String::new()
     } else {
-        format!("{} ", app.quota_line)
+        format!("{} ", right_parts.join(" \u{00b7} "))
     };
 
     // Calculate spacing
@@ -98,7 +105,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     if !right.is_empty() {
         spans.push(Span::styled(
             right,
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(Color::LightCyan),
         ));
     }
 
@@ -146,7 +153,7 @@ fn draw_chat(frame: &mut Frame, app: &App, area: Rect) {
         let (prefix_style, prefix) = match msg.role {
             Role::User => (
                 Style::default()
-                    .fg(Color::White)
+                    .fg(Color::Reset)
                     .add_modifier(Modifier::BOLD),
                 "You: ".to_string(),
             ),
@@ -163,7 +170,7 @@ fn draw_chat(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         let content_style = match msg.role {
-            Role::User => Style::default().fg(Color::White),
+            Role::User => Style::default().fg(Color::Reset),
             Role::Assistant => Style::default().fg(Color::Cyan),
             Role::System => Style::default().fg(Color::Yellow),
         };
@@ -171,17 +178,25 @@ fn draw_chat(frame: &mut Frame, app: &App, area: Rect) {
         let ts = msg.timestamp;
         let time_str = format!("{:02}:{:02} ", ts.hour(), ts.minute());
 
-        // Split content by newlines so multi-line messages render properly
         let indent_len = time_str.len() + prefix.width();
-        for (i, line_text) in msg.content.split('\n').enumerate() {
-            if i == 0 {
-                all_lines.push(Line::from(vec![
-                    Span::styled(time_str.clone(), Style::default().fg(Color::DarkGray)),
-                    Span::styled(prefix.clone(), prefix_style),
-                    Span::styled(line_text.to_string(), content_style),
-                ]));
-            } else {
-                // Continuation lines: indent to align with content
+
+        // First line: timestamp + prefix
+        all_lines.push(Line::from(vec![
+            Span::styled(time_str.clone(), Style::default().fg(Color::DarkGray)),
+            Span::styled(prefix.clone(), prefix_style),
+        ]));
+
+        if msg.role == Role::Assistant {
+            // Render assistant messages with markdown formatting
+            let md_text = tui_markdown::from_str(&msg.content);
+            for line in md_text.lines {
+                let mut indented = vec![Span::raw(" ".repeat(indent_len))];
+                indented.extend(line.spans);
+                all_lines.push(Line::from(indented));
+            }
+        } else {
+            // User/System: plain text rendering
+            for line_text in msg.content.split('\n') {
                 all_lines.push(Line::from(vec![
                     Span::raw(" ".repeat(indent_len)),
                     Span::styled(line_text.to_string(), content_style),
@@ -222,15 +237,16 @@ fn draw_chat(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
-    let has_quota = !app.quota_line.is_empty();
-    let quota_height = if has_quota { 5 } else { 0 };
+    // Quota block height: 2 lines per provider + 2 border lines, or 3 for placeholder.
+    let quota_lines = if app.provider_quotas.is_empty() { 1 } else { app.provider_quotas.len() * 2 };
+    let quota_height = (quota_lines + 2) as u16; // +2 for border
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(7),            // persona
             Constraint::Min(4),              // commands
-            Constraint::Length(quota_height), // quota (0 if no data)
+            Constraint::Length(quota_height), // quota
         ])
         .split(area);
 
@@ -285,42 +301,82 @@ fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
     );
     frame.render_widget(cmd_block, chunks[1]);
 
-    // Quota block (only if data available)
-    if has_quota {
-        let quota_text = Text::from(vec![
-            Line::from(Span::styled(
-                format!(" {}", app.quota_line),
-                Style::default().fg(Color::DarkGray),
-            )),
-        ]);
-        let quota_block = Paragraph::new(quota_text).wrap(Wrap { trim: false }).block(
+    // Quota block (multi-provider with color thresholds)
+    let mut quota_lines_vec: Vec<Line> = Vec::new();
+    if app.provider_quotas.is_empty() {
+        quota_lines_vec.push(Line::from(Span::styled(
+            " awaiting data",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for pq in &app.provider_quotas {
+            let color = quota_color(pq.remaining_pct);
+            let tier = pq
+                .tier_label
+                .as_deref()
+                .map(|t| format!(" [{}]", t))
+                .unwrap_or_default();
+            // First line: provider name + tier
+            quota_lines_vec.push(Line::from(Span::styled(
+                format!(" {}{}", capitalize(&pq.provider), tier),
+                Style::default().fg(color).add_modifier(
+                    if pq.remaining_pct.is_some_and(|p| p < 20.0) {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    },
+                ),
+            )));
+            // Second line: summary + reset
+            let detail = if pq.reset_display.is_empty() {
+                format!("   {}", pq.summary)
+            } else {
+                format!("   {} {}", pq.summary, pq.reset_display)
+            };
+            quota_lines_vec.push(Line::from(Span::styled(detail, Style::default().fg(color))));
+        }
+    }
+
+    let quota_block = Paragraph::new(quota_lines_vec)
+        .wrap(Wrap { trim: false })
+        .block(
             Block::default()
                 .title(" Quota ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray)),
         );
-        frame.render_widget(quota_block, chunks[2]);
+    frame.render_widget(quota_block, chunks[2]);
+}
+
+/// Choose color based on remaining percentage.
+fn quota_color(remaining_pct: Option<f64>) -> Color {
+    match remaining_pct {
+        Some(p) if p < 20.0 => Color::Red,
+        Some(p) if p < 50.0 => Color::Yellow,
+        Some(_) => Color::Green,
+        None => Color::DarkGray,
     }
 }
 
 // ── input bar ───────────────────────────────────────────────────────────
 
 fn draw_input(frame: &mut Frame, app: &App, area: Rect) {
-    let prompt = Span::styled(
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(8), // "cratos> " prompt
+            Constraint::Min(1),   // textarea
+        ])
+        .split(area);
+
+    let prompt = Paragraph::new(Span::styled(
         "cratos> ",
         Style::default()
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
-    );
-    let input_text = Span::raw(&app.input);
-    let line = Line::from(vec![prompt, input_text]);
-    let paragraph = Paragraph::new(line);
-    frame.render_widget(paragraph, area);
-
-    // CJK-aware cursor position
-    let prompt_len = "cratos> ".len() as u16;
-    let display_pos = app.input[..app.cursor_pos].width() as u16;
-    frame.set_cursor_position((area.x + prompt_len + display_pos, area.y));
+    ));
+    frame.render_widget(prompt, chunks[0]);
+    frame.render_widget(&app.textarea, chunks[1]);
 }
 
 // ── utils ───────────────────────────────────────────────────────────────

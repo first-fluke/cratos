@@ -158,6 +158,8 @@ chrono.workspace = true
 clap = { version = "4", features = ["derive"] }
 inquire = "0.9"
 ratatui = { version = "0.29", features = ["unstable-rendered-line-info"] }
+tui-markdown = { version = "=0.3.5", default-features = false }
+tui-textarea = { version = "0.7", features = ["crossterm"] }
 crossterm = "0.28"
 dirs.workspace = true
 reqwest.workspace = true

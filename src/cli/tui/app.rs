@@ -2,8 +2,10 @@
 
 use chrono::Local;
 use cratos_core::Orchestrator;
+use ratatui::style::Style;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tui_textarea::TextArea;
 
 /// A single chat message displayed in the TUI.
 pub struct ChatMessage {
@@ -21,21 +23,47 @@ pub enum Role {
     System,
 }
 
+/// Maximum number of input history entries retained.
+const MAX_HISTORY: usize = 50;
+
+/// Per-provider quota display data for the sidebar.
+pub struct ProviderQuotaDisplay {
+    /// Provider name (e.g. "gemini", "anthropic").
+    pub provider: String,
+    /// Remaining percentage (0.0–100.0), if known.
+    pub remaining_pct: Option<f64>,
+    /// Human-readable summary (e.g. "85% left" or "987/1.0K req").
+    pub summary: String,
+    /// Reset time display (e.g. "~2m 14s").
+    pub reset_display: String,
+    /// Tier label (e.g. "free"), if known.
+    pub tier_label: Option<String>,
+}
+
 /// Main application state.
 pub struct App {
     pub messages: Vec<ChatMessage>,
-    pub input: String,
-    pub cursor_pos: usize,
+    pub textarea: TextArea<'static>,
     pub persona: String,
     pub provider_name: String,
     pub scroll_offset: usize,
     pub is_loading: bool,
     pub should_quit: bool,
     pub loading_tick: usize,
-    /// Cached quota status line for TUI display (updated each tick).
-    pub quota_line: String,
+    /// Global tick counter (always increments, used for periodic refresh).
+    tick_count: usize,
+    /// Per-provider quota info for sidebar display.
+    pub provider_quotas: Vec<ProviderQuotaDisplay>,
+    /// One-line quota summary for the status bar.
+    pub quota_status_line: String,
+    /// Cached cost status line for TUI display (updated each tick).
+    pub cost_line: String,
     /// Whether the sidebar is visible (toggled with F1).
     pub show_sidebar: bool,
+    /// Previous input history for up/down navigation.
+    input_history: Vec<String>,
+    /// Current position in input history (None = new input).
+    history_index: Option<usize>,
     orchestrator: Arc<Orchestrator>,
     session_id: String,
     /// Sender side lives in App so `submit_message` can clone it into spawned tasks.
@@ -56,16 +84,20 @@ impl App {
 
         let mut app = Self {
             messages: Vec::new(),
-            input: String::new(),
-            cursor_pos: 0,
+            textarea: new_textarea(),
             persona: persona.clone(),
             provider_name,
             scroll_offset: 0,
             is_loading: false,
             should_quit: false,
             loading_tick: 0,
-            quota_line: String::new(),
+            tick_count: 0,
+            provider_quotas: Vec::new(),
+            quota_status_line: "awaiting first API call".to_string(),
+            cost_line: String::new(),
             show_sidebar: false,
+            input_history: Vec::new(),
+            history_index: None,
             orchestrator,
             session_id,
             response_tx: tx,
@@ -73,7 +105,7 @@ impl App {
         };
 
         app.push_system(format!(
-            "Welcome to Cratos TUI. Persona: {}. Type /help for commands.",
+            "Welcome to Cratos TUI. Persona: {}. Type /help for commands, F1 for sidebar.",
             persona,
         ));
         app
@@ -111,128 +143,47 @@ impl App {
 
     // ── input handling ──────────────────────────────────────────────────
 
-    pub fn move_cursor_left(&mut self) {
-        if self.cursor_pos > 0 {
-            // Move left by one character, respecting multi-byte chars.
-            let before = &self.input[..self.cursor_pos];
-            if let Some(ch) = before.chars().next_back() {
-                self.cursor_pos -= ch.len_utf8();
-            }
-        }
+    /// Returns true if the textarea is empty (single empty line).
+    pub fn is_input_empty(&self) -> bool {
+        self.textarea.lines().len() == 1 && self.textarea.lines()[0].is_empty()
     }
 
-    pub fn move_cursor_right(&mut self) {
-        if self.cursor_pos < self.input.len() {
-            let after = &self.input[self.cursor_pos..];
-            if let Some(ch) = after.chars().next() {
-                self.cursor_pos += ch.len_utf8();
-            }
-        }
+    /// Returns true if there are previous inputs in history.
+    pub fn has_history(&self) -> bool {
+        !self.input_history.is_empty()
     }
 
-    pub fn insert_char(&mut self, c: char) {
-        self.input.insert(self.cursor_pos, c);
-        self.cursor_pos += c.len_utf8();
-    }
-
-    pub fn delete_char_before_cursor(&mut self) {
-        if self.cursor_pos > 0 {
-            let before = &self.input[..self.cursor_pos];
-            if let Some(ch) = before.chars().next_back() {
-                let remove_pos = self.cursor_pos - ch.len_utf8();
-                self.input.remove(remove_pos);
-                self.cursor_pos = remove_pos;
-            }
-        }
-    }
-
-    /// Delete character after cursor (Delete key).
-    pub fn delete_char_after_cursor(&mut self) {
-        if self.cursor_pos < self.input.len() {
-            self.input.remove(self.cursor_pos);
-        }
-    }
-
-    /// Move cursor one word to the left (Alt+Left / Option+Left).
-    pub fn move_cursor_word_left(&mut self) {
-        let before = &self.input[..self.cursor_pos];
-        // Skip trailing whitespace, then skip word chars
-        let trimmed = before.trim_end();
-        if trimmed.is_empty() {
-            self.cursor_pos = 0;
+    /// Navigate to the previous entry in input history.
+    pub fn history_up(&mut self) {
+        if self.input_history.is_empty() {
             return;
         }
-        // Find last whitespace boundary in trimmed portion
-        if let Some(pos) = trimmed.rfind(|c: char| c.is_whitespace()) {
-            // pos is byte index of the whitespace; move to char after it
-            self.cursor_pos = pos + trimmed[pos..].chars().next().unwrap().len_utf8();
-        } else {
-            self.cursor_pos = 0;
-        }
-    }
-
-    /// Move cursor one word to the right (Alt+Right / Option+Right).
-    pub fn move_cursor_word_right(&mut self) {
-        let after = &self.input[self.cursor_pos..];
-        // Skip leading non-whitespace, then skip whitespace
-        let mut chars = after.char_indices();
-        // Skip current word
-        let mut offset = 0;
-        for (i, c) in chars.by_ref() {
-            if c.is_whitespace() {
-                offset = i;
-                break;
-            }
-            offset = i + c.len_utf8();
-        }
-        // Skip whitespace
-        for (i, c) in self.input[self.cursor_pos + offset..].char_indices() {
-            if !c.is_whitespace() {
-                self.cursor_pos += offset + i;
-                return;
-            }
-        }
-        self.cursor_pos = self.input.len();
-    }
-
-    /// Delete word before cursor (Ctrl+W / Alt+Backspace).
-    pub fn delete_word_before_cursor(&mut self) {
-        if self.cursor_pos == 0 {
-            return;
-        }
-        let before = &self.input[..self.cursor_pos];
-        // Skip trailing whitespace, then skip word chars
-        let trimmed = before.trim_end();
-        let new_pos = if trimmed.is_empty() {
-            0
-        } else if let Some(pos) = trimmed.rfind(|c: char| c.is_whitespace()) {
-            pos + trimmed[pos..].chars().next().unwrap().len_utf8()
-        } else {
-            0
+        let idx = match self.history_index {
+            None => self.input_history.len() - 1,
+            Some(0) => return,
+            Some(i) => i - 1,
         };
-        self.input.drain(new_pos..self.cursor_pos);
-        self.cursor_pos = new_pos;
+        self.history_index = Some(idx);
+        let text = self.input_history[idx].clone();
+        self.textarea = TextArea::new(vec![text]);
+        self.textarea.set_cursor_line_style(Style::default());
     }
 
-    /// Clear from cursor to beginning of line (Ctrl+U).
-    pub fn clear_to_start(&mut self) {
-        self.input.drain(..self.cursor_pos);
-        self.cursor_pos = 0;
-    }
-
-    /// Clear from cursor to end of line (Ctrl+K).
-    pub fn clear_to_end(&mut self) {
-        self.input.truncate(self.cursor_pos);
-    }
-
-    /// Move cursor to beginning of line (Ctrl+A / Home).
-    pub fn move_cursor_home(&mut self) {
-        self.cursor_pos = 0;
-    }
-
-    /// Move cursor to end of line (Ctrl+E / End).
-    pub fn move_cursor_end(&mut self) {
-        self.cursor_pos = self.input.len();
+    /// Navigate to the next entry in input history, or clear if at the end.
+    pub fn history_down(&mut self) {
+        match self.history_index {
+            None => {}
+            Some(i) if i >= self.input_history.len() - 1 => {
+                self.history_index = None;
+                self.textarea = new_textarea();
+            }
+            Some(i) => {
+                self.history_index = Some(i + 1);
+                let text = self.input_history[i + 1].clone();
+                self.textarea = TextArea::new(vec![text]);
+                self.textarea.set_cursor_line_style(Style::default());
+            }
+        }
     }
 
     pub fn scroll_up(&mut self) {
@@ -247,12 +198,20 @@ impl App {
 
     /// Process typed input: either a `/command` or a chat message.
     pub fn submit(&mut self) {
-        let text = self.input.trim().to_string();
+        let text = self.textarea.lines().join("\n").trim().to_string();
         if text.is_empty() {
             return;
         }
-        self.input.clear();
-        self.cursor_pos = 0;
+
+        // Store in history (cap at MAX_HISTORY)
+        self.input_history.push(text.clone());
+        if self.input_history.len() > MAX_HISTORY {
+            self.input_history.remove(0);
+        }
+        self.history_index = None;
+
+        // Reset textarea
+        self.textarea = new_textarea();
 
         if text.starts_with('/') {
             self.handle_command(&text);
@@ -281,12 +240,10 @@ impl App {
                      \x20 /quit            Exit TUI\n\
                      \n\
                      Keys:\n\
-                     \x20 Ctrl+U / Ctrl+K  Clear before/after cursor\n\
-                     \x20 Ctrl+W           Delete word backward\n\
-                     \x20 Ctrl+A / Ctrl+E  Home / End\n\
-                     \x20 Alt+\u{2190}/\u{2192}         Word left/right\n\
-                     \x20 \u{2191}/\u{2193}              Scroll chat\n\
+                     \x20 \u{2191}/\u{2193} (empty input) Input history\n\
+                     \x20 \u{2191}/\u{2193} (otherwise)   Scroll chat\n\
                      \x20 PageUp/PageDn    Scroll fast\n\
+                     \x20 Mouse scroll     Scroll chat\n\
                      \x20 F1               Toggle sidebar\n\
                      \x20 Ctrl+L           Clear screen\n\
                      \x20 Ctrl+C / Esc     Quit"
@@ -349,66 +306,110 @@ impl App {
         }
     }
 
-    /// Refresh the cached quota status line from the global tracker.
+    /// Refresh multi-provider quota data from the global tracker.
     pub fn refresh_quota(&mut self) {
-        // Use try_read to avoid blocking — skip update if lock is held
         let tracker = cratos_llm::global_quota_tracker();
         let states = tracker.try_get_all_states();
+
+        // Bug 6: show placeholder when no data yet
         if states.is_empty() {
-            self.quota_line = String::new();
+            self.provider_quotas.clear();
+            self.quota_status_line = "awaiting first API call".to_string();
             return;
         }
 
-        // Show the most recently updated provider
-        let latest = states
-            .iter()
-            .max_by_key(|s| s.updated_at);
+        let mut displays = Vec::with_capacity(states.len());
+        let mut status_parts: Vec<String> = Vec::new();
 
-        if let Some(state) = latest {
-            let req = match (state.requests_remaining, state.requests_limit) {
-                (Some(rem), Some(lim)) => format!("{}/{}", rem, cratos_llm::format_compact_number(lim)),
-                _ => "-".to_string(),
+        for state in &states {
+            let remaining_pct = state.remaining_pct();
+
+            let summary = if let Some(pct) = remaining_pct {
+                format!("{:.0}% left", pct)
+            } else {
+                match (state.requests_remaining, state.requests_limit) {
+                    (Some(rem), Some(lim)) => {
+                        format!("{}/{} req", rem, cratos_llm::format_compact_number(lim))
+                    }
+                    _ => "-".to_string(),
+                }
             };
-            let tok = match (state.tokens_remaining, state.tokens_limit) {
-                (Some(rem), Some(lim)) => format!(
-                    "{}/{}",
-                    cratos_llm::format_compact_number(rem),
-                    cratos_llm::format_compact_number(lim)
-                ),
-                _ => "-".to_string(),
-            };
-            let reset = state
+
+            let reset_display = state
                 .reset_at
                 .map(|at| {
                     let dur = at - chrono::Utc::now();
                     if dur.num_seconds() <= 0 {
                         "now".to_string()
                     } else {
-                        cratos_llm::format_duration(&dur)
+                        format!("~{}", cratos_llm::format_duration(&dur))
                     }
                 })
-                .unwrap_or_else(|| "-".to_string());
-
-            let auth_suffix = cratos_llm::cli_auth::get_auth_source(&state.provider)
-                .filter(|s| *s != cratos_llm::cli_auth::AuthSource::ApiKey)
-                .map(|s| format!(" ({})", s))
                 .unwrap_or_default();
 
-            self.quota_line = format!(
-                "{}{} {} req {} tok ~{}",
-                state.provider, auth_suffix, req, tok, reset
-            );
+            // Build status bar part
+            let tier_suffix = state
+                .tier_label
+                .as_deref()
+                .map(|t| format!("[{}]", t))
+                .unwrap_or_default();
+            status_parts.push(format!("{}{} {}", state.provider, tier_suffix, summary));
+
+            displays.push(ProviderQuotaDisplay {
+                provider: state.provider.clone(),
+                remaining_pct,
+                summary,
+                reset_display,
+                tier_label: state.tier_label.clone(),
+            });
+        }
+
+        self.provider_quotas = displays;
+        self.quota_status_line = status_parts.join(" \u{00b7} ");
+    }
+
+    /// Refresh the cached cost status line from the global tracker.
+    pub fn refresh_cost(&mut self) {
+        let tracker = cratos_llm::global_tracker();
+        if let Some(stats) = tracker.try_get_stats() {
+            if stats.total_requests == 0 {
+                self.cost_line = String::new();
+            } else {
+                // Check if using a free-tier auth source (OAuth, CLI tokens)
+                let is_free = cratos_llm::cli_auth::get_all_auth_sources()
+                    .values()
+                    .any(|s| *s != cratos_llm::cli_auth::AuthSource::ApiKey);
+                if is_free {
+                    self.cost_line = format!("{} req (free tier)", stats.total_requests);
+                } else {
+                    self.cost_line = format!(
+                        "~${:.4} ({} req)",
+                        stats.total_cost, stats.total_requests,
+                    );
+                }
+            }
         }
     }
 
     /// Advance the loading spinner animation counter.
     pub fn tick(&mut self) {
+        self.tick_count = self.tick_count.wrapping_add(1);
         if self.is_loading {
             self.loading_tick = self.loading_tick.wrapping_add(1);
         }
-        // Refresh quota every 4 ticks (~1 second at 250ms tick rate)
-        if self.loading_tick % 4 == 0 {
+        // Refresh quota and cost every 4 ticks (~800ms at 200ms tick rate)
+        if self.tick_count % 4 == 0 {
             self.refresh_quota();
+            self.refresh_cost();
         }
     }
+}
+
+/// Create a fresh TextArea with default styling.
+fn new_textarea() -> TextArea<'static> {
+    let mut ta = TextArea::default();
+    ta.set_cursor_line_style(Style::default());
+    ta.set_placeholder_text("Type a message... (Enter to send)");
+    ta.set_max_histories(50);
+    ta
 }
