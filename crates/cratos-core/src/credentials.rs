@@ -537,37 +537,108 @@ impl CredentialStore {
         ))
     }
 
-    // Linux Secret Service stubs
+    // Linux Secret Service via keyring crate
+    #[cfg(feature = "native-keyring")]
     fn store_secret_service(&self, service: &str, account: &str, value: &str) -> Result<()> {
-        // In a full implementation, this would use the Secret Service D-Bus API
-        // For now, fall back to encrypted file
-        warn!("Secret Service not implemented, falling back to encrypted file");
+        match keyring::Entry::new(service, account) {
+            Ok(entry) => entry.set_password(value).map_err(|e| {
+                warn!(error = %e, "Secret Service store failed, falling back to encrypted file");
+                CredentialError::Backend(format!("Secret Service error: {}", e))
+            }),
+            Err(e) => {
+                warn!(error = %e, "Secret Service unavailable, falling back to encrypted file");
+                self.store_encrypted_file(service, account, value)
+            }
+        }
+        .or_else(|_| self.store_encrypted_file(service, account, value))
+    }
+
+    #[cfg(feature = "native-keyring")]
+    fn get_secret_service(&self, service: &str, account: &str) -> Result<SecureString> {
+        match keyring::Entry::new(service, account) {
+            Ok(entry) => match entry.get_password() {
+                Ok(pw) => Ok(SecureString::new(pw)),
+                Err(_) => self.get_encrypted_file(service, account),
+            },
+            Err(_) => self.get_encrypted_file(service, account),
+        }
+    }
+
+    #[cfg(feature = "native-keyring")]
+    fn delete_secret_service(&self, service: &str, account: &str) -> Result<()> {
+        if let Ok(entry) = keyring::Entry::new(service, account) {
+            let _ = entry.delete_credential();
+        }
+        // Also clean encrypted file fallback
+        let _ = self.delete_encrypted_file(service, account);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "native-keyring"))]
+    fn store_secret_service(&self, service: &str, account: &str, value: &str) -> Result<()> {
+        warn!("Secret Service not available (native-keyring feature disabled), using encrypted file");
         self.store_encrypted_file(service, account, value)
     }
 
+    #[cfg(not(feature = "native-keyring"))]
     fn get_secret_service(&self, service: &str, account: &str) -> Result<SecureString> {
-        warn!("Secret Service not implemented, falling back to encrypted file");
         self.get_encrypted_file(service, account)
     }
 
+    #[cfg(not(feature = "native-keyring"))]
     fn delete_secret_service(&self, service: &str, account: &str) -> Result<()> {
-        warn!("Secret Service not implemented, falling back to encrypted file");
         self.delete_encrypted_file(service, account)
     }
 
-    // Windows Credential stubs
+    // Windows Credential Manager via keyring crate
+    #[cfg(feature = "native-keyring")]
     fn store_windows(&self, service: &str, account: &str, value: &str) -> Result<()> {
-        warn!("Windows Credential not implemented, falling back to encrypted file");
+        match keyring::Entry::new(service, account) {
+            Ok(entry) => entry.set_password(value).map_err(|e| {
+                warn!(error = %e, "Windows Credential store failed, falling back to encrypted file");
+                CredentialError::Backend(format!("Windows Credential error: {}", e))
+            }),
+            Err(e) => {
+                warn!(error = %e, "Windows Credential unavailable, falling back to encrypted file");
+                self.store_encrypted_file(service, account, value)
+            }
+        }
+        .or_else(|_| self.store_encrypted_file(service, account, value))
+    }
+
+    #[cfg(feature = "native-keyring")]
+    fn get_windows(&self, service: &str, account: &str) -> Result<SecureString> {
+        match keyring::Entry::new(service, account) {
+            Ok(entry) => match entry.get_password() {
+                Ok(pw) => Ok(SecureString::new(pw)),
+                Err(_) => self.get_encrypted_file(service, account),
+            },
+            Err(_) => self.get_encrypted_file(service, account),
+        }
+    }
+
+    #[cfg(feature = "native-keyring")]
+    fn delete_windows(&self, service: &str, account: &str) -> Result<()> {
+        if let Ok(entry) = keyring::Entry::new(service, account) {
+            let _ = entry.delete_credential();
+        }
+        let _ = self.delete_encrypted_file(service, account);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "native-keyring"))]
+    fn store_windows(&self, service: &str, account: &str, value: &str) -> Result<()> {
+        warn!("Windows Credential not available (native-keyring feature disabled), using encrypted file");
         self.store_encrypted_file(service, account, value)
     }
 
+    #[cfg(not(feature = "native-keyring"))]
     fn get_windows(&self, service: &str, account: &str) -> Result<SecureString> {
-        warn!("Windows Credential not implemented, falling back to encrypted file");
         self.get_encrypted_file(service, account)
     }
 
+    #[cfg(not(feature = "native-keyring"))]
     fn delete_windows(&self, service: &str, account: &str) -> Result<()> {
-        warn!("Windows Credential not implemented, falling back to encrypted file");
         self.delete_encrypted_file(service, account)
     }
 

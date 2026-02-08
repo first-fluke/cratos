@@ -451,11 +451,37 @@ impl ChannelAdapter for WhatsAppAdapter {
         ))
     }
 
-    async fn delete_message(&self, _channel_id: &str, _message_id: &str) -> Result<()> {
-        // WhatsApp message deletion is complex and requires the original message
-        Err(Error::NotEnabled(
-            "WhatsApp message deletion not implemented".to_string(),
-        ))
+    async fn delete_message(&self, channel_id: &str, message_id: &str) -> Result<()> {
+        let url = format!("{}/delete", self.config.bridge_url);
+
+        #[derive(Serialize)]
+        struct DeleteRequest<'a> {
+            to: &'a str,
+            #[serde(rename = "messageId")]
+            message_id: &'a str,
+        }
+
+        let resp: SendResponse = self
+            .client
+            .post(&url)
+            .json(&DeleteRequest {
+                to: channel_id,
+                message_id,
+            })
+            .send()
+            .await
+            .map_err(|e| Error::Bridge(format!("Failed to delete message: {}", e)))?
+            .json()
+            .await
+            .map_err(|e| Error::WhatsApp(format!("Invalid delete response: {}", e)))?;
+
+        if resp.success {
+            Ok(())
+        } else {
+            Err(Error::WhatsApp(
+                resp.error.unwrap_or_else(|| "Delete failed".to_string()),
+            ))
+        }
     }
 
     async fn send_typing(&self, channel_id: &str) -> Result<()> {

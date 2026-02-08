@@ -32,6 +32,14 @@ pub struct UserConfig {
     #[serde(default)]
     pub persona: String,
 
+    /// Default channel
+    #[serde(default)]
+    pub channel: String,
+
+    /// UI theme
+    #[serde(default)]
+    pub theme: String,
+
     /// Scheduler settings
     #[serde(default)]
     pub scheduler: SchedulerConfig,

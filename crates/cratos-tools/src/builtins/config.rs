@@ -395,10 +395,9 @@ impl ConfigTool {
             ConfigTarget::Scheduler => {
                 config.scheduler.enabled = value == "enable" || value == "enabled";
             }
-            _ => {
-                // Channel, Theme - store as-is for now
-                info!(target = ?params.target, value = %value, "Setting stored (not yet persisted)");
-            }
+            ConfigTarget::Channel => config.channel = value.clone(),
+            ConfigTarget::Theme => config.theme = value.clone(),
+            _ => {}
         }
 
         manager.save()?;
@@ -459,8 +458,20 @@ impl ConfigTool {
                     "disabled".to_string()
                 }
             }
-            ConfigTarget::Channel => "telegram".to_string(), // TODO: persist
-            ConfigTarget::Theme => "dark".to_string(),       // TODO: persist
+            ConfigTarget::Channel => {
+                if config.channel.is_empty() {
+                    "telegram".to_string()
+                } else {
+                    config.channel.clone()
+                }
+            }
+            ConfigTarget::Theme => {
+                if config.theme.is_empty() {
+                    "dark".to_string()
+                } else {
+                    config.theme.clone()
+                }
+            }
             ConfigTarget::WolDevice => {
                 return self.handle_wol_list().await;
             }
@@ -694,6 +705,46 @@ mod tests {
         let output: serde_json::Value = result.output.clone();
 
         assert_eq!(output["value"], "en"); // Default
+    }
+
+    #[tokio::test]
+    async fn test_set_and_get_channel() {
+        let (tool, _dir) = create_test_tool();
+
+        let set_input = serde_json::json!({
+            "action": "set",
+            "target": "channel",
+            "value": "slack"
+        });
+        tool.execute(set_input).await.unwrap();
+
+        let get_input = serde_json::json!({
+            "action": "get",
+            "target": "channel"
+        });
+        let result = tool.execute(get_input).await.unwrap();
+        let output: serde_json::Value = result.output.clone();
+        assert_eq!(output["current_value"], "slack");
+    }
+
+    #[tokio::test]
+    async fn test_set_and_get_theme() {
+        let (tool, _dir) = create_test_tool();
+
+        let set_input = serde_json::json!({
+            "action": "set",
+            "target": "theme",
+            "value": "light"
+        });
+        tool.execute(set_input).await.unwrap();
+
+        let get_input = serde_json::json!({
+            "action": "get",
+            "target": "theme"
+        });
+        let result = tool.execute(get_input).await.unwrap();
+        let output: serde_json::Value = result.output.clone();
+        assert_eq!(output["current_value"], "light");
     }
 
     #[test]
