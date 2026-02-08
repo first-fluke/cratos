@@ -10,6 +10,7 @@ use crate::memory::{MemoryStore, SessionContext, SessionStore, WorkingMemory};
 use crate::olympus_hooks::OlympusHooks;
 use crate::planner::{Planner, PlannerConfig};
 use cratos_llm::{LlmProvider, Message, ToolCall};
+use cratos_memory::GraphMemory;
 use cratos_replay::{Event, EventStoreTrait, EventType, Execution};
 use cratos_tools::{RunnerConfig, ToolRegistry, ToolRunner};
 use serde::{Deserialize, Serialize};
@@ -183,6 +184,7 @@ pub struct Orchestrator {
     event_bus: Option<Arc<EventBus>>,
     approval_manager: Option<SharedApprovalManager>,
     olympus_hooks: Option<OlympusHooks>,
+    graph_memory: Option<Arc<GraphMemory>>,
     config: OrchestratorConfig,
 }
 
@@ -205,6 +207,7 @@ impl Orchestrator {
             event_bus: None,
             approval_manager: None,
             olympus_hooks: None,
+            graph_memory: None,
             config,
         }
     }
@@ -242,6 +245,12 @@ impl Orchestrator {
     /// Set the Olympus OS hooks for post-execution processing
     pub fn with_olympus_hooks(mut self, hooks: OlympusHooks) -> Self {
         self.olympus_hooks = Some(hooks);
+        self
+    }
+
+    /// Set the Graph RAG memory for long-term context retrieval
+    pub fn with_graph_memory(mut self, graph_memory: Arc<GraphMemory>) -> Self {
+        self.graph_memory = Some(graph_memory);
         self
     }
 
@@ -313,6 +322,33 @@ impl Orchestrator {
                 .unwrap_or_else(|| crate::memory::SessionContext::new(&session_key));
 
             session.add_user_message(&input.text);
+
+            // Graph RAG: if token budget is tight, replace middle context
+            if let Some(gm) = &self.graph_memory {
+                let remaining = session.remaining_tokens();
+                let total = session.token_count();
+                // Trigger when >80% of budget used
+                if total > 0 && remaining < session.max_tokens / 5 {
+                    debug!(
+                        remaining_tokens = remaining,
+                        total_tokens = total,
+                        "Token budget tight, retrieving Graph RAG context"
+                    );
+                    let budget = (session.max_tokens / 2) as u32;
+                    match gm.retrieve(&input.text, 20, budget).await {
+                        Ok(turns) if !turns.is_empty() => {
+                            let retrieved_msgs = GraphMemory::turns_to_messages(&turns);
+                            session.replace_with_retrieved(retrieved_msgs);
+                            info!(
+                                retrieved_turns = turns.len(),
+                                "Replaced session context with Graph RAG results"
+                            );
+                        }
+                        Ok(_) => debug!("No relevant Graph RAG turns found"),
+                        Err(e) => warn!(error = %e, "Graph RAG retrieval failed"),
+                    }
+                }
+            }
 
             // Save updated session
             let _ = self.memory.save(&session).await;
@@ -493,6 +529,22 @@ impl Orchestrator {
             if let Err(e) = hooks.post_execute(&persona, &final_response, task_completed) {
                 warn!(error = %e, "Olympus post-execute hook failed");
             }
+        }
+
+        // Graph RAG: index this session's messages asynchronously
+        if let Some(gm) = &self.graph_memory {
+            let gm = Arc::clone(gm);
+            let sid = session_key.clone();
+            let msgs = messages.clone();
+            tokio::spawn(async move {
+                match gm.index_session(&sid, &msgs).await {
+                    Ok(count) if count > 0 => {
+                        debug!(session_id = %sid, indexed = count, "Graph RAG indexing complete");
+                    }
+                    Err(e) => warn!(error = %e, "Graph RAG indexing failed"),
+                    _ => {}
+                }
+            });
         }
 
         let duration_ms = start_time.elapsed().as_millis() as u64;

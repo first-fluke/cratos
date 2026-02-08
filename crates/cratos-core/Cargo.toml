@@ -9,6 +9,7 @@ authors.workspace = true
 
 [dependencies]
 cratos-llm.workspace = true
+cratos-memory.workspace = true
 cratos-tools.workspace = true
 cratos-replay.workspace = true
 
@@ -50,6 +51,7 @@ hostname = "0.4"    # Machine-specific key derivation fallback
 default = []
 redis-tests = []  # Enable Redis integration tests (requires running Redis)
 native-keyring = ["dep:keyring"]  # Enable native OS keyring (Linux Secret Service, Windows Credential Manager)
+embeddings = ["cratos-memory/embeddings"]  # Enable embedding-based Graph RAG search
 
 [dev-dependencies]
 mockall.workspace = true

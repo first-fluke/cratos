@@ -21,6 +21,7 @@ use cratos_llm::{
     QwenProvider, SharedEmbeddingProvider, TractEmbeddingProvider,
 };
 use cratos_replay::{EventStore, ExecutionSearcher, SearchEmbedder};
+use cratos_memory::{GraphMemory, VectorBridge};
 use cratos_search::{IndexConfig, VectorIndex};
 use cratos_skills::{SemanticSkillRouter, SkillEmbedder, SkillRegistry, SkillStore};
 use cratos_tools::{register_builtins, RunnerConfig, ToolRegistry};
@@ -782,6 +783,41 @@ pub async fn run() -> Result<()> {
         }
     };
 
+    // ── Graph RAG Memory ──────────────────────────────────────────────
+    let graph_memory: Option<Arc<GraphMemory>> = {
+        let memory_db_path = data_dir.join("memory.db");
+        match GraphMemory::from_path(&memory_db_path).await {
+            Ok(gm) => {
+                let gm = if let Some(ref embedder) = embedding_provider {
+                    let dimensions = embedder.dimensions();
+                    let memory_index_path = vectors_dir.join("memory");
+                    match VectorIndex::open(&memory_index_path, IndexConfig::new(dimensions)) {
+                        Ok(idx) => {
+                            let bridge = Arc::new(VectorBridge::new(
+                                embedder.clone(),
+                                Arc::new(idx),
+                            ));
+                            info!("Graph RAG memory initialized with embedding search");
+                            gm.with_vector_bridge(bridge)
+                        }
+                        Err(e) => {
+                            warn!("Failed to open memory vector index: {e}, using graph-only");
+                            gm
+                        }
+                    }
+                } else {
+                    info!("Graph RAG memory initialized (graph-only, no embeddings)");
+                    gm
+                };
+                Some(Arc::new(gm))
+            }
+            Err(e) => {
+                warn!("Failed to initialize Graph RAG memory: {e}");
+                None
+            }
+        }
+    };
+
     let shutdown_controller = ShutdownController::new();
     info!("Shutdown controller initialized (timeout: 30s)");
 
@@ -820,14 +856,17 @@ pub async fn run() -> Result<()> {
     let event_bus = Arc::new(EventBus::new(256));
     info!("EventBus initialized (capacity: 256)");
 
-    let orchestrator = Arc::new(
+    let mut orchestrator =
         Orchestrator::new(llm_provider, tool_registry, orchestrator_config)
             .with_event_store(event_store.clone())
             .with_event_bus(event_bus.clone())
             .with_memory(session_store)
             .with_approval_manager(approval_manager)
-            .with_olympus_hooks(olympus_hooks),
-    );
+            .with_olympus_hooks(olympus_hooks);
+    if let Some(gm) = graph_memory {
+        orchestrator = orchestrator.with_graph_memory(gm);
+    }
+    let orchestrator = Arc::new(orchestrator);
     info!("Orchestrator initialized");
 
     let mut channel_handles = Vec::new();

@@ -317,6 +317,45 @@ impl SessionContext {
         self.token_count() + msg_tokens > self.max_tokens
     }
 
+    /// Replace the middle of the conversation with Graph RAG retrieved turns.
+    ///
+    /// Preserves system messages (beginning) and the current turn (end),
+    /// replacing everything in between with the most relevant past turns.
+    pub fn replace_with_retrieved(&mut self, retrieved_messages: Vec<Message>) {
+        // Separate system messages
+        let system_msgs: Vec<Message> = self
+            .messages
+            .iter()
+            .filter(|m| m.role == MessageRole::System)
+            .cloned()
+            .collect();
+
+        // Keep the last user message (current turn)
+        let current_turn = self
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == MessageRole::User)
+            .cloned();
+
+        // Rebuild: system + retrieved context + current turn
+        self.messages = system_msgs;
+        self.messages.extend(retrieved_messages);
+        if let Some(turn) = current_turn {
+            self.messages.push(turn);
+        }
+
+        // Update cached token count
+        self.current_tokens = count_message_tokens(&self.messages);
+
+        debug!(
+            session_id = %self.id,
+            new_token_count = self.current_tokens,
+            messages = self.messages.len(),
+            "Session context replaced with Graph RAG results"
+        );
+    }
+
     /// Get message count
     #[must_use]
     pub fn message_count(&self) -> usize {
