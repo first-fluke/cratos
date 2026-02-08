@@ -3,6 +3,7 @@
 //! Handles communication with MCP servers over different transports.
 
 use super::protocol::{McpError, McpRequest, McpResponse, McpResult};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -67,6 +68,12 @@ pub struct McpConnection {
     stdin: Option<Arc<Mutex<std::process::ChildStdin>>>,
     /// Transport type
     transport: McpTransport,
+    /// HTTP client for SSE transport
+    http_client: Option<Client>,
+    /// SSE post URL (for sending requests)
+    sse_post_url: Option<String>,
+    /// SSE cancel token
+    sse_cancel: Option<tokio_util::sync::CancellationToken>,
 }
 
 impl McpConnection {
@@ -79,6 +86,9 @@ impl McpConnection {
             process: None,
             stdin: None,
             transport: config.transport.clone(),
+            http_client: None,
+            sse_post_url: None,
+            sse_cancel: None,
         })
     }
 
@@ -91,11 +101,8 @@ impl McpConnection {
             McpTransport::Stdio { command, args, env } => {
                 self.start_stdio(&command, &args, &env).await
             }
-            McpTransport::Sse { url, .. } => {
-                warn!(url = %url, "SSE transport not yet implemented");
-                Err(McpError::Transport(
-                    "SSE transport not yet implemented".to_string(),
-                ))
+            McpTransport::Sse { url, api_key } => {
+                self.start_sse(&url, api_key.as_deref()).await
             }
         }
     }
@@ -192,8 +199,111 @@ impl McpConnection {
         Ok(())
     }
 
+    /// Start SSE transport
+    async fn start_sse(&mut self, url: &str, api_key: Option<&str>) -> McpResult<()> {
+        info!(url = %url, "Starting MCP SSE transport");
+
+        let builder = Client::builder().timeout(std::time::Duration::from_secs(60));
+        let client = builder
+            .build()
+            .map_err(|e| McpError::Transport(format!("Failed to create HTTP client: {}", e)))?;
+
+        // MCP SSE: GET the SSE endpoint to receive events
+        let sse_url = url.to_string();
+        let post_url = format!("{}/message", url.trim_end_matches("/sse").trim_end_matches('/'));
+        self.sse_post_url = Some(post_url);
+        self.http_client = Some(client.clone());
+
+        let cancel = tokio_util::sync::CancellationToken::new();
+        self.sse_cancel = Some(cancel.clone());
+
+        let pending = self.pending.clone();
+        let server_name = self.name.clone();
+        let auth_header = api_key.map(|k| k.to_string());
+
+        // Spawn SSE reader task
+        tokio::spawn(async move {
+            let mut backoff_ms = 1000u64;
+            loop {
+                if cancel.is_cancelled() {
+                    break;
+                }
+
+                let mut req = client.get(&sse_url).header("Accept", "text/event-stream");
+                if let Some(ref key) = auth_header {
+                    req = req.bearer_auth(key);
+                }
+
+                match req.send().await {
+                    Ok(resp) => {
+                        backoff_ms = 1000; // Reset on success
+                        let mut bytes = resp.bytes_stream();
+                        use futures::StreamExt;
+                        let mut buffer = String::new();
+
+                        while let Some(chunk) = bytes.next().await {
+                            if cancel.is_cancelled() {
+                                return;
+                            }
+                            match chunk {
+                                Ok(data) => {
+                                    buffer.push_str(&String::from_utf8_lossy(&data));
+                                    // Parse SSE events from buffer
+                                    while let Some(pos) = buffer.find("\n\n") {
+                                        let event = buffer[..pos].to_string();
+                                        buffer = buffer[pos + 2..].to_string();
+
+                                        for line in event.lines() {
+                                            if let Some(data) = line.strip_prefix("data: ") {
+                                                match serde_json::from_str::<McpResponse>(data) {
+                                                    Ok(response) => {
+                                                        let mut pend = pending
+                                                            .lock()
+                                                            .unwrap_or_else(|e| e.into_inner());
+                                                        if let Some(tx) = pend.remove(&response.id) {
+                                                            let _ = tx.send(response);
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        debug!(
+                                                            server = %server_name,
+                                                            error = %e,
+                                                            "Non-JSON SSE event, ignoring"
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(server = %server_name, error = %e, "SSE stream error");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!(server = %server_name, error = %e, backoff_ms, "SSE connection failed, retrying");
+                    }
+                }
+
+                // Exponential backoff with cap at 30s
+                tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
+                backoff_ms = (backoff_ms * 2).min(30_000);
+            }
+        });
+
+        Ok(())
+    }
+
     /// Send a request and wait for response
     pub async fn send(&self, request: McpRequest) -> McpResult<McpResponse> {
+        // SSE transport: send via HTTP POST
+        if let Some(ref client) = self.http_client {
+            return self.send_sse(client, request).await;
+        }
+
         let stdin = self
             .stdin
             .as_ref()
@@ -240,6 +350,47 @@ impl McpConnection {
         Ok(response)
     }
 
+    /// Send request via SSE HTTP POST
+    async fn send_sse(&self, client: &Client, request: McpRequest) -> McpResult<McpResponse> {
+        let post_url = self
+            .sse_post_url
+            .as_ref()
+            .ok_or_else(|| McpError::Transport("SSE post URL not configured".to_string()))?;
+
+        // Register pending request
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+            pending.insert(request.id, tx);
+        }
+
+        debug!(server = %self.name, url = %post_url, "Sending SSE request");
+
+        client
+            .post(post_url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| McpError::Transport(format!("SSE POST failed: {}", e)))?;
+
+        // Wait for response from SSE stream
+        let response = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            rx.await
+                .map_err(|_| McpError::Transport("SSE response channel closed".to_string()))
+        })
+        .await
+        .map_err(|_| McpError::Timeout)??;
+
+        if let Some(error) = response.error {
+            return Err(McpError::Server {
+                code: error.code,
+                message: error.message,
+            });
+        }
+
+        Ok(response)
+    }
+
     /// Get next request ID
     pub fn next_id(&self) -> u64 {
         self.request_id.fetch_add(1, Ordering::SeqCst)
@@ -252,13 +403,19 @@ impl McpConnection {
             let _ = process.kill();
             info!(server = %self.name, "MCP server process stopped");
         }
+        if let Some(cancel) = self.sse_cancel.take() {
+            cancel.cancel();
+            info!(server = %self.name, "SSE connection stopped");
+        }
         self.stdin = None;
+        self.http_client = None;
+        self.sse_post_url = None;
         Ok(())
     }
 
     /// Check if connection is active
     pub fn is_active(&self) -> bool {
-        self.stdin.is_some()
+        self.stdin.is_some() || self.http_client.is_some()
     }
 }
 

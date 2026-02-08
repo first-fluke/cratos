@@ -3,13 +3,15 @@
 //! Maps agents to their preferred AI CLI providers.
 
 use async_trait::async_trait;
+use cratos_llm::{CompletionRequest, LlmRouter, Message};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::process::Command;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// CLI-related errors
 #[derive(Debug, Error)]
@@ -199,11 +201,12 @@ impl CliProvider for ShellCliProvider {
     }
 }
 
-/// API-based CLI provider (for Groq, DeepSeek, etc.)
+/// API-based CLI provider (routes through LlmRouter)
 pub struct ApiCliProvider {
     name: String,
     provider: String,
     model: Option<String>,
+    router: Option<Arc<LlmRouter>>,
 }
 
 impl ApiCliProvider {
@@ -217,7 +220,33 @@ impl ApiCliProvider {
             name: name.into(),
             provider: provider.into(),
             model,
+            router: None,
         }
+    }
+
+    /// Create with LLM router for direct API calls
+    pub fn with_router(
+        name: impl Into<String>,
+        provider: impl Into<String>,
+        model: Option<String>,
+        router: Arc<LlmRouter>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            provider: provider.into(),
+            model,
+            router: Some(router),
+        }
+    }
+
+    /// Build messages from prompt and persona
+    fn build_messages(prompt: &str, persona: &str) -> Vec<Message> {
+        let mut messages = Vec::new();
+        if !persona.is_empty() {
+            messages.push(Message::system(persona));
+        }
+        messages.push(Message::user(prompt));
+        messages
     }
 }
 
@@ -233,28 +262,32 @@ impl CliProvider for ApiCliProvider {
         persona: &str,
         _workspace: Option<&Path>,
     ) -> CliResult<String> {
-        // TODO: Integrate with cratos-llm directly
-        // For now, return a placeholder
-        info!(
-            provider = %self.provider,
-            model = ?self.model,
-            "API CLI provider would execute prompt"
-        );
+        let Some(router) = &self.router else {
+            return Err(CliError::Configuration(
+                "LLM router not configured for API provider".to_string(),
+            ));
+        };
 
-        Ok(format!(
-            "[API Provider: {}] Would execute: {}{}",
-            self.provider,
-            if persona.is_empty() {
-                ""
-            } else {
-                "[with persona] "
-            },
-            &prompt[..prompt.len().min(100)]
-        ))
+        let messages = Self::build_messages(prompt, persona);
+        let model = self.model.clone().unwrap_or_default();
+
+        let request = CompletionRequest {
+            model,
+            messages,
+            max_tokens: Some(4096),
+            temperature: Some(0.7),
+            stop: None,
+        };
+
+        let response = router
+            .complete_with(&self.provider, request)
+            .await
+            .map_err(|e| CliError::ExecutionFailed(e.to_string()))?;
+
+        Ok(response.content)
     }
 
     async fn is_available(&self) -> bool {
-        // Check for API key
         let key_name = match self.provider.as_str() {
             "groq" => "GROQ_API_KEY",
             "deepseek" => "DEEPSEEK_API_KEY",
@@ -279,23 +312,38 @@ impl CliRegistry {
         }
     }
 
-    /// Create with default providers
+    /// Create with default providers (no LLM router — API providers will error on execute)
     pub fn with_defaults() -> Self {
+        Self::with_router(None)
+    }
+
+    /// Create with default providers and an optional LLM router
+    pub fn with_router(router: Option<Arc<LlmRouter>>) -> Self {
         let mut registry = Self::new();
 
         // Register shell-based providers
         registry.register(Box::new(ShellCliProvider::new(CliConfig::claude())));
         registry.register(Box::new(ShellCliProvider::new(CliConfig::gemini())));
 
-        // Register API-based providers
-        registry.register(Box::new(ApiCliProvider::new("groq", "groq", None)));
-        registry.register(Box::new(ApiCliProvider::new("deepseek", "deepseek", None)));
-        registry.register(Box::new(ApiCliProvider::new(
-            "anthropic",
-            "anthropic",
-            None,
-        )));
-        registry.register(Box::new(ApiCliProvider::new("openai", "openai", None)));
+        // Register API-based providers (connected to LLM router if available)
+        let api_providers = [
+            ("groq", "groq"),
+            ("deepseek", "deepseek"),
+            ("anthropic", "anthropic"),
+            ("openai", "openai"),
+        ];
+        for (name, provider) in api_providers {
+            let cli_provider: Box<dyn CliProvider> = match &router {
+                Some(r) => Box::new(ApiCliProvider::with_router(
+                    name,
+                    provider,
+                    None,
+                    Arc::clone(r),
+                )),
+                None => Box::new(ApiCliProvider::new(name, provider, None)),
+            };
+            registry.register(cli_provider);
+        }
 
         registry
     }

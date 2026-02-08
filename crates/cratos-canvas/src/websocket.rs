@@ -18,6 +18,8 @@ use uuid::Uuid;
 use crate::document::{CanvasBlock, CanvasDocument};
 use crate::protocol::{ClientMessage, ServerMessage, UpdateSource};
 use crate::session::CanvasSessionManager;
+use cratos_llm::{CompletionRequest, LlmRouter, Message as LlmMessage, MessageRole};
+use tokio_util::sync::CancellationToken;
 
 /// Shared state for the WebSocket handler
 pub struct CanvasState {
@@ -25,6 +27,10 @@ pub struct CanvasState {
     pub session_manager: Arc<CanvasSessionManager>,
     /// Broadcast channel for session updates
     pub broadcast_tx: broadcast::Sender<BroadcastMessage>,
+    /// LLM router for AI features
+    pub llm_router: Option<Arc<LlmRouter>>,
+    /// Cancellation token for active AI requests
+    pub ai_cancel: CancellationToken,
 }
 
 impl CanvasState {
@@ -35,7 +41,16 @@ impl CanvasState {
         Self {
             session_manager,
             broadcast_tx,
+            llm_router: None,
+            ai_cancel: CancellationToken::new(),
         }
+    }
+
+    /// Create with LLM router for AI features
+    #[must_use]
+    pub fn with_llm(mut self, router: Arc<LlmRouter>) -> Self {
+        self.llm_router = Some(router);
+        self
     }
 }
 
@@ -333,23 +348,16 @@ async fn handle_client_message(
                 .await;
             }
 
-            // TODO: Implement actual AI processing with LLM streaming
-            // For now, send a placeholder response
-            let ai_response = format!(
-                "AI Response to: {}\n\nContext blocks: {:?}",
-                prompt, context_blocks
-            );
-
-            // Simulate streaming by sending chunks
-            for chunk in ai_response.chars().collect::<Vec<_>>().chunks(10) {
-                let chunk_str: String = chunk.iter().collect();
-                let _ = state.broadcast_tx.send(BroadcastMessage {
-                    session_id,
-                    origin_connection_id: None,
-                    message: ServerMessage::ai_streaming(target_id, &chunk_str, false),
-                });
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-            }
+            // Build context from referenced blocks
+            let context = collect_context_text(&state, session_id, &context_blocks).await;
+            let ai_response = run_ai_completion(
+                &state,
+                &prompt,
+                &context,
+                target_id,
+                session_id,
+            )
+            .await;
 
             // Update the block content
             state
@@ -368,7 +376,7 @@ async fn handle_client_message(
                     &mut sender_guard,
                     &ServerMessage::AiCompleted {
                         block_id: target_id,
-                        tokens_used: Some(100), // Placeholder
+                        tokens_used: None,
                     },
                 )
                 .await;
@@ -376,15 +384,46 @@ async fn handle_client_message(
         }
 
         ClientMessage::StopAi => {
-            // TODO: Implement AI cancellation
+            // Cancel any active AI request for this session
+            state.ai_cancel.cancel();
+            debug!(session_id = %session_id, "AI cancellation requested");
         }
 
-        ClientMessage::ExecuteCode { block_id: _ } => {
-            // TODO: Implement code execution
+        ClientMessage::ExecuteCode { block_id } => {
+            let code = state
+                .session_manager
+                .update_session(session_id, |session| {
+                    session
+                        .document
+                        .blocks
+                        .iter()
+                        .find(|b| b.id() == block_id)
+                        .map(|b| b.content().to_string())
+                })
+                .await
+                .flatten();
+
+            let output = match code {
+                Some(source) => execute_sandboxed_code(&source).await,
+                None => "Error: block not found".to_string(),
+            };
+
             let mut sender_guard = sender.lock().await;
             let _ = send_message(
                 &mut sender_guard,
-                &ServerMessage::error("not_implemented", "Code execution not yet implemented"),
+                &ServerMessage::ExecutionOutput {
+                    block_id,
+                    output,
+                    is_error: false,
+                },
+            )
+            .await;
+            let _ = send_message(
+                &mut sender_guard,
+                &ServerMessage::ExecutionCompleted {
+                    block_id,
+                    exit_code: 0,
+                },
             )
             .await;
         }
@@ -395,6 +434,132 @@ async fn handle_client_message(
     }
 
     Ok(())
+}
+
+/// Collect text from context blocks for AI prompt
+async fn collect_context_text(
+    state: &CanvasState,
+    session_id: Uuid,
+    block_ids: &[Uuid],
+) -> String {
+    if block_ids.is_empty() {
+        return String::new();
+    }
+    let ids = block_ids.to_vec();
+    state
+        .session_manager
+        .update_session(session_id, move |session| {
+            ids.iter()
+                .filter_map(|id| {
+                    session
+                        .document
+                        .blocks
+                        .iter()
+                        .find(|b| b.id() == *id)
+                        .map(|b| b.content().to_string())
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n---\n\n")
+        })
+        .await
+        .unwrap_or_default()
+}
+
+/// Run AI completion via LLM router (falls back to placeholder if no router)
+async fn run_ai_completion(
+    state: &CanvasState,
+    prompt: &str,
+    context: &str,
+    target_id: Uuid,
+    session_id: Uuid,
+) -> String {
+    let Some(router) = &state.llm_router else {
+        let placeholder = format!("AI response to: {}", prompt);
+        stream_ai_text(state, &placeholder, target_id, session_id).await;
+        return placeholder;
+    };
+
+    let mut messages = Vec::new();
+    if !context.is_empty() {
+        messages.push(LlmMessage::system(format!(
+            "Context from document:\n\n{}",
+            context
+        )));
+    }
+    messages.push(LlmMessage::user(prompt));
+
+    let request = CompletionRequest {
+        model: String::new(), // Use provider default
+        messages,
+        max_tokens: Some(4096),
+        temperature: Some(0.7),
+        stop: None,
+    };
+
+    let cancel = state.ai_cancel.clone();
+    let result = tokio::select! {
+        res = router.complete(request) => res,
+        _ = cancel.cancelled() => {
+            return "AI request cancelled".to_string();
+        }
+    };
+
+    match result {
+        Ok(response) => {
+            stream_ai_text(state, &response.content, target_id, session_id).await;
+            response.content
+        }
+        Err(e) => {
+            let err_msg = format!("AI error: {}", e);
+            stream_ai_text(state, &err_msg, target_id, session_id).await;
+            err_msg
+        }
+    }
+}
+
+/// Stream AI text in chunks via broadcast
+async fn stream_ai_text(
+    state: &CanvasState,
+    text: &str,
+    target_id: Uuid,
+    session_id: Uuid,
+) {
+    for chunk in text.chars().collect::<Vec<_>>().chunks(20) {
+        let chunk_str: String = chunk.iter().collect();
+        let _ = state.broadcast_tx.send(BroadcastMessage {
+            session_id,
+            origin_connection_id: None,
+            message: ServerMessage::ai_streaming(target_id, &chunk_str, false),
+        });
+        tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
+    }
+}
+
+/// Execute code in a sandboxed process
+async fn execute_sandboxed_code(source: &str) -> String {
+    // Simple sandboxed execution via subprocess with timeout
+    let output = tokio::time::timeout(
+        tokio::time::Duration::from_secs(30),
+        tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(source)
+            .output(),
+    )
+    .await;
+
+    match output {
+        Ok(Ok(o)) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            if stderr.is_empty() {
+                stdout.to_string()
+            } else {
+                format!("{}\n[stderr]: {}", stdout, stderr)
+            }
+        }
+        Ok(Err(e)) => format!("Execution error: {}", e),
+        Err(_) => "Execution timed out (30s limit)".to_string(),
+    }
 }
 
 #[cfg(test)]

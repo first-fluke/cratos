@@ -9,7 +9,8 @@ authors.workspace = true
 
 [dependencies]
 # Async runtime
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "process"] }
+tokio-util.workspace = true
 futures.workspace = true
 
 # Web framework

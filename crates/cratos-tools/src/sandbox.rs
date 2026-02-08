@@ -342,6 +342,9 @@ pub struct SandboxConfig {
     pub image: String,
     /// Additional security options (Docker only)
     pub security_opts: Vec<String>,
+    /// Path to seccomp profile JSON (Docker only)
+    #[serde(default)]
+    pub seccomp_profile: Option<std::path::PathBuf>,
     /// Preferred runtime: "auto", "docker", "apple_container", "none"
     #[serde(default = "default_runtime_preference")]
     pub runtime_preference: String,
@@ -360,6 +363,22 @@ fn default_true() -> bool {
 
 impl Default for SandboxConfig {
     fn default() -> Self {
+        // Check for bundled seccomp profile
+        let seccomp_path = std::path::PathBuf::from("config/seccomp-default.json");
+        let seccomp_profile = if seccomp_path.exists() {
+            Some(seccomp_path)
+        } else {
+            None
+        };
+
+        let seccomp_opt = match &seccomp_profile {
+            Some(path) => format!("seccomp={}", path.display()),
+            None => {
+                tracing::warn!("No seccomp profile found at config/seccomp-default.json, using unconfined");
+                "seccomp=unconfined".to_string()
+            }
+        };
+
         Self {
             policy: SandboxPolicy::Moderate,
             default_network: NetworkMode::None,
@@ -367,8 +386,9 @@ impl Default for SandboxConfig {
             image: "alpine:latest".to_string(),
             security_opts: vec![
                 "no-new-privileges:true".to_string(),
-                "seccomp=unconfined".to_string(), // TODO: Add custom seccomp profile
+                seccomp_opt,
             ],
+            seccomp_profile,
             runtime_preference: "auto".to_string(),
             prefer_apple_container: true,
         }
