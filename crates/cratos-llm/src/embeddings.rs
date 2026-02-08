@@ -158,11 +158,15 @@ impl TractEmbeddingProvider {
         })
     }
 
-    /// Tokenize text and return input tensors
+    /// Tokenize text and return input tensors (input_ids, attention_mask, token_type_ids).
     fn tokenize(
         &self,
         text: &str,
-    ) -> Result<(tract_onnx::prelude::Tensor, tract_onnx::prelude::Tensor)> {
+    ) -> Result<(
+        tract_onnx::prelude::Tensor,
+        tract_onnx::prelude::Tensor,
+        tract_onnx::prelude::Tensor,
+    )> {
         use tract_onnx::prelude::*;
 
         let encoding = self
@@ -176,11 +180,17 @@ impl TractEmbeddingProvider {
             .iter()
             .map(|&x| x as i64)
             .collect();
+        let mut token_type_ids: Vec<i64> = encoding
+            .get_type_ids()
+            .iter()
+            .map(|&x| x as i64)
+            .collect();
 
         // Truncate if needed
         if input_ids.len() > self.max_length {
             input_ids.truncate(self.max_length);
             attention_mask.truncate(self.max_length);
+            token_type_ids.truncate(self.max_length);
         }
 
         let seq_len = input_ids.len();
@@ -198,7 +208,17 @@ impl TractEmbeddingProvider {
                 })?
                 .into();
 
-        Ok((input_ids_tensor, attention_mask_tensor))
+        let token_type_ids_tensor: Tensor =
+            tract_ndarray::Array2::from_shape_vec((1, seq_len), token_type_ids)
+                .map_err(|e| {
+                    Error::Provider(format!(
+                        "Failed to create token_type_ids tensor: {}",
+                        e
+                    ))
+                })?
+                .into();
+
+        Ok((input_ids_tensor, attention_mask_tensor, token_type_ids_tensor))
     }
 
     /// Mean pooling over token embeddings
@@ -260,13 +280,17 @@ impl EmbeddingProvider for TractEmbeddingProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         use tract_onnx::prelude::*;
 
-        let (input_ids, attention_mask) = self.tokenize(text)?;
+        let (input_ids, attention_mask, token_type_ids) = self.tokenize(text)?;
         let attention_mask_clone = attention_mask.clone();
 
-        // Run inference
+        // Run inference (model expects: input_ids, attention_mask, token_type_ids)
         let outputs = self
             .model
-            .run(tvec!(input_ids.into(), attention_mask.into()))
+            .run(tvec!(
+                input_ids.into(),
+                attention_mask.into(),
+                token_type_ids.into()
+            ))
             .map_err(|e| Error::Provider(format!("Inference failed: {}", e)))?;
 
         // Get token embeddings (first output)
