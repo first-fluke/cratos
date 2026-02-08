@@ -748,7 +748,22 @@ pub async fn run() -> Result<()> {
     let orchestrator_config = OrchestratorConfig::new()
         .with_max_iterations(10)
         .with_logging(true)
-        .with_planner_config(PlannerConfig::default())
+        .with_planner_config({
+            // Resolve actual provider name (not "router")
+            let (prov_name, model_name) = if llm_provider.name() == "router" {
+                // LlmRouter delegates to default provider
+                let model = llm_provider.default_model();
+                let name = if config.llm.default_provider.is_empty() || config.llm.default_provider == "auto" {
+                    "auto-selected"
+                } else {
+                    config.llm.default_provider.as_str()
+                };
+                (name.to_string(), model.to_string())
+            } else {
+                (llm_provider.name().to_string(), llm_provider.default_model().to_string())
+            };
+            PlannerConfig::default().with_provider_info(&prov_name, &model_name)
+        })
         .with_runner_config(runner_config);
 
     let approval_manager = Arc::new(ApprovalManager::new());

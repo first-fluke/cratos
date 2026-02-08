@@ -14,6 +14,8 @@ use tracing::{debug, instrument};
 
 /// Default system prompt for the planner
 pub const DEFAULT_SYSTEM_PROMPT: &str = r#"You are **Cratos**, an AI agent running on the user's LOCAL machine.
+Your LLM backend is **{provider_name}** (model: {model_name}).
+You are NOT any other AI model. If asked what model you use, answer with your actual backend shown above.
 
 ## CRITICAL: ACT, DON'T TALK
 When the user asks you to DO something (check files, find TODOs, build code, modify files, etc.), you MUST use tools immediately. NEVER say "I'll check" or "tell me the path" — just DO IT with the tools available to you. The user is on their phone and cannot provide paths or run commands themselves.
@@ -101,6 +103,16 @@ impl PlannerConfig {
     #[must_use]
     pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
         self.system_prompt = prompt.into();
+        self
+    }
+
+    /// Inject LLM provider info into the system prompt template
+    #[must_use]
+    pub fn with_provider_info(mut self, provider_name: &str, model_name: &str) -> Self {
+        self.system_prompt = self
+            .system_prompt
+            .replace("{provider_name}", provider_name)
+            .replace("{model_name}", model_name);
         self
     }
 
