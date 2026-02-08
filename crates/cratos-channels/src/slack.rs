@@ -151,10 +151,7 @@ impl SlackAdapter {
         SlackApiToken::new(self.config.bot_token.clone().into())
     }
 
-    /// Get the app token (for socket mode)
-    ///
-    /// Note: Currently unused but required for future Socket Mode implementation.
-    #[allow(dead_code)] // Reserved for Socket Mode feature
+    /// Get the app token (for Socket Mode)
     fn app_token(&self) -> SlackApiToken {
         SlackApiToken::new(self.config.app_token.clone().into())
     }
@@ -337,42 +334,54 @@ impl SlackAdapter {
         Some(normalized)
     }
 
-    /// Start the bot with the given orchestrator
+    /// Start the bot in Socket Mode with the given orchestrator.
     ///
-    /// Note: Full Socket Mode implementation requires additional setup.
-    /// This implementation uses a polling approach for simplicity.
-    /// For production, consider implementing the full socket mode client.
-    #[instrument(skip(self, _orchestrator))]
-    pub async fn run(self: Arc<Self>, _orchestrator: Arc<Orchestrator>) -> Result<()> {
-        info!("Starting Slack adapter");
+    /// Connects to Slack via WebSocket (Socket Mode), listens for
+    /// message and app_mention events, and routes them to the orchestrator.
+    #[instrument(skip(self, orchestrator))]
+    pub async fn run(self: Arc<Self>, orchestrator: Arc<Orchestrator>) -> Result<()> {
+        info!("Starting Slack adapter in Socket Mode");
 
         // Fetch bot info first
         self.fetch_bot_info().await?;
 
         info!(
             bot_user_id = ?self.get_bot_user_id().await,
-            "Slack adapter ready"
+            "Slack adapter ready, starting Socket Mode listener"
         );
 
-        // Note: Full Socket Mode requires implementing SlackSocketModeClientListener
-        // and using the socket_mode feature. For now, we log that we're ready.
-        // The actual message handling happens through the ChannelAdapter trait
-        // when messages are routed from a webhook or another integration.
-        //
-        // To implement full Socket Mode:
-        // 1. Enable the socket_mode feature in slack-morphism
-        // 2. Implement SlackSocketModeClientListener
-        // 3. Use SlackClientSocketModeConfig and register with the client
-        //
-        // For this implementation, we'll wait indefinitely as a placeholder
-        // for the real socket mode connection.
+        let connector = SlackClientHyperConnector::new()
+            .map_err(|e| Error::Slack(format!("HTTP connector: {}", e)))?;
+        let client = Arc::new(SlackClient::new(connector));
 
-        info!("Slack adapter is running. Waiting for shutdown signal...");
+        let callbacks = SlackSocketModeListenerCallbacks::new()
+            .with_push_events(socket_mode_push_handler)
+            .with_interaction_events(socket_mode_interaction_handler);
 
-        // Keep running until shutdown
-        tokio::signal::ctrl_c()
+        let user_state = SocketModeState {
+            adapter: self.clone(),
+            orchestrator: orchestrator.clone(),
+        };
+
+        let listener_env = Arc::new(
+            SlackClientEventsListenerEnvironment::new(client.clone())
+                .with_user_state(user_state),
+        );
+
+        let listener = SlackClientSocketModeListener::new(
+            &SlackClientSocketModeConfig::new(),
+            listener_env,
+            callbacks,
+        );
+
+        let app_token = self.app_token();
+        listener
+            .listen_for(&app_token)
             .await
-            .map_err(|e| Error::Slack(format!("Signal error: {}", e)))?;
+            .map_err(|e| Error::Slack(format!("Socket Mode listen: {}", e)))?;
+
+        info!("Socket Mode connected, serving events...");
+        listener.serve().await;
 
         info!("Slack adapter shutdown complete");
         Ok(())
@@ -440,11 +449,8 @@ impl SlackAdapter {
         }
     }
 
-    /// Build Slack blocks from buttons
-    ///
-    /// Note: Currently unused but reserved for interactive message support.
-    #[allow(dead_code)] // Reserved for interactive messages feature
-    fn build_blocks(text: &str, buttons: &[MessageButton]) -> Vec<SlackBlock> {
+    /// Build Slack blocks from buttons for interactive messages.
+    pub fn build_blocks(text: &str, buttons: &[MessageButton]) -> Vec<SlackBlock> {
         let mut blocks = vec![SlackBlock::Section(SlackSectionBlock::new().with_text(
             SlackBlockText::MarkDown(SlackBlockMarkDownText::new(text.to_string())),
         ))];
@@ -468,6 +474,201 @@ impl SlackAdapter {
         }
 
         blocks
+    }
+}
+
+/// Shared state passed to Socket Mode callbacks via user state.
+struct SocketModeState {
+    adapter: Arc<SlackAdapter>,
+    orchestrator: Arc<Orchestrator>,
+}
+
+/// Socket Mode push event handler (plain function, no captures).
+async fn socket_mode_push_handler(
+    event: SlackPushEventCallback,
+    _client: Arc<SlackHyperClient>,
+    states: SlackClientEventsUserState,
+) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let state_guard = states.read().await;
+    let Some(state) = state_guard.get_user_state::<SocketModeState>() else {
+        warn!("SocketModeState not found in user state");
+        return Ok(());
+    };
+
+    let adapter = &state.adapter;
+    let orchestrator = &state.orchestrator;
+
+    // Workspace allow-list check
+    if !adapter.is_workspace_allowed(event.team_id.as_ref()) {
+        debug!(team_id = %event.team_id, "Workspace not allowed, ignoring");
+        return Ok(());
+    }
+
+    match event.event {
+        SlackEventCallbackBody::Message(msg) => {
+            handle_message_event(adapter, orchestrator, msg).await;
+        }
+        SlackEventCallbackBody::AppMention(mention) => {
+            handle_app_mention_event(adapter, orchestrator, mention).await;
+        }
+        _ => {
+            debug!("Unhandled Slack event type, ignoring");
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle a Slack message event from Socket Mode.
+async fn handle_message_event(
+    adapter: &SlackAdapter,
+    orchestrator: &Orchestrator,
+    msg: SlackMessageEvent,
+) {
+    // Skip bot messages (including our own) to avoid loops
+    if msg.sender.bot_id.is_some() {
+        return;
+    }
+
+    let Some(channel_id) = msg.origin.channel.as_ref() else {
+        return;
+    };
+    let Some(user_id) = msg.sender.user.as_ref() else {
+        return;
+    };
+    let text = msg
+        .content
+        .as_ref()
+        .and_then(|c| c.text.as_ref())
+        .cloned()
+        .unwrap_or_default();
+
+    let ts = msg.origin.ts.to_string();
+    let thread_ts = msg.origin.thread_ts.as_ref().map(|t| t.to_string());
+
+    if let Err(e) = adapter
+        .process_message(
+            orchestrator,
+            channel_id.as_ref(),
+            user_id.as_ref(),
+            &text,
+            &ts,
+            thread_ts.as_deref(),
+        )
+        .await
+    {
+        error!(error = %e, "Failed to process Slack message event");
+    }
+}
+
+/// Handle a Slack app_mention event from Socket Mode.
+async fn handle_app_mention_event(
+    adapter: &SlackAdapter,
+    orchestrator: &Orchestrator,
+    mention: SlackAppMentionEvent,
+) {
+    let channel_id = mention.channel.to_string();
+    let user_id = mention.user.to_string();
+    let text = mention
+        .content
+        .text
+        .as_ref()
+        .cloned()
+        .unwrap_or_default();
+    let ts = mention.origin.ts.to_string();
+    let thread_ts = mention.origin.thread_ts.as_ref().map(|t| t.to_string());
+
+    if let Err(e) = adapter
+        .process_message(
+            orchestrator,
+            &channel_id,
+            &user_id,
+            &text,
+            &ts,
+            thread_ts.as_deref(),
+        )
+        .await
+    {
+        error!(error = %e, "Failed to process Slack app_mention event");
+    }
+}
+
+/// Socket Mode interaction event handler (button clicks, etc.).
+async fn socket_mode_interaction_handler(
+    event: SlackInteractionEvent,
+    _client: Arc<SlackHyperClient>,
+    states: SlackClientEventsUserState,
+) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let state_guard = states.read().await;
+    let Some(state) = state_guard.get_user_state::<SocketModeState>() else {
+        warn!("SocketModeState not found in user state");
+        return Ok(());
+    };
+
+    match event {
+        SlackInteractionEvent::BlockActions(action_event) => {
+            handle_block_actions(state, action_event).await;
+        }
+        _ => {
+            debug!("Unhandled Slack interaction type, ignoring");
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle block action interactions (button clicks).
+async fn handle_block_actions(
+    state: &SocketModeState,
+    event: SlackInteractionBlockActionsEvent,
+) {
+    let actions = match &event.actions {
+        Some(actions) if !actions.is_empty() => actions,
+        _ => return,
+    };
+
+    let user_id = event
+        .user
+        .as_ref()
+        .map(|u| u.id.to_string())
+        .unwrap_or_default();
+    let channel_id = event
+        .channel
+        .as_ref()
+        .map(|c| c.id.to_string())
+        .unwrap_or_default();
+
+    for action in actions {
+        let action_id = action.action_id.to_string();
+        debug!(
+            action_id = %action_id,
+            user = %user_id,
+            channel = %channel_id,
+            "Processing block action"
+        );
+
+        // Route the action as a message to the orchestrator
+        let text = format!("/action {}", action_id);
+        let ts = action
+            .action_ts
+            .as_ref()
+            .map(|t| t.to_string())
+            .unwrap_or_default();
+
+        if let Err(e) = state
+            .adapter
+            .process_message(
+                &state.orchestrator,
+                &channel_id,
+                &user_id,
+                &text,
+                &ts,
+                None,
+            )
+            .await
+        {
+            error!(error = %e, action_id = %action_id, "Failed to process block action");
+        }
     }
 }
 

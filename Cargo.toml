@@ -10,6 +10,7 @@ members = [
     "crates/cratos-search",
     "crates/cratos-audio",
     "crates/cratos-canvas",
+    "crates/cratos-crypto",
 ]
 
 [workspace.package]
@@ -75,7 +76,7 @@ dirs = "5.0"
 # Embeddings & Vector Search (tract = pure Rust, no C++ linking issues)
 tract-onnx = "0.22"
 tokenizers = { version = "0.22", default-features = false, features = ["http", "fancy-regex"] }
-hf-hub = { version = "0.4", default-features = false, features = ["rustls-tls"] }
+hf-hub = { version = "0.4", default-features = false, features = ["rustls-tls", "ureq"] }
 usearch = "2"
 
 # Local ML inference (candle = pure Rust, no C++ dependencies)
@@ -93,6 +94,15 @@ cratos-skills = { path = "crates/cratos-skills" }
 cratos-search = { path = "crates/cratos-search" }
 cratos-audio = { path = "crates/cratos-audio" }
 cratos-canvas = { path = "crates/cratos-canvas" }
+cratos-crypto = { path = "crates/cratos-crypto" }
+
+# Cryptography (E2E encryption + device auth)
+aes-gcm = "0.10"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+hkdf = "0.12"
+zeroize = { version = "1", features = ["derive"] }
+rand = "0.8"
 
 # Audio
 cpal = "0.15"
@@ -128,6 +138,8 @@ cratos-search.workspace = true
 
 tokio.workspace = true
 axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
