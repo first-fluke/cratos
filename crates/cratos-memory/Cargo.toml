@@ -1,0 +1,43 @@
+[package]
+name = "cratos-memory"
+description = "Graph RAG conversation memory for Cratos AI assistant"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Core types (Message, MessageRole)
+cratos-llm = { path = "../cratos-llm" }
+
+# Vector search (optional — requires embeddings feature)
+cratos-search = { path = "../cratos-search", optional = true }
+
+# Storage
+sqlx = { workspace = true }
+
+# Async
+tokio.workspace = true
+async-trait.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Utilities
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+dirs.workspace = true
+
+[features]
+default = []
+## Enable embedding-based vector search (requires cratos-llm/embeddings + cratos-search)
+embeddings = ["cratos-llm/embeddings", "dep:cratos-search"]
+
+[dev-dependencies]
+tokio-test.workspace = true
+tempfile = "3.10"

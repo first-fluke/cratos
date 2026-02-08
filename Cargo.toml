@@ -11,6 +11,7 @@ members = [
     "crates/cratos-audio",
     "crates/cratos-canvas",
     "crates/cratos-crypto",
+    "crates/cratos-memory",
 ]
 
 [workspace.package]
@@ -95,6 +96,7 @@ cratos-search = { path = "crates/cratos-search" }
 cratos-audio = { path = "crates/cratos-audio" }
 cratos-canvas = { path = "crates/cratos-canvas" }
 cratos-crypto = { path = "crates/cratos-crypto" }
+cratos-memory = { path = "crates/cratos-memory" }
 
 # Cryptography (E2E encryption + device auth)
 aes-gcm = "0.10"
@@ -128,8 +130,9 @@ name = "cratos"
 path = "src/main.rs"
 
 [dependencies]
-cratos-core.workspace = true
+cratos-core = { workspace = true, features = ["embeddings"] }
 cratos-channels.workspace = true
+cratos-memory = { workspace = true, features = ["embeddings"] }
 cratos-tools.workspace = true
 cratos-llm = { workspace = true, features = ["embeddings"] }
 cratos-replay = { workspace = true, features = ["search"] }
