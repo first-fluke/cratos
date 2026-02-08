@@ -294,6 +294,7 @@ fn test_message_role_conversion() {
             content: "Test message".to_string(),
             name: None,
             tool_call_id: None,
+            tool_calls: Vec::new(),
         };
         assert!(!message.content.is_empty());
     }
@@ -306,6 +307,7 @@ fn test_completion_request_builder() {
         content: "You are a helpful assistant.".to_string(),
         name: None,
         tool_call_id: None,
+        tool_calls: Vec::new(),
     }];
 
     let request = CompletionRequest::new("gpt-4o")

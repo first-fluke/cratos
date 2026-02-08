@@ -338,9 +338,10 @@ impl GeminiConfig {
         }
 
         // 2. Try Cratos OAuth token
-        if let Some(tokens) = cli_auth::read_cratos_google_oauth() {
+        if let Some(mut tokens) = cli_auth::read_cratos_google_oauth() {
             if cli_auth::is_token_expired(tokens.expiry_date) {
-                info!("Cratos Google OAuth token expired, will attempt refresh on first request");
+                info!("Cratos Google OAuth token expired, attempting refresh...");
+                tokens = Self::try_refresh_blocking(tokens);
             }
             // Determine the source of the token based on configuration.
             // If CRATOS_GOOGLE_CLIENT_ID is set AND distinct from the default (restricted) ID, 
@@ -390,7 +391,7 @@ impl GeminiConfig {
         // 4. Try Gemini CLI OAuth credentials
         if let Some(creds) = cli_auth::read_gemini_oauth() {
             if cli_auth::is_token_expired(creds.expiry_date) {
-                info!("Gemini CLI token expired, will attempt refresh on first request");
+                info!("Gemini CLI token expired — run `gemini auth login` to refresh");
             }
             return Ok(Self {
                 auth: GeminiAuth::OAuth(creds.access_token),
@@ -407,6 +408,50 @@ impl GeminiConfig {
             "GOOGLE_API_KEY, GEMINI_API_KEY, Cratos OAuth, Gemini OAuth, or gcloud credentials not found"
                 .to_string(),
         ))
+    }
+
+    /// Try to refresh an expired OAuth token synchronously (blocking).
+    /// Returns the refreshed tokens on success, or the original tokens on failure.
+    fn try_refresh_blocking(tokens: crate::oauth::OAuthTokens) -> crate::oauth::OAuthTokens {
+        let refresh_tok = match tokens.refresh_token.as_deref() {
+            Some(rt) if !rt.is_empty() => rt.to_string(),
+            _ => {
+                tracing::warn!("No refresh token available, using expired access token");
+                return tokens;
+            }
+        };
+
+        let oauth_config = crate::oauth_config::google_oauth_config();
+        let token_file = oauth_config.token_file.clone();
+
+        // Use a blocking reqwest client for sync context
+        let result = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok()?;
+            rt.block_on(async {
+                crate::oauth::refresh_token(&oauth_config, &refresh_tok).await.ok()
+            })
+        })
+        .join()
+        .ok()
+        .flatten();
+
+        match result {
+            Some(new_tokens) => {
+                if let Err(e) = crate::oauth::save_tokens(&token_file, &new_tokens) {
+                    tracing::warn!("Failed to save refreshed tokens: {}", e);
+                } else {
+                    info!("Google OAuth token refreshed successfully");
+                }
+                new_tokens
+            }
+            None => {
+                tracing::warn!("Failed to refresh Google OAuth token, using expired token");
+                tokens
+            }
+        }
     }
 
     /// Set the base URL
@@ -547,21 +592,26 @@ impl GeminiProvider {
             .await
             .map_err(|e| Error::Network(e.to_string()))?;
 
-        if !resp.status().is_success() {
-            debug!("Code Assist loadCodeAssist failed: HTTP {}", resp.status());
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            debug!("Code Assist loadCodeAssist failed: HTTP {} body={}", status, body);
             return Ok(String::new());
         }
 
-        let load: LoadCodeAssistResponse = resp
-            .json()
-            .await
-            .map_err(|e| Error::InvalidResponse(e.to_string()))?;
+        let body_text = resp.text().await.map_err(|e| Error::InvalidResponse(e.to_string()))?;
+        debug!("Code Assist loadCodeAssist response: {}", &body_text[..body_text.len().min(500)]);
 
-        if let Some(project) = load.cloudaicompanion_project {
-            return Ok(project);
+        let load: LoadCodeAssistResponse = serde_json::from_str(&body_text)
+            .map_err(|e| Error::InvalidResponse(format!("{}: {}", e, &body_text[..body_text.len().min(200)])))?;
+
+        if let Some(ref project) = load.cloudaicompanion_project {
+            debug!("Code Assist project resolved: {}", project);
+            return Ok(project.clone());
         }
 
         if load.current_tier.is_some() {
+            debug!("Code Assist: has current_tier but no project, returning empty");
             return Ok(String::new());
         }
 
@@ -668,12 +718,29 @@ impl GeminiProvider {
                     });
                 }
                 MessageRole::Assistant => {
-                    gemini_contents.push(GeminiContent {
-                        role: Some("model".to_string()),
-                        parts: vec![GeminiPart::Text {
+                    let mut parts: Vec<GeminiPart> = Vec::new();
+                    if !msg.content.is_empty() {
+                        parts.push(GeminiPart::Text {
                             text: msg.content.clone(),
-                        }],
-                    });
+                        });
+                    }
+                    // Include function calls from assistant's tool_calls
+                    for tc in &msg.tool_calls {
+                        let args = serde_json::from_str(&tc.arguments)
+                            .unwrap_or_else(|_| serde_json::json!({}));
+                        parts.push(GeminiPart::FunctionCall {
+                            function_call: FunctionCall {
+                                name: tc.name.clone(),
+                                args,
+                            },
+                        });
+                    }
+                    if !parts.is_empty() {
+                        gemini_contents.push(GeminiContent {
+                            role: Some("model".to_string()),
+                            parts,
+                        });
+                    }
                 }
                 MessageRole::Tool => {
                     if let Some(tool_name) = &msg.name {
@@ -824,10 +891,9 @@ impl GeminiProvider {
         // Code Assist wraps request: {model, project, request: {...}}
         let response = if is_code_assist {
             let project_id = self.get_code_assist_project().await?;
-            // Code Assist API expects model name without "models/" prefix (e.g. "gemini-2.5-flash")
-            // The `model` variable usually comes as "gemini-2.5-flash" from constants.
+            debug!("Code Assist: model={}, project_id={:?}", model, if project_id.is_empty() { "<EMPTY>" } else { &project_id });
             let wrapped = serde_json::json!({
-                "model": model, 
+                "model": model,
                 "project": project_id,
                 "request": &request,
             });

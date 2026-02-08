@@ -27,6 +27,14 @@ pub trait EventStoreTrait: Send + Sync {
     /// Get events for an execution
     async fn get_events(&self, execution_id: Uuid) -> Result<Vec<Event>>;
 
+    /// Update execution status and output
+    async fn update_execution_status(
+        &self,
+        id: Uuid,
+        status: &str,
+        output_text: Option<&str>,
+    ) -> Result<()>;
+
     /// Get the event store name (for logging)
     fn name(&self) -> &str;
 }
@@ -251,15 +259,27 @@ impl EventStore {
         Self::row_to_execution(row)
     }
 
-    /// Update execution status
-    #[instrument(skip(self))]
-    pub async fn update_execution_status(
+    /// Update execution status (typed)
+    pub async fn update_execution_status_typed(
         &self,
         id: Uuid,
         status: ExecutionStatus,
         output_text: Option<&str>,
     ) -> Result<()> {
-        let completed_at = if status.is_terminal() {
+        self.update_execution_status_str(id, status.as_str(), output_text)
+            .await
+    }
+
+    /// Update execution status (string-based, used by trait)
+    #[instrument(skip(self))]
+    pub async fn update_execution_status_str(
+        &self,
+        id: Uuid,
+        status: &str,
+        output_text: Option<&str>,
+    ) -> Result<()> {
+        let is_terminal = matches!(status, "completed" | "failed" | "cancelled");
+        let completed_at = if is_terminal {
             Some(Utc::now().to_rfc3339())
         } else {
             None
@@ -274,7 +294,7 @@ impl EventStore {
             "#,
         )
         .bind(id.to_string())
-        .bind(status.as_str())
+        .bind(status)
         .bind(output_text)
         .bind(completed_at)
         .bind(Utc::now().to_rfc3339())
@@ -665,6 +685,15 @@ impl EventStoreTrait for EventStore {
 
     async fn get_events(&self, execution_id: Uuid) -> Result<Vec<Event>> {
         self.get_execution_events(execution_id).await
+    }
+
+    async fn update_execution_status(
+        &self,
+        id: Uuid,
+        status: &str,
+        output_text: Option<&str>,
+    ) -> Result<()> {
+        self.update_execution_status_str(id, status, output_text).await
     }
 
     fn name(&self) -> &str {

@@ -204,7 +204,9 @@ max_output_length = 1000000
 
 [approval]
 # Approval mode: always | risky_only | never
-default_mode = "risky_only"
+# "never" = auto-approve all tools (recommended for local/personal use)
+# "risky_only" = block high-risk tools (exec, browser) unless approved
+default_mode = "never"
 
 [replay]
 # Event log retention in days

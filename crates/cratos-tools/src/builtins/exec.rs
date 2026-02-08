@@ -33,6 +33,10 @@ const SHELL_METACHARACTERS: &[char] = &[
 ];
 
 /// Dangerous commands that are always blocked
+///
+/// NOTE: Dev tools (cargo, npm, pip, brew, curl, git, etc.) are intentionally
+/// ALLOWED because Cratos runs on the user's own machine as a personal assistant.
+/// Only truly destructive or privilege-escalation commands are blocked.
 static BLOCKED_COMMANDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     HashSet::from([
         // Destructive system commands
@@ -48,7 +52,6 @@ static BLOCKED_COMMANDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "poweroff",
         "halt",
         "init",
-        "systemctl",
         // User/permission manipulation
         "passwd",
         "useradd",
@@ -56,25 +59,11 @@ static BLOCKED_COMMANDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "usermod",
         "groupadd",
         "groupdel",
-        "chown",
-        "chmod",
-        "chgrp",
-        // Network dangerous
+        // Network firewall (can lock out user)
         "iptables",
         "ip6tables",
         "nft",
-        "route",
-        // Package managers (can install malware)
-        "apt",
-        "apt-get",
-        "yum",
-        "dnf",
-        "pacman",
-        "brew",
-        "pip",
-        "npm",
-        "cargo",
-        // Shell spawning
+        // Shell spawning (prevents shell escape)
         "bash",
         "sh",
         "zsh",
@@ -82,21 +71,10 @@ static BLOCKED_COMMANDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "csh",
         "tcsh",
         "ksh",
-        // Dangerous utilities
-        "curl",
-        "wget",
+        // Network attack tools
         "nc",
         "netcat",
         "ncat",
-        "ssh",
-        "scp",
-        "rsync",
-        "ftp",
-        "sftp",
-        // Process control
-        "kill",
-        "killall",
-        "pkill",
         // Privilege escalation
         "sudo",
         "su",
@@ -163,7 +141,7 @@ impl ExecTool {
     /// Create a new exec tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("exec", "Execute a shell command")
+        let definition = ToolDefinition::new("exec", "Execute a command directly on the user's local machine. No shell pipes or chaining — use separate calls for each command. Example: command=\"ps\" args=[\"aux\"] to list processes.")
             .with_category(ToolCategory::Exec)
             .with_risk_level(RiskLevel::High)
             .with_parameters(serde_json::json!({
@@ -171,12 +149,12 @@ impl ExecTool {
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "Command to execute"
+                        "description": "The executable name or path (e.g. \"ps\", \"ls\", \"cat\", \"grep\"). Can include arguments like \"ps aux\" which will be auto-split."
                     },
                     "args": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Command arguments"
+                        "description": "Command arguments as separate strings, e.g. [\"-la\", \"/tmp\"]. Pipes and shell operators are NOT supported."
                     },
                     "cwd": {
                         "type": "string",
@@ -184,8 +162,7 @@ impl ExecTool {
                     },
                     "timeout_secs": {
                         "type": "integer",
-                        "description": "Timeout in seconds",
-                        "default": 60
+                        "description": "Timeout in seconds (max 60)"
                     }
                 },
                 "required": ["command"]
@@ -210,10 +187,15 @@ impl Tool for ExecTool {
     async fn execute(&self, input: serde_json::Value) -> Result<ToolResult> {
         let start = Instant::now();
 
-        let command = input
+        let raw_command = input
             .get("command")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::InvalidInput("Missing 'command' parameter".to_string()))?;
+
+        // Split command on whitespace: "ps aux" → program="ps", prefix_args=["aux"]
+        let mut parts = raw_command.split_whitespace();
+        let command = parts.next().unwrap_or(raw_command);
+        let prefix_args: Vec<&str> = parts.collect();
 
         // SECURITY: Check if command is blocked
         if is_command_blocked(command) {
@@ -238,7 +220,18 @@ impl Tool for ExecTool {
             )));
         }
 
-        let args: Vec<String> = input
+        // Check prefix args from command string for metacharacters too
+        for arg in &prefix_args {
+            if let Some(c) = contains_shell_metacharacters(arg) {
+                warn!(arg = %arg, metachar = %c, "Command injection in split args");
+                return Err(Error::PermissionDenied(format!(
+                    "Command contains blocked shell metacharacter '{}'.",
+                    c
+                )));
+            }
+        }
+
+        let user_args: Vec<String> = input
             .get("args")
             .and_then(|v| v.as_array())
             .map(|arr| {
@@ -247,6 +240,13 @@ impl Tool for ExecTool {
                     .collect()
             })
             .unwrap_or_default();
+
+        // Combine prefix args (from command split) + user-provided args
+        let args: Vec<String> = prefix_args
+            .iter()
+            .map(|s| s.to_string())
+            .chain(user_args)
+            .collect();
 
         // SECURITY: Check args for dangerous patterns
         for arg in &args {
@@ -390,11 +390,13 @@ mod tests {
         assert!(!is_command_blocked("echo"));
         assert!(!is_command_blocked("git"));
 
-        // Note: Package managers like cargo, npm, pip are blocked for security
-        // as they can install arbitrary code. Use explicit allowlist if needed.
-        assert!(is_command_blocked("cargo"));
-        assert!(is_command_blocked("npm"));
-        assert!(is_command_blocked("pip"));
+        // Dev tools are allowed (personal machine, not a shared server)
+        assert!(!is_command_blocked("cargo"));
+        assert!(!is_command_blocked("npm"));
+        assert!(!is_command_blocked("pip"));
+        assert!(!is_command_blocked("brew"));
+        assert!(!is_command_blocked("curl"));
+        assert!(!is_command_blocked("wget"));
     }
 
     #[test]

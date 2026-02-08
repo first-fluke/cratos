@@ -8,7 +8,7 @@ use crate::error::Result;
 use crate::memory::{MemoryStore, SessionContext, SessionStore, WorkingMemory};
 use crate::olympus_hooks::OlympusHooks;
 use crate::planner::{Planner, PlannerConfig};
-use cratos_llm::{LlmProvider, ToolCall};
+use cratos_llm::{LlmProvider, Message, ToolCall};
 use cratos_replay::{Event, EventStoreTrait, EventType, Execution};
 use cratos_tools::{RunnerConfig, ToolRegistry, ToolRunner};
 use serde::{Deserialize, Serialize};
@@ -305,6 +305,9 @@ impl Orchestrator {
         let mut model_used = None;
         let mut iteration = 0;
 
+        // Messages accumulate tool call history across iterations
+        let mut messages = messages;
+
         // Get available tools
         let tools = self.runner.registry().to_llm_tools();
 
@@ -341,10 +344,17 @@ impl Orchestrator {
                     )
                     .await;
 
+                    let error_msg = format!("I encountered an error: {}", e);
+                    // Update execution status in DB
+                    if let Some(store) = &self.event_store {
+                        let _ = store
+                            .update_execution_status(execution_id, "failed", Some(&error_msg))
+                            .await;
+                    }
                     return Ok(ExecutionResult {
                         execution_id,
                         status: ExecutionStatus::Failed,
-                        response: format!("I encountered an error: {}", e),
+                        response: error_msg,
                         tool_calls: tool_call_records,
                         iterations: iteration,
                         duration_ms: start_time.elapsed().as_millis() as u64,
@@ -378,6 +388,12 @@ impl Orchestrator {
 
             // Execute tool calls
             if !plan_response.tool_calls.is_empty() {
+                // Add assistant message with tool calls to conversation history
+                messages.push(Message::assistant_with_tool_calls(
+                    plan_response.content.clone().unwrap_or_default(),
+                    plan_response.tool_calls.clone(),
+                ));
+
                 let results = self
                     .execute_tool_calls(
                         execution_id,
@@ -391,7 +407,10 @@ impl Orchestrator {
                 let tool_messages =
                     Planner::build_tool_result_messages(&plan_response.tool_calls, &results);
 
-                // Add tool messages to session
+                // Add tool result messages to conversation history for next iteration
+                messages.extend(tool_messages.clone());
+
+                // Also persist to session store
                 if let Ok(Some(mut session)) = self.memory.get(&session_key).await {
                     for msg in tool_messages {
                         if let Some(tool_call_id) = &msg.tool_call_id {
@@ -448,6 +467,20 @@ impl Orchestrator {
             duration_ms = %duration_ms,
             "Execution completed"
         );
+
+        // Update execution status in DB
+        if let Some(store) = &self.event_store {
+            if let Err(e) = store
+                .update_execution_status(
+                    execution_id,
+                    "completed",
+                    Some(&final_response),
+                )
+                .await
+            {
+                warn!(error = %e, "Failed to update execution status");
+            }
+        }
 
         Ok(ExecutionResult {
             execution_id,

@@ -25,7 +25,7 @@ use cratos_tools::{register_builtins, RunnerConfig, ToolRegistry};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Application configuration
 #[derive(Debug, Clone, Deserialize)]
@@ -427,17 +427,23 @@ pub(crate) fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn Llm
             info!("Registered Anthropic provider");
         }
     }
-    if let Ok(config) = GeminiConfig::from_env() {
-        let auth_source = config.auth_source;
-        cratos_llm::cli_auth::register_auth_source("gemini", auth_source);
-        if let Ok(provider) = GeminiProvider::new(config) {
-            router.register("gemini", Arc::new(provider));
-            registered_count += 1;
-            if default_provider.is_none() {
-                default_provider = Some("gemini".to_string());
+    match GeminiConfig::from_env() {
+        Ok(config) => {
+            let auth_source = config.auth_source;
+            cratos_llm::cli_auth::register_auth_source("gemini", auth_source);
+            match GeminiProvider::new(config) {
+                Ok(provider) => {
+                    router.register("gemini", Arc::new(provider));
+                    registered_count += 1;
+                    if default_provider.is_none() {
+                        default_provider = Some("gemini".to_string());
+                    }
+                    info!("Registered Gemini provider ({})", auth_source);
+                }
+                Err(e) => debug!("Gemini provider init failed: {}", e),
             }
-            info!("Registered Gemini provider ({})", auth_source);
         }
+        Err(e) => debug!("Gemini config not available: {}", e),
     }
     if let Ok(config) = GlmConfig::from_env() {
         if let Ok(provider) = GlmProvider::new(config) {
@@ -737,11 +743,13 @@ pub async fn run() -> Result<()> {
     let shutdown_controller = ShutdownController::new();
     info!("Shutdown controller initialized (timeout: 30s)");
 
+    let allow_high_risk = config.approval.default_mode == "never";
+    let runner_config = RunnerConfig::default().with_high_risk(allow_high_risk);
     let orchestrator_config = OrchestratorConfig::new()
         .with_max_iterations(10)
         .with_logging(true)
         .with_planner_config(PlannerConfig::default())
-        .with_runner_config(RunnerConfig::default());
+        .with_runner_config(runner_config);
 
     let approval_manager = Arc::new(ApprovalManager::new());
     info!(

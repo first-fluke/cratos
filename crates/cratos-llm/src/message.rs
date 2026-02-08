@@ -2,6 +2,7 @@
 //!
 //! This module defines the core message types used in LLM conversations.
 
+use crate::ToolCall;
 use serde::{Deserialize, Serialize};
 
 /// Role in a conversation message
@@ -44,6 +45,9 @@ pub struct Message {
     /// Name (for tool calls)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Tool calls (for assistant messages requesting tool use)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ToolCall>,
 }
 
 impl Message {
@@ -55,6 +59,7 @@ impl Message {
             content: content.into(),
             tool_call_id: None,
             name: None,
+            tool_calls: Vec::new(),
         }
     }
 
@@ -66,6 +71,7 @@ impl Message {
             content: content.into(),
             tool_call_id: None,
             name: None,
+            tool_calls: Vec::new(),
         }
     }
 
@@ -77,6 +83,22 @@ impl Message {
             content: content.into(),
             tool_call_id: None,
             name: None,
+            tool_calls: Vec::new(),
+        }
+    }
+
+    /// Create an assistant message with tool calls
+    #[must_use]
+    pub fn assistant_with_tool_calls(
+        content: impl Into<String>,
+        tool_calls: Vec<ToolCall>,
+    ) -> Self {
+        Self {
+            role: MessageRole::Assistant,
+            content: content.into(),
+            tool_call_id: None,
+            name: None,
+            tool_calls,
         }
     }
 
@@ -88,6 +110,23 @@ impl Message {
             content: content.into(),
             tool_call_id: Some(tool_call_id.into()),
             name: None,
+            tool_calls: Vec::new(),
+        }
+    }
+
+    /// Create a tool response message with tool name
+    #[must_use]
+    pub fn tool_response_named(
+        tool_call_id: impl Into<String>,
+        name: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
+        Self {
+            role: MessageRole::Tool,
+            content: content.into(),
+            tool_call_id: Some(tool_call_id.into()),
+            name: Some(name.into()),
+            tool_calls: Vec::new(),
         }
     }
 }
