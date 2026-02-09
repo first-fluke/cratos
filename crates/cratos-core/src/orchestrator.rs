@@ -622,16 +622,49 @@ impl Orchestrator {
 
             // Execute tool calls
             if !plan_response.tool_calls.is_empty() {
+                // Gate: block browser if http_get already succeeded in this execution
+                let http_get_succeeded = tool_call_records.iter().any(|r| r.tool_name == "http_get" && r.success);
+                let filtered_calls: Vec<ToolCall> = plan_response.tool_calls.iter().filter(|call| {
+                    if call.name == "browser" && http_get_succeeded {
+                        warn!(
+                            execution_id = %execution_id,
+                            "Blocking browser call — http_get already returned data. Use that instead."
+                        );
+                        false
+                    } else {
+                        true
+                    }
+                }).cloned().collect();
+
+                // If all calls were filtered out, inject a synthetic nudge
+                if filtered_calls.is_empty() {
+                    messages.push(Message::assistant_with_tool_calls(
+                        plan_response.content.clone().unwrap_or_default(),
+                        plan_response.tool_calls.clone(),
+                    ));
+                    // Add fake tool results telling the model to use http_get data
+                    let nudge_messages: Vec<Message> = plan_response.tool_calls.iter().map(|call| {
+                        Message::tool_response_named(
+                            &call.id,
+                            &call.name,
+                            "Browser is not available. Analyze the data from the previous http_get response instead. \
+                             If you need more data, try http_get with a different URL.",
+                        )
+                    }).collect();
+                    messages.extend(nudge_messages);
+                    continue;
+                }
+
                 // Add assistant message with tool calls to conversation history
                 messages.push(Message::assistant_with_tool_calls(
                     plan_response.content.clone().unwrap_or_default(),
-                    plan_response.tool_calls.clone(),
+                    filtered_calls.clone(),
                 ));
 
                 let results = self
                     .execute_tool_calls(
                         execution_id,
-                        &plan_response.tool_calls,
+                        &filtered_calls,
                         &mut working_memory,
                         &mut tool_call_records,
                     )
@@ -639,7 +672,7 @@ impl Orchestrator {
 
                 // Build tool result messages
                 let tool_messages =
-                    Planner::build_tool_result_messages(&plan_response.tool_calls, &results);
+                    Planner::build_tool_result_messages(&filtered_calls, &results);
 
                 // Add tool result messages to conversation history for next iteration
                 // NOTE: Only added to the local `messages` vec (for the current execution loop).
