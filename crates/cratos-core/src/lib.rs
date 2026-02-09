@@ -73,7 +73,7 @@ pub use memory::{
 };
 pub use orchestrator::{
     ExecutionResult, ExecutionStatus, Orchestrator, OrchestratorConfig, OrchestratorInput,
-    ToolCallRecord,
+    SkillRouting, ToolCallRecord,
 };
 pub use permissions::{
     ChannelPermissions, ChannelToolConfig, PermissionConfig, PermissionError, PermissionManager,
@@ -95,7 +95,7 @@ pub use agents::{
     AgentConfig, AgentOrchestrator, AgentPersona, AgentResponse, AgentRouting, AgentToolConfig,
     CliConfig, CliError, CliProvider, CliProviderConfig, CliRegistry, CliResult, ExecutionContext,
     OrchestratorConfig as AgentOrchestratorConfig, OrchestratorError, OrchestratorResult,
-    ParsedAgentTask, TaskStatus,
+    ParsedAgentTask, PersonaMapping, TaskStatus,
 };
 
 // Re-export shutdown module types

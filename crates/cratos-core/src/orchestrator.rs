@@ -3,13 +3,14 @@
 //! This module provides the main orchestration logic that ties together
 //! the planner, tools, memory, and replay systems.
 
+use crate::agents::{extract_persona_mention, AgentConfig, PersonaMapping};
 use crate::approval::SharedApprovalManager;
 use crate::error::Result;
 use crate::event_bus::{EventBus, OrchestratorEvent};
 use crate::memory::{MemoryStore, SessionContext, SessionStore, WorkingMemory};
 use crate::olympus_hooks::OlympusHooks;
 use crate::planner::{Planner, PlannerConfig};
-use cratos_llm::{LlmProvider, Message, ToolCall};
+use cratos_llm::{LlmProvider, Message, ToolCall, ToolDefinition};
 use cratos_memory::GraphMemory;
 use cratos_replay::{Event, EventStoreTrait, EventType, Execution};
 use cratos_tools::{RunnerConfig, ToolRegistry, ToolRunner};
@@ -17,6 +18,14 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
+
+/// Trait for routing user input to a matching skill
+#[async_trait::async_trait]
+pub trait SkillRouting: Send + Sync {
+    /// Route input to the best matching skill.
+    /// Returns `(skill_name, description, score)` if a match is found.
+    async fn route_best(&self, input: &str) -> Option<(String, String, f32)>;
+}
 
 /// Execution status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,12 +54,25 @@ pub struct ExecutionResult {
     pub response: String,
     /// Tool calls made
     pub tool_calls: Vec<ToolCallRecord>,
+    /// Artifacts generated execution (e.g. screenshots, files)
+    pub artifacts: Vec<ExecutionArtifact>,
     /// Total iterations
     pub iterations: usize,
     /// Execution duration in milliseconds
     pub duration_ms: u64,
     /// Model used
     pub model: Option<String>,
+}
+
+/// Artifact generated during execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionArtifact {
+    /// Artifact name/id
+    pub name: String,
+    /// MIME type
+    pub mime_type: String,
+    /// Base64 encoded or raw data (represented as string for now)
+    pub data: String,
 }
 
 /// Record of a tool call
@@ -185,6 +207,10 @@ pub struct Orchestrator {
     approval_manager: Option<SharedApprovalManager>,
     olympus_hooks: Option<OlympusHooks>,
     graph_memory: Option<Arc<GraphMemory>>,
+    fallback_planner: Option<Planner>,
+    persona_mapping: Option<PersonaMapping>,
+    agent_keywords: Vec<(String, Vec<String>, u32)>,
+    skill_router: Option<Arc<dyn SkillRouting>>,
     config: OrchestratorConfig,
 }
 
@@ -208,6 +234,10 @@ impl Orchestrator {
             approval_manager: None,
             olympus_hooks: None,
             graph_memory: None,
+            fallback_planner: None,
+            persona_mapping: None,
+            agent_keywords: Vec::new(),
+            skill_router: None,
             config,
         }
     }
@@ -251,6 +281,35 @@ impl Orchestrator {
     /// Set the Graph RAG memory for long-term context retrieval
     pub fn with_graph_memory(mut self, graph_memory: Arc<GraphMemory>) -> Self {
         self.graph_memory = Some(graph_memory);
+        self
+    }
+
+    /// Set the fallback LLM provider for rate-limit recovery
+    pub fn with_fallback_provider(mut self, provider: Arc<dyn LlmProvider>) -> Self {
+        let fallback_config = self.config.planner_config.clone();
+        self.fallback_planner = Some(Planner::new(provider, fallback_config));
+        self
+    }
+
+    /// Set the persona mapping for @mention and keyword-based routing
+    pub fn with_persona_mapping(mut self, mapping: PersonaMapping) -> Self {
+        self.persona_mapping = Some(mapping);
+        self
+    }
+
+    /// Set agent routing keywords extracted from AgentConfig
+    pub fn with_agent_routing(mut self, agents: Vec<AgentConfig>) -> Self {
+        self.agent_keywords = agents
+            .into_iter()
+            .filter(|a| a.enabled && !a.routing.keywords.is_empty())
+            .map(|a| (a.id, a.routing.keywords, a.routing.priority))
+            .collect();
+        self
+    }
+
+    /// Set the skill router for semantic skill matching
+    pub fn with_skill_router(mut self, router: Arc<dyn SkillRouting>) -> Self {
+        self.skill_router = Some(router);
         self
     }
 
@@ -323,16 +382,17 @@ impl Orchestrator {
 
             session.add_user_message(&input.text);
 
-            // Graph RAG: if token budget is tight, replace middle context
+            // Graph RAG: always-on context enrichment
             if let Some(gm) = &self.graph_memory {
                 let remaining = session.remaining_tokens();
                 let total = session.token_count();
-                // Trigger when >80% of budget used
+
                 if total > 0 && remaining < session.max_tokens / 5 {
+                    // Token budget tight: REPLACE middle context
                     debug!(
                         remaining_tokens = remaining,
                         total_tokens = total,
-                        "Token budget tight, retrieving Graph RAG context"
+                        "Token budget tight, replacing with Graph RAG context"
                     );
                     let budget = (session.max_tokens / 2) as u32;
                     match gm.retrieve(&input.text, 20, budget).await {
@@ -347,12 +407,95 @@ impl Orchestrator {
                         Ok(_) => debug!("No relevant Graph RAG turns found"),
                         Err(e) => warn!(error = %e, "Graph RAG retrieval failed"),
                     }
+                } else {
+                    // Normal: ADD supplementary context
+                    let rag_budget = std::cmp::min((session.max_tokens / 10) as u32, 8000);
+                    match gm.retrieve(&input.text, 5, rag_budget).await {
+                        Ok(turns) if !turns.is_empty() => {
+                            let retrieved_msgs = GraphMemory::turns_to_messages(&turns);
+                            session.insert_supplementary_context(retrieved_msgs);
+                            debug!(
+                                retrieved_turns = turns.len(),
+                                "Added supplementary RAG context"
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(e) => warn!(error = %e, "Graph RAG supplementary retrieval failed"),
+                    }
                 }
             }
 
             // Save updated session
             let _ = self.memory.save(&session).await;
             session.get_messages().to_vec()
+        };
+
+        // ── Persona Routing (Phase 1) ──────────────────────────────────
+        let persona_system_prompt: Option<String> = if let Some(mapping) = &self.persona_mapping {
+            let explicit = extract_persona_mention(&input.text, mapping);
+
+            let matched_persona = if let Some((agent_id, _rest)) = explicit {
+                let mention = input.text.split_whitespace().next()
+                    .unwrap_or("").trim_start_matches('@').to_lowercase();
+                info!(persona = %mention, agent_id = %agent_id, "Explicit persona mention");
+                Some(mention)
+            } else {
+                self.route_by_keywords(&input.text)
+                    .and_then(|agent_id| mapping.to_persona_name(&agent_id).map(|n| n.to_string()))
+                    .map(|name| {
+                        info!(persona = %name, "Auto-routed by keyword");
+                        name
+                    })
+            };
+
+            matched_persona.and_then(|name| {
+                mapping.get_system_prompt(&name, &input.user_id)
+                    .map(|persona_prompt| {
+                        format!("{}\n\n---\n## Active Persona\n{}",
+                            self.planner.config().system_prompt, persona_prompt)
+                    })
+            })
+        } else {
+            None
+        };
+
+        // Determine the effective persona name for chronicle logging.
+        // Priority: explicit @mention > keyword routing > active_persona file > "cratos" (default)
+        let effective_persona: String = if let Some(mapping) = &self.persona_mapping {
+            let explicit = extract_persona_mention(&input.text, mapping);
+            if let Some((_agent_id, _rest)) = explicit {
+                input.text.split_whitespace().next()
+                    .unwrap_or("cratos").trim_start_matches('@').to_lowercase()
+            } else {
+                self.route_by_keywords(&input.text)
+                    .and_then(|aid| mapping.to_persona_name(&aid).map(|n| n.to_string()))
+                    .or_else(|| self.olympus_hooks.as_ref().and_then(|h| h.active_persona()))
+                    .unwrap_or_else(|| "cratos".to_string())
+            }
+        } else {
+            self.olympus_hooks.as_ref()
+                .and_then(|h| h.active_persona())
+                .unwrap_or_else(|| "cratos".to_string())
+        };
+
+        // ── Skill Router (Phase 5) ──────────────────────────────────────
+        let skill_hint: Option<String> = if let Some(router) = &self.skill_router {
+            router.route_best(&input.text).await
+                .filter(|(_, _, score)| *score > 0.7)
+                .map(|(name, desc, score)| {
+                    info!(skill = %name, score = %score, "Skill match found");
+                    format!("\n## Matched Skill: {}\n{}", name, desc)
+                })
+        } else {
+            None
+        };
+
+        // Combine system prompt overrides
+        let effective_system_prompt: Option<String> = match (persona_system_prompt, skill_hint) {
+            (Some(p), Some(s)) => Some(format!("{}{}", p, s)),
+            (Some(p), None) => Some(p),
+            (None, Some(s)) => Some(format!("{}{}", self.planner.config().system_prompt, s)),
+            (None, None) => None,
         };
 
         // Create working memory
@@ -392,8 +535,8 @@ impl Orchestrator {
                 iteration,
             });
 
-            // Plan the next step
-            let plan_response = match self.planner.plan_step(&messages, &tools).await {
+            // Plan the next step (with fallback and optional system prompt override)
+            let plan_response = match self.plan_with_fallback(&messages, &tools, effective_system_prompt.as_deref()).await {
                 Ok(response) => response,
                 Err(e) => {
                     error!(execution_id = %execution_id, error = %e, "Planning failed");
@@ -423,6 +566,7 @@ impl Orchestrator {
                         status: ExecutionStatus::Failed,
                         response: error_msg,
                         tool_calls: tool_call_records,
+                        artifacts: Vec::new(),
                         iterations: iteration,
                         duration_ms: start_time.elapsed().as_millis() as u64,
                         model: model_used,
@@ -447,6 +591,24 @@ impl Orchestrator {
 
             // Check if this is a final response
             if plan_response.is_final {
+                // Detect tool refusal on first iteration: model says "can't access" instead of using tools.
+                // Nudge it to retry with tools by appending a follow-up user message.
+                if iteration == 1 {
+                    if let Some(ref content) = plan_response.content {
+                        if is_tool_refusal(content) {
+                            warn!(
+                                execution_id = %execution_id,
+                                "Model refused to use tools on first iteration, nudging retry"
+                            );
+                            messages.push(Message::assistant(content));
+                            messages.push(Message::user(
+                                "위 작업을 위해 exec, http_get 등 도구를 사용해주세요. \
+                                 이 기기에서 직접 실행됩니다. 도구 없이 답하지 마세요."
+                            ));
+                            continue;
+                        }
+                    }
+                }
                 if let Some(content) = plan_response.content {
                     self.emit(OrchestratorEvent::ChatDelta {
                         execution_id,
@@ -480,17 +642,9 @@ impl Orchestrator {
                     Planner::build_tool_result_messages(&plan_response.tool_calls, &results);
 
                 // Add tool result messages to conversation history for next iteration
-                messages.extend(tool_messages.clone());
-
-                // Also persist to session store
-                if let Ok(Some(mut session)) = self.memory.get(&session_key).await {
-                    for msg in tool_messages {
-                        if let Some(tool_call_id) = &msg.tool_call_id {
-                            session.add_tool_message(&msg.content, tool_call_id);
-                        }
-                    }
-                    let _ = self.memory.save(&session).await;
-                }
+                // NOTE: Only added to the local `messages` vec (for the current execution loop).
+                // NOT persisted to session store individually — see post-loop summary below.
+                messages.extend(tool_messages);
             }
 
             // If there's content along with tool calls, save it
@@ -516,17 +670,42 @@ impl Orchestrator {
         // Sanitize response: strip leaked XML tags from weak models
         let final_response = sanitize_response(&final_response);
 
-        // Update session with assistant response
+        // Update session with assistant response + execution summary
+        // We persist a concise summary of tool usage (not individual tool messages)
+        // to keep the session clean and avoid orphaned tool results that confuse LLMs.
         if let Ok(Some(mut session)) = self.memory.get(&session_key).await {
-            session.add_assistant_message(&final_response);
+            if !tool_call_records.is_empty() {
+                let tool_summary: Vec<String> = tool_call_records
+                    .iter()
+                    .map(|r| {
+                        if r.success {
+                            format!("{}:OK", r.tool_name)
+                        } else {
+                            let err_hint = r.output.get("stderr")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("failed");
+                            let err_short: String = err_hint.chars().take(60).collect();
+                            format!("{}:FAIL({})", r.tool_name, err_short)
+                        }
+                    })
+                    .collect();
+                let summary = format!(
+                    "[Used {} tools: {}]\n{}",
+                    tool_call_records.len(),
+                    tool_summary.join(", "),
+                    final_response
+                );
+                session.add_assistant_message(&summary);
+            } else {
+                session.add_assistant_message(&final_response);
+            }
             let _ = self.memory.save(&session).await;
         }
 
         // Run Olympus OS post-execution hooks (fire-and-forget)
         if let Some(hooks) = &self.olympus_hooks {
-            let persona = hooks.active_persona().unwrap_or_else(|| "unknown".to_string());
             let task_completed = !final_response.is_empty();
-            if let Err(e) = hooks.post_execute(&persona, &final_response, task_completed) {
+            if let Err(e) = hooks.post_execute(&effective_persona, &final_response, task_completed) {
                 warn!(error = %e, "Olympus post-execute hook failed");
             }
         }
@@ -552,10 +731,18 @@ impl Orchestrator {
         // Emit execution completed event
         self.emit(OrchestratorEvent::ExecutionCompleted { execution_id });
 
+        // Truncate response for logging (avoid flooding logs with huge responses)
+        let response_preview: String = final_response
+            .char_indices()
+            .take_while(|(i, _)| *i < 200)
+            .map(|(_, c)| c)
+            .collect();
         info!(
             execution_id = %execution_id,
             iterations = %iteration,
             duration_ms = %duration_ms,
+            tools_used = %tool_call_records.len(),
+            response = %response_preview,
             "Execution completed"
         );
 
@@ -573,11 +760,34 @@ impl Orchestrator {
             }
         }
 
+        // Extract artifacts from tool calls
+        let mut artifacts = Vec::new();
+        for record in &tool_call_records {
+            // Check for screenshot
+            if let Some(screenshot) = record.output.get("screenshot").and_then(|s| s.as_str()) {
+                artifacts.push(ExecutionArtifact {
+                    name: format!("{}_screenshot", record.tool_name),
+                    mime_type: "image/png".to_string(), // Default assumes PNG
+                    data: screenshot.to_string(),
+                });
+            }
+            
+            // Check for generic image output
+            if let Some(image) = record.output.get("image").and_then(|s| s.as_str()) {
+                 artifacts.push(ExecutionArtifact {
+                    name: format!("{}_image", record.tool_name),
+                    mime_type: "image/png".to_string(),
+                    data: image.to_string(),
+                });
+            }
+        }
+
         Ok(ExecutionResult {
             execution_id,
             status: ExecutionStatus::Completed,
             response: final_response,
             tool_calls: tool_call_records,
+            artifacts,
             iterations: iteration,
             duration_ms,
             model: model_used,
@@ -595,9 +805,10 @@ impl Orchestrator {
         let mut results = Vec::with_capacity(tool_calls.len());
 
         for call in tool_calls {
-            debug!(
+            info!(
                 execution_id = %execution_id,
                 tool = %call.name,
+                args = %call.arguments,
                 "Executing tool"
             );
 
@@ -669,6 +880,14 @@ impl Orchestrator {
             )
             .await;
 
+            info!(
+                execution_id = %execution_id,
+                tool = %call.name,
+                success = %success,
+                duration_ms = %duration_ms,
+                "Tool completed"
+            );
+
             // Emit tool completed event
             self.emit(OrchestratorEvent::ToolCompleted {
                 execution_id,
@@ -699,6 +918,45 @@ impl Orchestrator {
         }
 
         results
+    }
+
+    /// Plan a step with automatic fallback on rate-limit errors
+    async fn plan_with_fallback(
+        &self,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+        system_prompt_override: Option<&str>,
+    ) -> crate::error::Result<crate::planner::PlanResponse> {
+        let result = match system_prompt_override {
+            Some(p) => self.planner.plan_step_with_system_prompt(messages, tools, p).await,
+            None => self.planner.plan_step(messages, tools).await,
+        };
+        match result {
+            Ok(resp) => Ok(resp),
+            Err(crate::error::Error::Llm(cratos_llm::Error::RateLimit))
+                if self.fallback_planner.is_some() =>
+            {
+                warn!("Primary provider rate limited, trying fallback");
+                let fb = self.fallback_planner.as_ref().unwrap();
+                match system_prompt_override {
+                    Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
+                    None => fb.plan_step(messages, tools).await,
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Route input to an agent by keyword matching
+    fn route_by_keywords(&self, input: &str) -> Option<String> {
+        let input_lower = input.to_lowercase();
+        self.agent_keywords
+            .iter()
+            .filter(|(_, keywords, _)| {
+                keywords.iter().any(|kw| input_lower.contains(&kw.to_lowercase()))
+            })
+            .max_by_key(|(_, _, priority)| *priority)
+            .map(|(agent_id, _, _)| agent_id.clone())
     }
 
     /// Publish an event to the event bus (no-op if no bus is set).
@@ -747,6 +1005,27 @@ impl Orchestrator {
             .map(|s| s.message_count())
             .unwrap_or(0)
     }
+}
+
+/// Detect if the model's response is a "tool refusal" — saying it can't do something
+/// when it should have used tools instead.
+fn is_tool_refusal(content: &str) -> bool {
+    // Common refusal patterns in Korean and English
+    const REFUSAL_PATTERNS: &[&str] = &[
+        "접근할 수 없",      // "can't access"
+        "확인할 수 없",      // "can't check"
+        "직접 확인",          // "directly check" (as in "I can't directly check")
+        "제공할 수 없",      // "can't provide"
+        "I can't access",
+        "I cannot access",
+        "I don't have access",
+        "unable to access",
+        "I can't check",
+        "(empty response)",
+    ];
+
+    let lower = content.to_lowercase();
+    REFUSAL_PATTERNS.iter().any(|p| lower.contains(&p.to_lowercase()))
 }
 
 /// Sanitize LLM response before sending to users.

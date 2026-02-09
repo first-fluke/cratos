@@ -356,6 +356,25 @@ impl SessionContext {
         );
     }
 
+    /// Insert supplementary context messages after system messages.
+    ///
+    /// Used by Graph RAG to add relevant past turns at the beginning of
+    /// a conversation without replacing existing messages.
+    pub fn insert_supplementary_context(&mut self, context_messages: Vec<Message>) {
+        if context_messages.is_empty() {
+            return;
+        }
+        let insert_pos = self
+            .messages
+            .iter()
+            .take_while(|m| m.role == MessageRole::System)
+            .count();
+        for (i, msg) in context_messages.into_iter().enumerate() {
+            self.messages.insert(insert_pos + i, msg);
+        }
+        self.current_tokens = count_message_tokens(&self.messages);
+    }
+
     /// Get message count
     #[must_use]
     pub fn message_count(&self) -> usize {
