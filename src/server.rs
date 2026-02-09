@@ -24,7 +24,7 @@ use cratos_replay::{EventStore, ExecutionSearcher, SearchEmbedder};
 use cratos_memory::{GraphMemory, VectorBridge};
 use cratos_search::{IndexConfig, VectorIndex};
 use cratos_skills::{SemanticSkillRouter, SkillEmbedder, SkillRegistry, SkillStore};
-use cratos_tools::{register_builtins, RunnerConfig, ToolRegistry};
+use cratos_tools::{register_builtins_with_config, BuiltinsConfig, ExecConfig, ExecMode, RunnerConfig, ToolRegistry};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -46,6 +46,8 @@ pub struct AppConfig {
     pub vector_search: VectorSearchConfig,
     #[serde(default)]
     pub scheduler: SchedulerAppConfig,
+    #[serde(default)]
+    pub security: SecurityConfig,
 }
 
 /// Scheduler configuration
@@ -161,6 +163,70 @@ pub struct RoutingConfig {
 #[allow(dead_code)]
 pub struct ApprovalConfig {
     pub default_mode: String,
+}
+
+/// Security configuration
+#[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
+pub struct SecurityConfig {
+    #[serde(default)]
+    pub exec: ExecSecurityConfig,
+    #[serde(default)]
+    pub sandbox_policy: Option<String>,
+    #[serde(default)]
+    pub credential_backend: Option<String>,
+    #[serde(default)]
+    pub enable_injection_protection: Option<bool>,
+}
+
+/// Exec security configuration (from [security.exec] in TOML)
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct ExecSecurityConfig {
+    /// "permissive" (default) or "strict"
+    #[serde(default = "default_exec_mode")]
+    pub mode: String,
+    /// Maximum timeout in seconds
+    #[serde(default = "default_exec_timeout")]
+    pub max_timeout_secs: u64,
+    /// Additional commands to block
+    #[serde(default)]
+    pub extra_blocked_commands: Vec<String>,
+    /// Allowed commands (only used when mode = "strict")
+    #[serde(default)]
+    pub allowed_commands: Vec<String>,
+    /// Blocked filesystem paths
+    #[serde(default = "default_blocked_paths")]
+    pub blocked_paths: Vec<String>,
+}
+
+impl Default for ExecSecurityConfig {
+    fn default() -> Self {
+        Self {
+            mode: "permissive".to_string(),
+            max_timeout_secs: 60,
+            extra_blocked_commands: Vec::new(),
+            allowed_commands: Vec::new(),
+            blocked_paths: default_blocked_paths(),
+        }
+    }
+}
+
+fn default_exec_mode() -> String {
+    "permissive".to_string()
+}
+
+fn default_exec_timeout() -> u64 {
+    60
+}
+
+fn default_blocked_paths() -> Vec<String> {
+    vec![
+        "/etc".to_string(), "/root".to_string(), "/var/log".to_string(),
+        "/boot".to_string(), "/dev".to_string(), "/proc".to_string(),
+        "/sys".to_string(), "/usr/bin".to_string(), "/usr/sbin".to_string(),
+        "/bin".to_string(), "/sbin".to_string(),
+    ]
 }
 
 /// Replay configuration
@@ -397,7 +463,7 @@ pub(crate) fn load_config() -> Result<AppConfig> {
         .context("Failed to deserialize configuration")
 }
 
-pub(crate) fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<dyn LlmProvider>> {
+pub(crate) fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<LlmRouter>> {
     let mut router = LlmRouter::new(&llm_config.default_provider);
     let mut registered_count = 0;
     let mut default_provider: Option<String> = None;
@@ -763,11 +829,32 @@ pub async fn run() -> Result<()> {
         (None, None)
     };
 
-    let llm_provider: Arc<dyn LlmProvider> = resolve_llm_provider(&config.llm)?;
+    let llm_router = resolve_llm_provider(&config.llm)?;
+    let llm_provider: Arc<dyn LlmProvider> = llm_router.clone();
     info!("LLM provider initialized: {}", llm_provider.name());
 
     let mut tool_registry = ToolRegistry::new();
-    register_builtins(&mut tool_registry);
+    // Convert security config to ExecConfig
+    let exec_timeout_secs = config.security.exec.max_timeout_secs;
+    let exec_config = {
+        let sec = &config.security.exec;
+        let mode = match sec.mode.as_str() {
+            "strict" => ExecMode::Strict,
+            _ => ExecMode::Permissive,
+        };
+        ExecConfig {
+            mode,
+            max_timeout_secs: sec.max_timeout_secs,
+            extra_blocked_commands: sec.extra_blocked_commands.clone(),
+            allowed_commands: sec.allowed_commands.clone(),
+            blocked_paths: sec.blocked_paths.clone(),
+        }
+    };
+    let builtins_config = BuiltinsConfig {
+        exec: exec_config,
+        ..BuiltinsConfig::default()
+    };
+    register_builtins_with_config(&mut tool_registry, &builtins_config);
     let tool_count = tool_registry.len();
     let tool_registry = Arc::new(tool_registry);
     info!("Tool registry initialized with {} tools", tool_count);
@@ -822,7 +909,8 @@ pub async fn run() -> Result<()> {
     info!("Shutdown controller initialized (timeout: 30s)");
 
     let allow_high_risk = config.approval.default_mode == "never";
-    let runner_config = RunnerConfig::default().with_high_risk(allow_high_risk);
+    let exec_timeout = std::time::Duration::from_secs(exec_timeout_secs);
+    let runner_config = RunnerConfig::new(exec_timeout).with_high_risk(allow_high_risk);
     let orchestrator_config = OrchestratorConfig::new()
         .with_max_iterations(10)
         .with_logging(true)
@@ -840,7 +928,9 @@ pub async fn run() -> Result<()> {
             } else {
                 (llm_provider.name().to_string(), llm_provider.default_model().to_string())
             };
-            PlannerConfig::default().with_provider_info(&prov_name, &model_name)
+            PlannerConfig::default()
+                .with_machine_info()
+                .with_provider_info(&prov_name, &model_name)
         })
         .with_runner_config(runner_config);
 
@@ -857,15 +947,49 @@ pub async fn run() -> Result<()> {
     info!("EventBus initialized (capacity: 256)");
 
     let mut orchestrator =
-        Orchestrator::new(llm_provider, tool_registry, orchestrator_config)
+        Orchestrator::new(llm_provider.clone(), tool_registry, orchestrator_config)
             .with_event_store(event_store.clone())
             .with_event_bus(event_bus.clone())
             .with_memory(session_store)
             .with_approval_manager(approval_manager)
-            .with_olympus_hooks(olympus_hooks);
+            .with_olympus_hooks(olympus_hooks)
+            .with_persona_mapping(cratos_core::PersonaMapping::default_mapping())
+            .with_agent_routing(cratos_core::AgentConfig::defaults());
     if let Some(gm) = graph_memory {
         orchestrator = orchestrator.with_graph_memory(gm);
     }
+
+    // Phase 4: Auto-detect fallback provider
+    {
+        let primary = config.llm.default_provider.clone();
+        let fallback_candidates = ["groq", "novita", "deepseek", "openrouter", "ollama"];
+        if let Some(fb) = fallback_candidates.iter()
+            .filter(|n| **n != primary.as_str())
+            .find_map(|n| llm_router.get(n))
+        {
+            info!(fallback = %fb.name(), "Fallback LLM provider configured");
+            orchestrator = orchestrator.with_fallback_provider(fb);
+        }
+    }
+
+    // Phase 5: Connect semantic skill router
+    if let Some(ref sr) = _semantic_skill_router {
+        struct SkillRouterAdapter(Arc<SemanticSkillRouter<SkillEmbeddingAdapter>>);
+
+        #[async_trait::async_trait]
+        impl cratos_core::SkillRouting for SkillRouterAdapter {
+            async fn route_best(&self, input: &str) -> Option<(String, String, f32)> {
+                self.0.route_best(input).await
+                    .map(|m| (m.skill.name, m.skill.description, m.score))
+            }
+        }
+
+        orchestrator = orchestrator.with_skill_router(
+            Arc::new(SkillRouterAdapter(sr.clone()))
+        );
+        info!("Skill router connected to orchestrator");
+    }
+
     let orchestrator = Arc::new(orchestrator);
     info!("Orchestrator initialized");
 
@@ -900,11 +1024,40 @@ pub async fn run() -> Result<()> {
         }
     }
 
+    // Phase 7: Slack adapter startup
+    // Note: slack-morphism's Socket Mode listener produces !Send futures,
+    // so we run it on a dedicated thread with its own Tokio LocalSet.
     if config.channels.slack.enabled {
-        info!("Slack adapter enabled but not yet started (requires additional setup)");
+        match cratos_channels::SlackConfig::from_env() {
+            Ok(slack_config) => {
+                let slack_adapter = Arc::new(cratos_channels::SlackAdapter::new(slack_config));
+                let slack_orch = orchestrator.clone();
+                let slack_shutdown = shutdown_controller.token();
+                let handle = tokio::task::spawn_blocking(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("Failed to build Slack adapter runtime");
+                    let local = tokio::task::LocalSet::new();
+                    local.block_on(&rt, async move {
+                        tokio::select! {
+                            result = slack_adapter.run(slack_orch) => {
+                                if let Err(e) = result { error!("Slack adapter error: {}", e); }
+                            }
+                            _ = slack_shutdown.cancelled() => {
+                                info!("Slack adapter shutting down...");
+                            }
+                        }
+                    });
+                });
+                channel_handles.push(handle);
+                info!("Slack adapter started (dedicated thread)");
+            }
+            Err(e) => warn!("Slack adapter not started: {}", e),
+        }
     }
 
-    // Start ProactiveScheduler if enabled
+    // Phase 6: ProactiveScheduler with real executor
     if config.scheduler.enabled {
         let scheduler_db_path = data_dir.join("scheduler.db");
         match SchedulerStore::from_path(&scheduler_db_path).await {
@@ -914,8 +1067,48 @@ pub async fn run() -> Result<()> {
                     .with_retry_delay(config.scheduler.retry_delay_secs)
                     .with_max_concurrent(config.scheduler.max_concurrent);
 
+                // Build real executor using orchestrator
+                let sched_orch = orchestrator.clone();
+                let task_executor: cratos_core::scheduler::TaskExecutor =
+                    Arc::new(move |action: cratos_core::scheduler::TaskAction| {
+                        let orch = sched_orch.clone();
+                        Box::pin(async move {
+                            use cratos_core::scheduler::TaskAction;
+                            match action {
+                                TaskAction::NaturalLanguage { prompt, channel } => {
+                                    let input = cratos_core::OrchestratorInput::new(
+                                        "scheduler",
+                                        channel.as_deref().unwrap_or("system"),
+                                        "system",
+                                        &prompt,
+                                    );
+                                    orch.process(input)
+                                        .await
+                                        .map(|r| r.response)
+                                        .map_err(|e| cratos_core::scheduler::SchedulerError::Execution(
+                                            e.to_string(),
+                                        ))
+                                }
+                                TaskAction::ToolCall { tool, args } => {
+                                    orch.runner()
+                                        .execute(&tool, args)
+                                        .await
+                                        .map(|r| {
+                                            serde_json::to_string(&r.result.output)
+                                                .unwrap_or_default()
+                                        })
+                                        .map_err(|e| cratos_core::scheduler::SchedulerError::Execution(
+                                            e.to_string(),
+                                        ))
+                                }
+                                _ => Ok("Action type not yet supported".to_string()),
+                            }
+                        })
+                    });
+
                 let scheduler_engine =
-                    SchedulerEngine::new(Arc::new(scheduler_store), scheduler_config);
+                    SchedulerEngine::new(Arc::new(scheduler_store), scheduler_config)
+                        .with_executor(task_executor);
                 let scheduler_shutdown = shutdown_controller.token();
 
                 tokio::spawn(async move {
@@ -935,6 +1128,53 @@ pub async fn run() -> Result<()> {
         }
     } else {
         info!("ProactiveScheduler disabled by configuration");
+    }
+
+    // Phase 3: Auto skill generation background task
+    {
+        let skill_event_store = event_store.clone();
+        let skill_store_bg = skill_store.clone();
+        let skill_registry_bg = skill_registry.clone();
+        let skill_shutdown = shutdown_controller.token();
+
+        tokio::spawn(async move {
+            let analyzer = cratos_skills::PatternAnalyzer::new();
+            let generator = cratos_skills::SkillGenerator::new();
+            let interval = tokio::time::Duration::from_secs(3600);
+
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep(interval) => {
+                        match analyzer.detect_patterns(&skill_event_store).await {
+                            Ok(patterns) if !patterns.is_empty() => {
+                                info!(count = patterns.len(), "Detected usage patterns");
+                                for pattern in &patterns {
+                                    match generator.generate_from_pattern(pattern) {
+                                        Ok(skill) => {
+                                            let name = skill.name.clone();
+                                            if let Err(e) = skill_store_bg.save_skill(&skill).await {
+                                                warn!(error = %e, "Failed to save auto-generated skill");
+                                            } else {
+                                                info!(skill = %name, "Auto-generated skill saved");
+                                                let _ = skill_registry_bg.register(skill).await;
+                                            }
+                                        }
+                                        Err(e) => debug!(error = %e, "Pattern skipped"),
+                                    }
+                                }
+                            }
+                            Ok(_) => debug!("No new patterns detected"),
+                            Err(e) => warn!(error = %e, "Pattern analysis failed"),
+                        }
+                    }
+                    _ = skill_shutdown.cancelled() => {
+                        info!("Skill generation background task shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+        info!("Auto skill generation background task started (1h interval)");
     }
 
     let cleanup_event_store = event_store.clone();

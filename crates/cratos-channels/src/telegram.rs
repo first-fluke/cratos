@@ -14,10 +14,11 @@ use teloxide::{
     payloads::SendMessageSetters,
     prelude::*,
     types::{
-        ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, Message as TelegramMessage,
+        ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, Message as TelegramMessage,
         MessageId, ParseMode, ReplyParameters,
     },
 };
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use tracing::{debug, error, info, instrument};
 
 /// Telegram bot configuration
@@ -333,6 +334,22 @@ impl TelegramAdapter {
                         .send_message(msg.chat.id, &response_text)
                         .reply_parameters(ReplyParameters::new(msg.id))
                         .await;
+                }
+
+                // Handle artifacts (e.g. screenshots)
+                for artifact in &result.artifacts {
+                    if artifact.mime_type.starts_with("image/") {
+                        if let Ok(data) = BASE64.decode(&artifact.data) {
+                            let _ = bot
+                                .send_photo(msg.chat.id, InputFile::memory(data))
+                                .caption(format!("Artifact: {}", artifact.name))
+                                .reply_parameters(ReplyParameters::new(msg.id))
+                                .await
+                                .map_err(|e| error!(error = %e, artifact = %artifact.name, "Failed to send photo artifact"));
+                        } else {
+                            error!(artifact = %artifact.name, "Failed to decode base64 data for artifact");
+                        }
+                    }
                 }
             }
             Err(e) => {

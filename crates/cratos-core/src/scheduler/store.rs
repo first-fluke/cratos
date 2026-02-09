@@ -29,6 +29,9 @@ pub enum SchedulerError {
     /// Invalid configuration
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
+    /// Task execution error
+    #[error("execution error: {0}")]
+    Execution(String),
 }
 
 /// Scheduled task definition

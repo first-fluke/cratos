@@ -14,7 +14,7 @@ use slack_morphism::prelude::*;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, warn};
 
 /// Maximum allowed timestamp age in seconds (5 minutes)
 const MAX_TIMESTAMP_AGE_SECS: u64 = 300;
@@ -338,7 +338,6 @@ impl SlackAdapter {
     ///
     /// Connects to Slack via WebSocket (Socket Mode), listens for
     /// message and app_mention events, and routes them to the orchestrator.
-    #[instrument(skip(self, orchestrator))]
     pub async fn run(self: Arc<Self>, orchestrator: Arc<Orchestrator>) -> Result<()> {
         info!("Starting Slack adapter in Socket Mode");
 

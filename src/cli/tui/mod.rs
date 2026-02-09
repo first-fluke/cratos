@@ -29,7 +29,8 @@ pub async fn run(persona: Option<String>) -> Result<()> {
     // ── Orchestrator bootstrap (reuses server.rs helpers) ───────────
 
     let config = crate::server::load_config().context("Failed to load configuration")?;
-    let llm_provider = crate::server::resolve_llm_provider(&config.llm)?;
+    let llm_provider: std::sync::Arc<dyn cratos_llm::LlmProvider> =
+        crate::server::resolve_llm_provider(&config.llm)?;
     let provider_name = {
         let raw = llm_provider.name().to_string();
         // Resolve the actual default provider name (router returns "router")
@@ -87,7 +88,9 @@ pub async fn run(persona: Option<String>) -> Result<()> {
             } else {
                 (llm_provider.name().to_string(), llm_provider.default_model().to_string())
             };
-            PlannerConfig::default().with_provider_info(&prov_name, &model_name)
+            PlannerConfig::default()
+                .with_machine_info()
+                .with_provider_info(&prov_name, &model_name)
         })
         .with_runner_config(RunnerConfig::default());
 
@@ -95,7 +98,9 @@ pub async fn run(persona: Option<String>) -> Result<()> {
         Orchestrator::new(llm_provider, tool_registry, orch_config)
             .with_event_store(event_store)
             .with_memory(session_store)
-            .with_approval_manager(Arc::new(ApprovalManager::new())),
+            .with_approval_manager(Arc::new(ApprovalManager::new()))
+            .with_persona_mapping(cratos_core::PersonaMapping::default_mapping())
+            .with_agent_routing(cratos_core::AgentConfig::defaults()),
     );
 
     // ── Gemini quota poller (if OAuth token available) ─────────────
