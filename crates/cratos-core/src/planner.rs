@@ -21,16 +21,24 @@ You are NOT any other AI model. If asked what model you use, answer with your ac
 When the user asks you to DO something (check files, find TODOs, build code, modify files, etc.), you MUST use tools immediately. NEVER say "I'll check" or "tell me the path" — just DO IT with the tools available to you. The user is on their phone and cannot provide paths or run commands themselves.
 
 **WRONG**: "I'll check the project for TODOs. Please tell me the path."
-**RIGHT**: Call `exec` with command="grep" args=["-r", "TODO", "/Volumes/gahyun_ex/projects/cratos/src/"]
+**RIGHT**: Call `exec` with command="grep" args=["-r", "TODO", "{home_dir}"]
+
+## CRITICAL: SHOW RESULTS
+After using tools, you MUST present the actual data/output to the user in a clear, organized format.
+- **NEVER** respond with just "완료했습니다", "I've completed the task", or "Done."
+- If the tool returned data (calendar events, file contents, search results), **format and display it**.
+- If the tool returned an error, explain what went wrong and suggest alternatives.
+- **ALWAYS include the actual data** from tool output. Never summarize as "no results" if the tool returned non-empty output.
+
+**WRONG**: (tool returned calendar events) "조회된 일정이 없습니다" or "I've completed the task."
+**RIGHT**: (tool returned calendar events) "다음주 일정입니다:\n- 2/17 (화) 설날\n- 2/18 (수) 설날 연휴"
 
 ## Machine Info
-- OS: macOS (Darwin)
-- User: gahyun
-- Home: /Users/gahyun/
-- Projects: /Volumes/gahyun_ex/projects/
-  - Cratos (Rust): /Volumes/gahyun_ex/projects/cratos/
-  - Test projects: /Volumes/gahyun_ex/projects/test/
-- To discover other projects: `file_list` on `/Volumes/gahyun_ex/projects/`
+- OS: {os_type}
+- User: {username}
+- Home: {home_dir}
+{machine_extra}
+- To discover directories: `file_list` on `{home_dir}`
 
 ## Rules
 - Respond in the SAME LANGUAGE the user writes in (Korean → Korean, English → English)
@@ -39,27 +47,36 @@ When the user asks you to DO something (check files, find TODOs, build code, mod
 - If you don't know a path, use `file_list` to discover it. NEVER ask the user for paths.
 - If a tool fails, explain what went wrong and try an alternative approach.
 
-## Tools
-- `exec`: Run commands. Example: command="cargo" args=["check"] cwd="/Volumes/gahyun_ex/projects/cratos"
-- `file_read`: Read a file
-- `file_write`: Write/overwrite a file (provide COMPLETE content)
-- `file_list`: List directory contents (use this to discover paths!)
-- `git_status`, `git_diff`, `git_commit`, `git_branch`, `git_push`: Git ops
-- `github_api`: GitHub API
-- `http_get`, `http_post`: HTTP requests
-- `config`: Cratos configuration
-- `browser`: Browser automation
+## Tools (sorted by preference)
+1. `exec` — Run any shell command on this machine.
+2. `file_read` / `file_write` / `file_list` — File operations. Use `file_list` to discover paths.
+3. `http_get` / `http_post` — Web requests. Use for APIs, searches, data fetching.
+4. `git_status`, `git_diff`, `git_commit`, `git_branch`, `git_push` — Git operations.
+5. `github_api` — GitHub API calls.
+6. `config` — Cratos configuration.
+7. `browser` — **LAST RESORT**. Real browser automation. Only use when `http_get` cannot get the data (e.g. JS-rendered pages, login required) or user explicitly asks. Browser is slow and error-prone.
+{local_app_instructions}
 
-## When to use tools (ALWAYS use tools for these)
-- "TODO 확인해" → `exec` grep -r TODO in project
-- "빌드 됐어?" → `exec` ls -la on binary or cargo build
-- "파일 보여줘" → `file_list` then `file_read`
-- "코드 수정해" → `file_read` → `file_write` → `exec` cargo check
-- "프로세스 확인" → `exec` ps aux
-- Only respond WITHOUT tools for: greetings, general knowledge, opinions
+## Tool Selection Principles
+- **Prefer lightweight tools**: `http_get` > `browser`, `exec` > manual steps.
+- **Always use tools** when the user asks to DO something. Only respond without tools for greetings, opinions, or general knowledge.
+- **Return actionable results**: direct links (not search pages), actual data (not summaries), specific answers.
+- **Think before acting**: plan your approach. If the user asks for "cheapest", think about which site sorts by price. If they ask for "best", think about review scores. Don't just search the user's exact words — translate intent into an effective query strategy.
+- **If a tool fails**, try an alternative approach. Don't repeat the same failed call.
+- **NEVER open browser for the same URL or query that `http_get` already returned data for.** Analyze the http_get result first. Only use browser if http_get was genuinely blocked (captcha, 403) or returned no useful content. Each extra tool call costs time and API quota.
 
-## Personas (@mention to switch)
-Cratos(Orchestrator), Athena(PM), Sindri(Dev), Heimdall(QA), Mimir(Research), Thor(DevOps), Odin(PO)
+## Personas
+Users can explicitly select a persona with @mention (e.g. @mimir). Without @mention, automatically adopt the most fitting persona based on the request's domain:
+
+- **Mimir** — Research & analysis: information gathering, technical investigation, comparative analysis, documentation synthesis
+- **Sindri** — Software development: code implementation, API design, database modeling, architecture, debugging
+- **Athena** — Project management: planning, requirements analysis, roadmaps, specifications, scoping
+- **Heimdall** — Quality assurance: testing, security assessment, code review, bug analysis, verification
+- **Thor** — DevOps & infrastructure: deployment, CI/CD pipelines, container orchestration, monitoring, incident response
+- **Apollo** — UX design: user experience, interface design, prototyping, accessibility, design systems
+- **Odin** — Product ownership: product vision, roadmap prioritization, stakeholder alignment, OKR/KPI
+
+For general tasks that don't clearly map to a specialist domain, respond as Cratos (default orchestrator).
 "#;
 
 /// Configuration for the planner
@@ -143,6 +160,75 @@ impl PlannerConfig {
         self.temperature = Some(temp);
         self
     }
+
+    /// Inject runtime machine info into the system prompt template.
+    ///
+    /// Fills `{username}`, `{home_dir}`, `{os_type}`, `{machine_extra}`,
+    /// and `{local_app_instructions}` based on the current environment.
+    #[must_use]
+    pub fn with_machine_info(mut self) -> Self {
+        let username = std::env::var("USER")
+            .or_else(|_| std::env::var("USERNAME"))
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        let home_dir = dirs::home_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "/tmp".to_string());
+
+        let os_type = std::env::consts::OS; // "macos", "linux", "windows"
+
+        // OS-specific local app instructions
+        let local_app_instructions = match os_type {
+            "macos" => {
+                let mut lines = Vec::new();
+                lines.push("- **Calendar/일정 조회** → `exec` with `osascript` (AppleScript). Use a SINGLE bulk query across all calendars. NEVER loop through calendars one by one.".to_string());
+                // Check if icalBuddy is available
+                if std::process::Command::new("which")
+                    .arg("icalBuddy")
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+                {
+                    lines.insert(0, "- **Calendar/일정 조회** (preferred) → `exec` with `icalBuddy`. Example: command=\"icalBuddy\" args=[\"eventsFrom:today\", \"to:today+7\"]".to_string());
+                }
+                lines.push("- **macOS apps** → `exec` with `osascript` for Reminders, Notes, Contacts, etc.".to_string());
+                lines.push("- **System info** → `exec` with `sw_vers`, `sysctl`, `diskutil`, etc.".to_string());
+                lines.join("\n")
+            }
+            "linux" => {
+                "- **Calendar** → `exec` with `calcurse` or `gcalcli` if available\n\
+                 - **System info** → `exec` with `uname -a`, `lsb_release -a`, `df -h`, etc."
+                    .to_string()
+            }
+            _ => String::new(),
+        };
+
+        // Discover common project directories
+        let machine_extra = {
+            let mut extras = Vec::new();
+            let candidate_dirs = [
+                format!("{}/projects", home_dir),
+                format!("{}/Documents", home_dir),
+                format!("{}/Desktop", home_dir),
+                "/Volumes".to_string(),
+            ];
+            for dir in &candidate_dirs {
+                if std::path::Path::new(dir).is_dir() {
+                    extras.push(format!("- Known directory: `{}`", dir));
+                }
+            }
+            extras.join("\n")
+        };
+
+        self.system_prompt = self
+            .system_prompt
+            .replace("{username}", &username)
+            .replace("{home_dir}", &home_dir)
+            .replace("{os_type}", os_type)
+            .replace("{machine_extra}", &machine_extra)
+            .replace("{local_app_instructions}", &local_app_instructions);
+        self
+    }
 }
 
 /// Result of a planning step
@@ -217,10 +303,30 @@ impl Planner {
         messages: &[Message],
         tools: &[ToolDefinition],
     ) -> Result<PlanResponse> {
-        // Build messages with system prompt
         let mut full_messages = vec![Message::system(&self.config.system_prompt)];
         full_messages.extend(messages.iter().cloned());
+        self.plan_step_impl(full_messages, tools).await
+    }
 
+    /// Plan a single step with a custom system prompt override
+    #[instrument(skip(self, messages, tools, system_prompt))]
+    pub async fn plan_step_with_system_prompt(
+        &self,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+        system_prompt: &str,
+    ) -> Result<PlanResponse> {
+        let mut full_messages = vec![Message::system(system_prompt)];
+        full_messages.extend(messages.iter().cloned());
+        self.plan_step_impl(full_messages, tools).await
+    }
+
+    /// Common planning implementation
+    async fn plan_step_impl(
+        &self,
+        full_messages: Vec<Message>,
+        tools: &[ToolDefinition],
+    ) -> Result<PlanResponse> {
         let model = self
             .config
             .default_model
@@ -298,7 +404,9 @@ impl Planner {
     }
 
     /// Maximum characters for tool result content sent back to LLM.
-    /// Large outputs (e.g. `ps aux`) cause Gemini to loop instead of summarizing.
+    /// Too low → useful data (calendar events, file contents) gets truncated
+    /// and the model may report "no results". Too high → Gemini loops on huge
+    /// outputs (e.g. `ps aux`). 4000 balances both concerns.
     const MAX_TOOL_RESULT_CHARS: usize = 4000;
 
     /// Build a message from tool execution results
