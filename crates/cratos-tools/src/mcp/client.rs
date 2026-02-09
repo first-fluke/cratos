@@ -79,7 +79,8 @@ impl McpClient {
 
         // Cache tools
         let tools = self.fetch_tools(&connection).await?;
-        info!(server = %name, tool_count = tools.len(), "MCP server initialized");
+        let tool_names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
+        info!(server = %name, tools = ?tool_names, "MCP server initialized");
 
         self.tool_cache.insert(name.clone(), tools);
         self.connections.insert(name, connection);

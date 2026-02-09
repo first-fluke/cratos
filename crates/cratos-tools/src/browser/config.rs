@@ -20,7 +20,7 @@ impl BrowserEngine {
     #[must_use]
     pub fn mcp_command(&self) -> (&'static str, Vec<&'static str>) {
         match self {
-            Self::Playwright => ("npx", vec!["-y", "@playwright/mcp", "--stdio"]),
+            Self::Playwright => ("npx", vec!["-y", "@playwright/mcp"]),
             Self::Puppeteer => ("npx", vec!["-y", "@anthropic-ai/mcp-server-puppeteer"]),
         }
     }
@@ -96,6 +96,10 @@ pub struct PlaywrightConfig {
     /// Default viewport height
     #[serde(default = "default_viewport_height")]
     pub viewport_height: u32,
+
+    /// Delay between actions in ms. Passed as PLAYWRIGHT_SLOW_MO env var.
+    #[serde(default)]
+    pub slow_mo: u64,
 }
 
 impl Default for PlaywrightConfig {
@@ -106,6 +110,7 @@ impl Default for PlaywrightConfig {
             timeout: default_timeout(),
             viewport_width: default_viewport_width(),
             viewport_height: default_viewport_height(),
+            slow_mo: 0,
         }
     }
 }
@@ -136,7 +141,7 @@ mod tests {
         assert!(config.enabled);
         assert_eq!(config.default_engine, BrowserEngine::Playwright);
         assert!(config.playwright.headless);
-        assert_eq!(config.playwright.timeout, 30000);
+        assert_eq!(config.playwright.timeout, 120000);
     }
 
     #[test]

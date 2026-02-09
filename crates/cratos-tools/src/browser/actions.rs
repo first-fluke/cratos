@@ -66,8 +66,9 @@ pub enum BrowserAction {
 
     /// Get HTML content of an element
     GetHtml {
-        /// CSS selector for the element
-        selector: String,
+        /// CSS selector for the element (optional, defaults to "html")
+        #[serde(default)]
+        selector: Option<String>,
         /// Whether to get outer HTML (default: true)
         #[serde(default = "default_true")]
         outer: bool,
@@ -166,6 +167,14 @@ pub enum BrowserAction {
     /// Reload the page
     Reload,
 
+    /// Resize the browser window
+    Resize {
+        /// Width in pixels
+        width: u32,
+        /// Height in pixels
+        height: u32,
+    },
+    
     /// Close the browser
     Close,
 }
@@ -196,6 +205,7 @@ impl BrowserAction {
             Self::GoBack => "go_back",
             Self::GoForward => "go_forward",
             Self::Reload => "reload",
+            Self::Resize { .. } => "resize",
             Self::Close => "close",
         }
     }
@@ -203,139 +213,39 @@ impl BrowserAction {
     /// Convert to MCP tool call arguments
     #[must_use]
     pub fn to_mcp_args(&self) -> serde_json::Value {
-        // For Playwright MCP server, we map actions to their tool names and arguments
         match self {
             Self::Navigate { url, .. } => {
                 serde_json::json!({
                     "url": url
                 })
             }
-            Self::Click { selector, button } => {
-                let mut args = serde_json::json!({
-                    "selector": selector
-                });
-                if let Some(btn) = button {
-                    args["button"] = serde_json::Value::String(btn.clone());
-                }
-                args
-            }
-            Self::Type {
-                selector,
-                text,
-                delay,
-            } => {
-                let mut args = serde_json::json!({
-                    "selector": selector,
-                    "text": text
-                });
-                if let Some(d) = delay {
-                    args["delay"] = serde_json::json!(d);
-                }
-                args
-            }
-            Self::Fill { selector, value } => {
-                serde_json::json!({
-                    "selector": selector,
-                    "value": value
-                })
-            }
             Self::Screenshot {
                 path,
                 full_page,
-                selector,
+                selector: _,
             } => {
                 let mut args = serde_json::json!({
                     "fullPage": full_page
                 });
                 if let Some(p) = path {
-                    args["path"] = serde_json::Value::String(p.clone());
-                }
-                if let Some(s) = selector {
-                    args["selector"] = serde_json::Value::String(s.clone());
+                    args["filename"] = serde_json::Value::String(p.clone());
                 }
                 args
             }
-            Self::GetText { selector } => {
+            Self::Resize { width, height } => {
                 serde_json::json!({
-                    "selector": selector
+                    "width": width,
+                    "height": height
                 })
             }
-            Self::GetHtml { selector, outer } => {
+            Self::Close => serde_json::json!({}),
+            
+            // All other actions use browser_evaluate with JS
+            action => {
+                let script = action.to_js_function();
                 serde_json::json!({
-                    "selector": selector,
-                    "outer": outer
+                    "function": script
                 })
-            }
-            Self::GetAttribute {
-                selector,
-                attribute,
-            } => {
-                serde_json::json!({
-                    "selector": selector,
-                    "attribute": attribute
-                })
-            }
-            Self::WaitForSelector {
-                selector,
-                timeout,
-                visible,
-            } => {
-                serde_json::json!({
-                    "selector": selector,
-                    "timeout": timeout,
-                    "visible": visible
-                })
-            }
-            Self::WaitForNavigation { timeout } => {
-                serde_json::json!({
-                    "timeout": timeout
-                })
-            }
-            Self::Evaluate { script } => {
-                serde_json::json!({
-                    "script": script
-                })
-            }
-            Self::Select { selector, value } => {
-                serde_json::json!({
-                    "selector": selector,
-                    "value": value
-                })
-            }
-            Self::Check { selector, checked } => {
-                serde_json::json!({
-                    "selector": selector,
-                    "checked": checked
-                })
-            }
-            Self::Hover { selector } => {
-                serde_json::json!({
-                    "selector": selector
-                })
-            }
-            Self::Press { key, count } => {
-                serde_json::json!({
-                    "key": key,
-                    "count": count
-                })
-            }
-            Self::Scroll { selector, x, y } => {
-                let mut args = serde_json::json!({
-                    "x": x,
-                    "y": y
-                });
-                if let Some(s) = selector {
-                    args["selector"] = serde_json::Value::String(s.clone());
-                }
-                args
-            }
-            Self::GetUrl
-            | Self::GetTitle
-            | Self::GoBack
-            | Self::GoForward
-            | Self::Reload
-            | Self::Close => {
-                serde_json::json!({})
             }
         }
     }
@@ -345,27 +255,158 @@ impl BrowserAction {
     pub fn mcp_tool_name(&self) -> &'static str {
         match self {
             Self::Navigate { .. } => "browser_navigate",
-            Self::Click { .. } => "browser_click",
-            Self::Type { .. } => "browser_type",
-            Self::Fill { .. } => "browser_fill",
-            Self::Screenshot { .. } => "browser_screenshot",
-            Self::GetText { .. } => "browser_get_text",
-            Self::GetHtml { .. } => "browser_get_html",
-            Self::GetAttribute { .. } => "browser_get_attribute",
-            Self::WaitForSelector { .. } => "browser_wait_for_selector",
-            Self::WaitForNavigation { .. } => "browser_wait_for_navigation",
-            Self::Evaluate { .. } => "browser_evaluate",
-            Self::Select { .. } => "browser_select",
-            Self::Check { .. } => "browser_check",
-            Self::Hover { .. } => "browser_hover",
-            Self::Press { .. } => "browser_press",
-            Self::Scroll { .. } => "browser_scroll",
-            Self::GetUrl => "browser_get_url",
-            Self::GetTitle => "browser_get_title",
-            Self::GoBack => "browser_go_back",
-            Self::GoForward => "browser_go_forward",
-            Self::Reload => "browser_reload",
+            Self::Screenshot { .. } => "browser_take_screenshot",
+            Self::Resize { .. } => "browser_resize",
             Self::Close => "browser_close",
+            _ => "browser_evaluate",
+        }
+    }
+
+    /// Generate JS function for browser_evaluate
+    fn to_js_function(&self) -> String {
+        match self {
+            Self::Click { selector, button } => {
+                let sel = serde_json::to_string(selector).unwrap();
+                let btn = match button.as_deref() {
+                    Some("right") => 2,
+                    Some("middle") => 1,
+                    _ => 0,
+                };
+                format!(
+                    "() => {{ const el = document.querySelector({sel}); \
+                     if (!el) throw new Error('Element not found: ' + {sel}); \
+                     const opts = {{ bubbles: true, cancelable: true, button: {btn} }}; \
+                     el.dispatchEvent(new MouseEvent('mousedown', opts)); \
+                     el.dispatchEvent(new MouseEvent('mouseup', opts)); \
+                     el.dispatchEvent(new MouseEvent('click', opts)); }}",
+                    sel = sel, btn = btn
+                )
+            }
+            Self::Type { selector, text, delay } => {
+                let sel = serde_json::to_string(selector).unwrap();
+                let val = serde_json::to_string(text).unwrap();
+                let delay_ms = delay.unwrap_or(50);
+                format!(
+                    "async () => {{ const el = document.querySelector({sel}); \
+                     if (!el) throw new Error('Element not found: ' + {sel}); \
+                     el.focus(); \
+                     const text = {val}; \
+                     for (const ch of text) {{ \
+                       el.value += ch; \
+                       el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
+                       el.dispatchEvent(new KeyboardEvent('keypress', {{ key: ch, bubbles: true }})); \
+                       await new Promise(r => setTimeout(r, {delay_ms} + Math.random() * 20)); \
+                     }} \
+                     el.dispatchEvent(new Event('change', {{ bubbles: true }})); }}",
+                    sel = sel, val = val, delay_ms = delay_ms
+                )
+            }
+            Self::Fill { selector, value } => {
+                let sel = serde_json::to_string(selector).unwrap();
+                let val = serde_json::to_string(value).unwrap();
+                format!(
+                    "() => {{ const el = document.querySelector({sel}); \
+                     if (!el) throw new Error('Element not found: ' + {sel}); \
+                     el.focus(); \
+                     el.value = ''; \
+                     el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
+                     el.value = {val}; \
+                     el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
+                     el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
+                     el.blur(); }}",
+                    sel = sel, val = val
+                )
+            }
+            Self::GetText { selector } => {
+                let sel = serde_json::to_string(selector).unwrap();
+                format!("() => {{ const el = document.querySelector({}); return el ? el.innerText : null; }}", sel)
+            }
+            Self::GetHtml { selector, outer } => {
+                let selector = selector.as_deref().unwrap_or("html");
+                let sel = serde_json::to_string(selector).unwrap();
+                let prop = if *outer { "outerHTML" } else { "innerHTML" };
+                
+                // Script to clean and return HTML (prevents huge token usage)
+                format!(r#"
+                    () => {{
+                        const el = document.querySelector({});
+                        if (!el) return 'Element not found';
+                        const clone = el.cloneNode(true);
+                        // Remove non-content elements and interactive cruft
+                        clone.querySelectorAll('script, style, svg, link, meta, noscript, iframe').forEach(e => e.remove());
+                        let html = clone.{};
+                        // Limit to ~15KB (~4k tokens) to avoid 429s
+                        if (html.length > 15000) {{
+                            return html.substring(0, 15000) + '\n... (truncated)';
+                        }}
+                        return html;
+                    }}
+                "#, sel, prop)
+            }
+            Self::GetAttribute { selector, attribute } => {
+                let sel = serde_json::to_string(selector).unwrap();
+                let attr = serde_json::to_string(attribute).unwrap();
+                format!("() => {{ const el = document.querySelector({}); return el ? el.getAttribute({}) : null; }}", sel, attr)
+            }
+            Self::WaitForSelector { selector, timeout, .. } => {
+                let sel = serde_json::to_string(selector).unwrap();
+                let timeout = timeout;
+                format!(r#"
+                    async () => {{
+                        const selector = {};
+                        const timeout = {};
+                        const start = Date.now();
+                        while (Date.now() - start < timeout) {{
+                            if (document.querySelector(selector)) return true;
+                            await new Promise(r => setTimeout(r, 100));
+                        }}
+                        throw new Error('Timeout waiting for selector: ' + selector);
+                    }}
+                "#, sel, timeout)
+            }
+            Self::WaitForNavigation { timeout } => {
+                // Approximate wait with sleep
+                 format!("async () => {{ await new Promise(r => setTimeout(r, {})); }}", timeout)
+            }
+            Self::Evaluate { script } => {
+                // Wrap user script in function if not already
+                if script.trim().starts_with("()") || script.trim().starts_with("function") {
+                    script.clone()
+                } else {
+                    format!("() => {{ {} }}", script)
+                }
+            }
+            Self::Select { selector, value } => {
+                let sel = serde_json::to_string(selector).unwrap();
+                let val = serde_json::to_string(value).unwrap();
+                 format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.value = {}; el.dispatchEvent(new Event('change', {{ bubbles: true }})); }}", sel, val)
+            }
+            Self::Check { selector, checked } => {
+                let sel = serde_json::to_string(selector).unwrap();
+                 format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.checked = {}; el.dispatchEvent(new Event('change', {{ bubbles: true }})); }}", sel, checked)
+            }
+            Self::Hover { selector } => {
+                let sel = serde_json::to_string(selector).unwrap();
+                 format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.dispatchEvent(new MouseEvent('mouseover', {{ bubbles: true }})); }}", sel)
+            }
+            Self::Press { key, count } => {
+                let k = serde_json::to_string(key).unwrap();
+                 format!("() => {{ for(let i=0; i<{}; i++) document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {{ key: {}, bubbles: true }})); }}", count, k)
+            }
+            Self::Scroll { selector, x, y } => {
+                if let Some(s) = selector {
+                    let sel = serde_json::to_string(s).unwrap();
+                     format!("() => {{ const el = document.querySelector({}); if(el) el.scrollBy({}, {}); else window.scrollBy({}, {}); }}", sel, x, y, x, y)
+                } else {
+                     format!("() => {{ window.scrollBy({}, {}); }}", x, y)
+                }
+            }
+            Self::GetUrl => "() => window.location.href".to_string(),
+            Self::GetTitle => "() => document.title".to_string(),
+            Self::GoBack => "() => history.back()".to_string(),
+            Self::GoForward => "() => history.forward()".to_string(),
+            Self::Reload => "() => location.reload()".to_string(),
+            _ => "() => {}".to_string(), // Should not happen for Navigate/Screenshot/Close
         }
     }
 }
@@ -462,8 +503,9 @@ mod tests {
             button: Some("left".to_string()),
         };
         let args = action.to_mcp_args();
-        assert_eq!(args["selector"], "#submit");
-        assert_eq!(args["button"], "left");
+        // Click uses browser_evaluate, so args contain a "function" key with JS
+        assert!(args["function"].as_str().unwrap().contains("#submit"));
+        assert_eq!(action.mcp_tool_name(), "browser_evaluate");
     }
 
     #[test]

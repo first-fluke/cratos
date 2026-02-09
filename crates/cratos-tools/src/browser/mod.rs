@@ -74,8 +74,8 @@ mod tool;
 // Browser Constants
 // ============================================================================
 
-/// Default browser action timeout in milliseconds (30 seconds)
-pub const DEFAULT_BROWSER_TIMEOUT_MS: u64 = 30000;
+/// Default browser action timeout in milliseconds (120 seconds)
+pub const DEFAULT_BROWSER_TIMEOUT_MS: u64 = 120000;
 
 pub use actions::{BrowserAction, BrowserActionResult};
 pub use config::{BrowserConfig, BrowserEngine, BrowserType, PlaywrightConfig};

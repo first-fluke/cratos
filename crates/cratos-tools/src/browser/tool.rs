@@ -35,7 +35,7 @@ impl BrowserTool {
     pub fn with_config(config: BrowserConfig) -> Self {
         let definition = ToolDefinition::new(
             "browser",
-            "Automate browser interactions: navigate, click, type, screenshot, and more",
+            "Open and interact with websites in a real web browser. Navigates to URLs, clicks page elements, fills web forms, takes screenshots of web pages. Requires a target URL or an already-open web page to operate on.",
         )
         .with_category(ToolCategory::External)
         .with_risk_level(RiskLevel::Medium)
@@ -60,7 +60,7 @@ impl BrowserTool {
                 },
                 "selector": {
                     "type": "string",
-                    "description": "CSS selector for element actions"
+                    "description": "CSS selector for element actions (required for click, type, fill, screenshot, get_text)"
                 },
                 "text": {
                     "type": "string",
@@ -85,6 +85,10 @@ impl BrowserTool {
                 "timeout": {
                     "type": "integer",
                     "description": "Timeout in milliseconds"
+                },
+                "delay": {
+                    "type": "integer",
+                    "description": "Delay between keystrokes in ms for type action (default: 50)"
                 },
                 "full_page": {
                     "type": "boolean",
@@ -122,12 +126,20 @@ impl BrowserTool {
         let engine = &self.config.default_engine;
         let (command, args) = engine.mcp_command();
 
+        let mut env: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        if self.config.playwright.slow_mo > 0 {
+            env.insert(
+                "PLAYWRIGHT_SLOW_MO".to_string(),
+                self.config.playwright.slow_mo.to_string(),
+            );
+        }
+
         let server_config = McpServerConfig {
             name: engine.server_name().to_string(),
             transport: McpTransport::Stdio {
                 command: command.to_string(),
                 args: args.iter().map(|s| (*s).to_string()).collect(),
-                env: Default::default(),
+                env,
             },
             auto_start: true,
         };
@@ -196,13 +208,25 @@ impl BrowserTool {
             });
 
         // Check for screenshot data
-        let screenshot = result.content.iter().find_map(|c| {
+        let mut screenshot = result.content.iter().find_map(|c| {
             if let crate::mcp::McpContent::Image { data, .. } = c {
                 Some(data.clone())
             } else {
                 None
             }
         });
+
+        // Fallback: Check if data contains screenshot/image/base64
+        if screenshot.is_none() {
+            if let Some(s) = data.get("screenshot").and_then(|v| v.as_str()) {
+                screenshot = Some(s.to_string());
+            } else if let Some(s) = data.get("data").and_then(|v| v.as_str()) {
+                // Heuristic: check if it looks like base64
+                if s.len() > 100 && !s.contains(' ') {
+                    screenshot = Some(s.to_string());
+                }
+            }
+        }
 
         let mut action_result = BrowserActionResult::success(data);
         if let Some(ss) = screenshot {
@@ -304,14 +328,8 @@ impl BrowserTool {
                 })
             }
             "get_html" => {
-                let selector = input
-                    .get("selector")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        Error::InvalidInput("Missing 'selector' for get_html".to_string())
-                    })?;
                 Ok(BrowserAction::GetHtml {
-                    selector: selector.to_string(),
+                    selector: input.get("selector").and_then(|v| v.as_str()).map(String::from),
                     outer: input.get("outer").and_then(|v| v.as_bool()).unwrap_or(true),
                 })
             }
@@ -435,6 +453,10 @@ impl BrowserTool {
             "go_back" => Ok(BrowserAction::GoBack),
             "go_forward" => Ok(BrowserAction::GoForward),
             "reload" => Ok(BrowserAction::Reload),
+            "resize" => Ok(BrowserAction::Resize {
+                width: input.get("width").and_then(|v| v.as_u64()).unwrap_or(1280) as u32,
+                height: input.get("height").and_then(|v| v.as_u64()).unwrap_or(720) as u32,
+            }),
             "close" => Ok(BrowserAction::Close),
             _ => Err(Error::InvalidInput(format!(
                 "Unknown action: {}",

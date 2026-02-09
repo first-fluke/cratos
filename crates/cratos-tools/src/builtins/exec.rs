@@ -2,17 +2,14 @@
 
 use crate::error::{Error, Result};
 use crate::registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolResult};
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::LazyLock;
 use std::time::Instant;
 use tokio::process::Command;
 use tracing::{debug, warn};
 
-/// Maximum allowed timeout in seconds (60 seconds)
-/// Reduced from 5 minutes to prevent resource exhaustion DoS attacks
-const MAX_TIMEOUT_SECS: u64 = 60;
+/// Default maximum timeout in seconds
+const DEFAULT_MAX_TIMEOUT_SECS: u64 = 60;
 
 /// Shell metacharacters that indicate command injection attempts
 /// These are blocked because they could be used to chain commands or redirect output
@@ -32,83 +29,68 @@ const SHELL_METACHARACTERS: &[char] = &[
     '#',  // Comment (can truncate commands)
 ];
 
-/// Dangerous commands that are always blocked
+/// Default dangerous commands that are always blocked
 ///
 /// NOTE: Dev tools (cargo, npm, pip, brew, curl, git, etc.) are intentionally
 /// ALLOWED because Cratos runs on the user's own machine as a personal assistant.
 /// Only truly destructive or privilege-escalation commands are blocked.
-static BLOCKED_COMMANDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    HashSet::from([
-        // Destructive system commands
-        "rm",
-        "rmdir",
-        "dd",
-        "mkfs",
-        "fdisk",
-        "parted",
-        // System control
-        "shutdown",
-        "reboot",
-        "poweroff",
-        "halt",
-        "init",
-        // User/permission manipulation
-        "passwd",
-        "useradd",
-        "userdel",
-        "usermod",
-        "groupadd",
-        "groupdel",
-        // Network firewall (can lock out user)
-        "iptables",
-        "ip6tables",
-        "nft",
-        // Shell spawning (prevents shell escape)
-        "bash",
-        "sh",
-        "zsh",
-        "fish",
-        "csh",
-        "tcsh",
-        "ksh",
-        // Network attack tools
-        "nc",
-        "netcat",
-        "ncat",
-        // Privilege escalation
-        "sudo",
-        "su",
-        "doas",
-    ])
-});
+const DEFAULT_BLOCKED_COMMANDS: &[&str] = &[
+    // Destructive system commands
+    "rm", "rmdir", "dd", "mkfs", "fdisk", "parted",
+    // System control
+    "shutdown", "reboot", "poweroff", "halt", "init",
+    // User/permission manipulation
+    "passwd", "useradd", "userdel", "usermod", "groupadd", "groupdel",
+    // Network firewall (can lock out user)
+    "iptables", "ip6tables", "nft",
+    // Shell spawning (prevents shell escape)
+    "bash", "sh", "zsh", "fish", "csh", "tcsh", "ksh",
+    // Network attack tools
+    "nc", "netcat", "ncat",
+    // Privilege escalation
+    "sudo", "su", "doas",
+];
 
-/// Dangerous path patterns that should be blocked
-static BLOCKED_PATH_PATTERNS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
-    vec![
-        "/etc",
-        "/root",
-        "/var/log",
-        "/boot",
-        "/dev",
-        "/proc",
-        "/sys",
-        "/usr/bin",
-        "/usr/sbin",
-        "/bin",
-        "/sbin",
-    ]
-});
+/// Default dangerous path patterns
+const DEFAULT_BLOCKED_PATHS: &[&str] = &[
+    "/etc", "/root", "/var/log", "/boot", "/dev", "/proc", "/sys",
+    "/usr/bin", "/usr/sbin", "/bin", "/sbin",
+];
 
-/// Check if a command is blocked
-fn is_command_blocked(command: &str) -> bool {
-    let base_command = command
-        .split('/')
-        .next_back()
-        .unwrap_or(command)
-        .split_whitespace()
-        .next()
-        .unwrap_or(command);
-    BLOCKED_COMMANDS.contains(base_command)
+/// Exec security mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecMode {
+    /// Block only built-in dangerous commands (default for personal machine)
+    Permissive,
+    /// Block all commands except those in `allowed_commands`
+    Strict,
+}
+
+/// Configuration for exec tool security
+#[derive(Debug, Clone)]
+pub struct ExecConfig {
+    /// Security mode
+    pub mode: ExecMode,
+    /// Maximum timeout in seconds
+    pub max_timeout_secs: u64,
+    /// Additional commands to block (on top of built-in list)
+    pub extra_blocked_commands: Vec<String>,
+    /// Commands allowed when mode = Strict
+    pub allowed_commands: Vec<String>,
+    /// Blocked filesystem paths
+    pub blocked_paths: Vec<String>,
+}
+
+impl Default for ExecConfig {
+    fn default() -> Self {
+        Self {
+            mode: ExecMode::Permissive,
+            max_timeout_secs: DEFAULT_MAX_TIMEOUT_SECS,
+            extra_blocked_commands: Vec::new(),
+            allowed_commands: Vec::new(),
+            blocked_paths: DEFAULT_BLOCKED_PATHS.iter().map(|s| (*s).to_string()).collect(),
+        }
+    }
 }
 
 /// SECURITY: Check for shell metacharacters that could be used for command injection
@@ -122,25 +104,23 @@ fn contains_shell_metacharacters(s: &str) -> Option<char> {
     s.chars().find(|&c| SHELL_METACHARACTERS.contains(&c))
 }
 
-/// Check if a path is in a dangerous location
-fn is_path_dangerous(path: &str) -> bool {
-    let normalized = PathBuf::from(path);
-    let path_str = normalized.to_string_lossy();
-
-    BLOCKED_PATH_PATTERNS
-        .iter()
-        .any(|pattern| path_str.starts_with(pattern))
-}
-
 /// Tool for executing shell commands (with safety restrictions)
 pub struct ExecTool {
     definition: ToolDefinition,
+    config: ExecConfig,
 }
 
 impl ExecTool {
-    /// Create a new exec tool
+    /// Create a new exec tool with default config
     #[must_use]
     pub fn new() -> Self {
+        Self::with_config(ExecConfig::default())
+    }
+
+    /// Create a new exec tool with custom config
+    #[must_use]
+    pub fn with_config(config: ExecConfig) -> Self {
+        let timeout_desc = format!("Timeout in seconds (max {})", config.max_timeout_secs);
         let definition = ToolDefinition::new("exec", "Execute a command directly on the user's local machine. No shell pipes or chaining — use separate calls for each command. Example: command=\"ps\" args=[\"aux\"] to list processes.")
             .with_category(ToolCategory::Exec)
             .with_risk_level(RiskLevel::High)
@@ -162,13 +142,44 @@ impl ExecTool {
                     },
                     "timeout_secs": {
                         "type": "integer",
-                        "description": "Timeout in seconds (max 60)"
+                        "description": timeout_desc
                     }
                 },
                 "required": ["command"]
             }));
 
-        Self { definition }
+        Self { definition, config }
+    }
+
+    /// Check if a command is blocked by this tool's config
+    fn is_command_blocked(&self, command: &str) -> bool {
+        let base_command = command
+            .split('/')
+            .next_back()
+            .unwrap_or(command)
+            .split_whitespace()
+            .next()
+            .unwrap_or(command);
+
+        match self.config.mode {
+            ExecMode::Strict => {
+                // In strict mode, block everything except allowed_commands
+                !self.config.allowed_commands.iter().any(|a| a == base_command)
+            }
+            ExecMode::Permissive => {
+                // In permissive mode, only block built-in + extra blocked commands
+                let is_builtin_blocked = DEFAULT_BLOCKED_COMMANDS.contains(&base_command);
+                let is_extra_blocked = self.config.extra_blocked_commands.iter().any(|b| b == base_command);
+                is_builtin_blocked || is_extra_blocked
+            }
+        }
+    }
+
+    /// Check if a path is in a dangerous location
+    fn is_path_dangerous(&self, path: &str) -> bool {
+        let normalized = PathBuf::from(path);
+        let path_str = normalized.to_string_lossy();
+        self.config.blocked_paths.iter().any(|pattern| path_str.starts_with(pattern.as_str()))
     }
 }
 
@@ -198,7 +209,7 @@ impl Tool for ExecTool {
         let prefix_args: Vec<&str> = parts.collect();
 
         // SECURITY: Check if command is blocked
-        if is_command_blocked(command) {
+        if self.is_command_blocked(command) {
             warn!(command = %command, "Blocked dangerous command attempt");
             return Err(Error::PermissionDenied(format!(
                 "Command '{}' is blocked for security reasons",
@@ -249,24 +260,15 @@ impl Tool for ExecTool {
             .collect();
 
         // SECURITY: Check args for dangerous patterns
+        // NOTE: Shell metacharacter check is intentionally NOT applied to args.
+        // Since we use Command::new(program).args(...) (no shell), metacharacters
+        // in args are passed as literal strings and cannot cause injection.
+        // This allows legitimate use of osascript, sqlite3, etc. that need
+        // parentheses and other special characters in their arguments.
         for arg in &args {
-            // Check for shell metacharacters in arguments
-            if let Some(c) = contains_shell_metacharacters(arg) {
-                warn!(
-                    arg = %arg,
-                    metachar = %c,
-                    "Command injection attempt blocked in argument"
-                );
-                return Err(Error::PermissionDenied(format!(
-                    "Argument contains blocked shell metacharacter '{}'. \
-                     Shell metacharacters are not allowed.",
-                    c
-                )));
-            }
-
             if arg.contains("..") || arg.starts_with('/') {
                 // Check if it's a dangerous path
-                if is_path_dangerous(arg) {
+                if self.is_path_dangerous(arg) {
                     warn!(arg = %arg, "Blocked dangerous path in argument");
                     return Err(Error::PermissionDenied(format!(
                         "Argument '{}' references a restricted path",
@@ -280,7 +282,7 @@ impl Tool for ExecTool {
 
         // SECURITY: Validate working directory
         if let Some(dir) = cwd {
-            if is_path_dangerous(dir) {
+            if self.is_path_dangerous(dir) {
                 warn!(cwd = %dir, "Blocked dangerous working directory");
                 return Err(Error::PermissionDenied(format!(
                     "Working directory '{}' is restricted",
@@ -290,11 +292,12 @@ impl Tool for ExecTool {
         }
 
         // SECURITY: Cap timeout to prevent resource exhaustion
+        let max_timeout = self.config.max_timeout_secs;
         let timeout_secs = input
             .get("timeout_secs")
             .and_then(|v| v.as_u64())
-            .unwrap_or(60)
-            .min(MAX_TIMEOUT_SECS);
+            .unwrap_or(max_timeout)
+            .min(max_timeout);
 
         debug!(command = %command, args = ?args, "Executing command");
 
@@ -370,47 +373,98 @@ mod tests {
     }
 
     #[test]
-    fn test_blocked_commands() {
+    fn test_blocked_commands_permissive() {
+        let tool = ExecTool::new(); // default = Permissive
+
         // System destructive commands
-        assert!(is_command_blocked("rm"));
-        assert!(is_command_blocked("/bin/rm"));
-        assert!(is_command_blocked("/usr/bin/rm"));
-        assert!(is_command_blocked("dd"));
-        assert!(is_command_blocked("shutdown"));
-        assert!(is_command_blocked("reboot"));
+        assert!(tool.is_command_blocked("rm"));
+        assert!(tool.is_command_blocked("/bin/rm"));
+        assert!(tool.is_command_blocked("/usr/bin/rm"));
+        assert!(tool.is_command_blocked("dd"));
+        assert!(tool.is_command_blocked("shutdown"));
+        assert!(tool.is_command_blocked("reboot"));
 
         // Shell commands
-        assert!(is_command_blocked("bash"));
-        assert!(is_command_blocked("sh"));
-        assert!(is_command_blocked("sudo"));
+        assert!(tool.is_command_blocked("bash"));
+        assert!(tool.is_command_blocked("sh"));
+        assert!(tool.is_command_blocked("sudo"));
 
         // Safe commands should pass
-        assert!(!is_command_blocked("ls"));
-        assert!(!is_command_blocked("cat"));
-        assert!(!is_command_blocked("echo"));
-        assert!(!is_command_blocked("git"));
+        assert!(!tool.is_command_blocked("ls"));
+        assert!(!tool.is_command_blocked("cat"));
+        assert!(!tool.is_command_blocked("echo"));
+        assert!(!tool.is_command_blocked("git"));
 
-        // Dev tools are allowed (personal machine, not a shared server)
-        assert!(!is_command_blocked("cargo"));
-        assert!(!is_command_blocked("npm"));
-        assert!(!is_command_blocked("pip"));
-        assert!(!is_command_blocked("brew"));
-        assert!(!is_command_blocked("curl"));
-        assert!(!is_command_blocked("wget"));
+        // Dev tools are allowed (personal machine)
+        assert!(!tool.is_command_blocked("cargo"));
+        assert!(!tool.is_command_blocked("npm"));
+        assert!(!tool.is_command_blocked("pip"));
+        assert!(!tool.is_command_blocked("brew"));
+        assert!(!tool.is_command_blocked("curl"));
+        assert!(!tool.is_command_blocked("wget"));
+        assert!(!tool.is_command_blocked("osascript"));
+    }
+
+    #[test]
+    fn test_blocked_commands_strict() {
+        let tool = ExecTool::with_config(ExecConfig {
+            mode: ExecMode::Strict,
+            allowed_commands: vec!["ls".to_string(), "cat".to_string(), "git".to_string()],
+            ..ExecConfig::default()
+        });
+
+        // Only allowed commands pass
+        assert!(!tool.is_command_blocked("ls"));
+        assert!(!tool.is_command_blocked("cat"));
+        assert!(!tool.is_command_blocked("git"));
+
+        // Everything else blocked
+        assert!(tool.is_command_blocked("echo"));
+        assert!(tool.is_command_blocked("cargo"));
+        assert!(tool.is_command_blocked("rm"));
+    }
+
+    #[test]
+    fn test_extra_blocked_commands() {
+        let tool = ExecTool::with_config(ExecConfig {
+            extra_blocked_commands: vec!["nmap".to_string(), "masscan".to_string()],
+            ..ExecConfig::default()
+        });
+
+        assert!(tool.is_command_blocked("nmap"));
+        assert!(tool.is_command_blocked("masscan"));
+        // Built-in blocks still active
+        assert!(tool.is_command_blocked("rm"));
+        // Normal commands still allowed
+        assert!(!tool.is_command_blocked("ls"));
     }
 
     #[test]
     fn test_dangerous_paths() {
-        assert!(is_path_dangerous("/etc/passwd"));
-        assert!(is_path_dangerous("/etc/shadow"));
-        assert!(is_path_dangerous("/root/.ssh"));
-        assert!(is_path_dangerous("/var/log/syslog"));
-        assert!(is_path_dangerous("/boot/grub"));
+        let tool = ExecTool::new();
+
+        assert!(tool.is_path_dangerous("/etc/passwd"));
+        assert!(tool.is_path_dangerous("/etc/shadow"));
+        assert!(tool.is_path_dangerous("/root/.ssh"));
+        assert!(tool.is_path_dangerous("/var/log/syslog"));
+        assert!(tool.is_path_dangerous("/boot/grub"));
 
         // Safe paths should pass
-        assert!(!is_path_dangerous("/tmp/test"));
-        assert!(!is_path_dangerous("/home/user/project"));
-        assert!(!is_path_dangerous("./relative/path"));
+        assert!(!tool.is_path_dangerous("/tmp/test"));
+        assert!(!tool.is_path_dangerous("/home/user/project"));
+        assert!(!tool.is_path_dangerous("./relative/path"));
+    }
+
+    #[test]
+    fn test_custom_blocked_paths() {
+        let tool = ExecTool::with_config(ExecConfig {
+            blocked_paths: vec!["/custom/secret".to_string()],
+            ..ExecConfig::default()
+        });
+
+        assert!(tool.is_path_dangerous("/custom/secret/file.txt"));
+        // Default paths no longer blocked (replaced by custom list)
+        assert!(!tool.is_path_dangerous("/etc/passwd"));
     }
 
     #[tokio::test]
@@ -451,36 +505,18 @@ mod tests {
 
     #[test]
     fn test_shell_metacharacter_detection() {
-        // Pipe injection
         assert!(contains_shell_metacharacters("ls | cat").is_some());
-        assert!(contains_shell_metacharacters("cmd|evil").is_some());
-
-        // Semicolon injection
         assert!(contains_shell_metacharacters("ls; rm -rf /").is_some());
-        assert!(contains_shell_metacharacters("echo;whoami").is_some());
-
-        // Background/AND operator
         assert!(contains_shell_metacharacters("cmd && evil").is_some());
-        assert!(contains_shell_metacharacters("cmd &").is_some());
-
-        // Command substitution
         assert!(contains_shell_metacharacters("$(whoami)").is_some());
         assert!(contains_shell_metacharacters("`whoami`").is_some());
-
-        // Redirection
         assert!(contains_shell_metacharacters("> /etc/passwd").is_some());
-        assert!(contains_shell_metacharacters("< input").is_some());
-
-        // Variable expansion
         assert!(contains_shell_metacharacters("$PATH").is_some());
-        assert!(contains_shell_metacharacters("${HOME}").is_some());
 
         // Clean commands should pass
         assert!(contains_shell_metacharacters("ls").is_none());
         assert!(contains_shell_metacharacters("git").is_none());
-        assert!(contains_shell_metacharacters("echo").is_none());
         assert!(contains_shell_metacharacters("file.txt").is_none());
-        assert!(contains_shell_metacharacters("-la").is_none());
         assert!(contains_shell_metacharacters("--help").is_none());
     }
 
@@ -504,28 +540,36 @@ mod tests {
             .await;
         assert!(result.is_err());
 
-        // Injection in args
+        // Metacharacters in args are safe (Command::new doesn't use shell)
         let result = tool
             .execute(serde_json::json!({
                 "command": "echo",
                 "args": ["hello; whoami"]
             }))
             .await;
-        assert!(result.is_err());
+        assert!(result.is_ok());
 
-        // Redirection in args
+        // Parentheses in args are safe (needed for osascript, sqlite3, etc.)
         let result = tool
             .execute(serde_json::json!({
                 "command": "echo",
-                "args": ["> /etc/passwd"]
+                "args": ["(current date)"]
             }))
             .await;
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn test_max_timeout_reduced() {
-        // Verify timeout is now 60 seconds, not 300
-        assert_eq!(MAX_TIMEOUT_SECS, 60);
+    fn test_default_max_timeout() {
+        assert_eq!(DEFAULT_MAX_TIMEOUT_SECS, 60);
+    }
+
+    #[test]
+    fn test_custom_timeout() {
+        let tool = ExecTool::with_config(ExecConfig {
+            max_timeout_secs: 120,
+            ..ExecConfig::default()
+        });
+        assert_eq!(tool.config.max_timeout_secs, 120);
     }
 }

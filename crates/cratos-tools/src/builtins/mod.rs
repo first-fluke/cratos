@@ -19,7 +19,7 @@ mod http;
 mod wol;
 
 pub use config::{ConfigAction, ConfigInput, ConfigTarget, ConfigTool};
-pub use exec::ExecTool;
+pub use exec::{ExecConfig, ExecMode, ExecTool};
 pub use file::{FileListTool, FileReadTool, FileWriteTool};
 pub use git::{GitBranchTool, GitCommitTool, GitDiffTool, GitPushTool, GitStatusTool};
 pub use github::GitHubApiTool;
@@ -36,6 +36,8 @@ use std::sync::Arc;
 pub struct BuiltinsConfig {
     /// Named WoL devices (name -> MAC address)
     pub wol_devices: HashMap<String, String>,
+    /// Exec tool security configuration
+    pub exec: ExecConfig,
 }
 
 /// Register all built-in tools with the registry (default config)
@@ -54,8 +56,8 @@ pub fn register_builtins_with_config(registry: &mut ToolRegistry, config: &Built
     registry.register(Arc::new(HttpGetTool::new()));
     registry.register(Arc::new(HttpPostTool::new()));
 
-    // Exec tool
-    registry.register(Arc::new(ExecTool::new()));
+    // Exec tool (with configurable security)
+    registry.register(Arc::new(ExecTool::with_config(config.exec.clone())));
 
     // Git tools
     registry.register(Arc::new(GitStatusTool::new()));
