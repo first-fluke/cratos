@@ -76,6 +76,15 @@ pub const MODELS: &[&str] = &[
 /// Default Gemini model (Gemini 2.5 Flash - best speed/cost)
 pub const DEFAULT_MODEL: &str = "gemini-2.5-flash";
 
+/// 429 시 한 단계 저렴한 모델로 다운그레이드
+fn downgrade_model(model: &str) -> Option<&'static str> {
+    match model {
+        "gemini-2.5-pro" => Some("gemini-2.5-flash"),
+        "gemini-2.5-flash" => Some("gemini-2.5-flash-lite"),
+        _ => None, // flash-lite, legacy 모델은 더 내릴 곳 없음
+    }
+}
+
 /// Default API base URL (for API key auth)
 const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -105,6 +114,7 @@ struct GeminiRequest {
 struct GeminiContent {
     #[serde(skip_serializing_if = "Option::is_none")]
     role: Option<String>,
+    #[serde(default)]
     parts: Vec<GeminiPart>,
 }
 
@@ -193,7 +203,9 @@ struct Candidate {
 #[serde(rename_all = "camelCase")]
 struct UsageMetadata {
     prompt_token_count: u32,
-    candidates_token_count: u32,
+    /// May be absent for empty/thinking-only responses
+    #[serde(default)]
+    candidates_token_count: Option<u32>,
     total_token_count: u32,
 }
 
@@ -370,7 +382,23 @@ impl GeminiConfig {
             });
         }
 
-        // 3. Try gcloud CLI
+        // 3. Try Gemini CLI OAuth credentials
+        if let Some(creds) = cli_auth::read_gemini_oauth() {
+            if cli_auth::is_token_expired(creds.expiry_date) {
+                info!("Gemini CLI token expired — run `gemini auth login` to refresh");
+            }
+            return Ok(Self {
+                auth: GeminiAuth::OAuth(creds.access_token),
+                auth_source: AuthSource::GeminiCli,
+                base_url,
+                default_model,
+                default_max_tokens: 8192,
+                timeout: Duration::from_secs(60),
+                project_id: None,
+            });
+        }
+
+        // 4. Try gcloud CLI
         if let Ok(token) = cli_auth::get_gcloud_access_token_blocking() {
             info!("Using Google Cloud SDK (gcloud) credentials");
             let project_id = cli_auth::get_gcloud_project_id_blocking().ok();
@@ -385,22 +413,6 @@ impl GeminiConfig {
                 default_max_tokens: 8192,
                 timeout: Duration::from_secs(60),
                 project_id,
-            });
-        }
-
-        // 4. Try Gemini CLI OAuth credentials
-        if let Some(creds) = cli_auth::read_gemini_oauth() {
-            if cli_auth::is_token_expired(creds.expiry_date) {
-                info!("Gemini CLI token expired — run `gemini auth login` to refresh");
-            }
-            return Ok(Self {
-                auth: GeminiAuth::OAuth(creds.access_token),
-                auth_source: AuthSource::GeminiCli,
-                base_url,
-                default_model,
-                default_max_tokens: 8192,
-                timeout: Duration::from_secs(60),
-                project_id: None,
             });
         }
 
@@ -491,6 +503,9 @@ pub struct GeminiProvider {
     code_assist_project: tokio::sync::OnceCell<String>,
     /// Last retry-after delay reported by Gemini (seconds), used for smart backoff.
     last_retry_after: std::sync::atomic::AtomicU64,
+    /// Dynamically refreshed auth token (overrides config.auth when set).
+    /// Used to pick up refreshed Gemini CLI tokens without restarting.
+    refreshed_auth: std::sync::Mutex<Option<GeminiAuth>>,
 }
 
 // Code Assist API types for OAuth auth (same API as Gemini CLI)
@@ -551,7 +566,34 @@ impl GeminiProvider {
             config,
             code_assist_project: tokio::sync::OnceCell::new(),
             last_retry_after: std::sync::atomic::AtomicU64::new(0),
+            refreshed_auth: std::sync::Mutex::new(None),
         })
+    }
+
+    /// Get the current auth, preferring refreshed over config.
+    fn current_auth(&self) -> GeminiAuth {
+        self.refreshed_auth
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+            .unwrap_or_else(|| self.config.auth.clone())
+    }
+
+    /// Try to re-read Gemini CLI token from disk. Returns true if refreshed.
+    fn try_refresh_cli_token(&self) -> bool {
+        if self.config.auth_source != AuthSource::GeminiCli {
+            return false;
+        }
+        if let Some(creds) = crate::cli_auth::read_gemini_oauth() {
+            if !creds.access_token.is_empty() {
+                tracing::info!("Gemini CLI token re-read from disk");
+                if let Ok(mut guard) = self.refreshed_auth.lock() {
+                    *guard = Some(GeminiAuth::OAuth(creds.access_token));
+                }
+                return true;
+            }
+        }
+        false
     }
 
     /// Create from environment variables
@@ -815,29 +857,64 @@ impl GeminiProvider {
         }
     }
 
-    /// Send request to Gemini API (with retry on 429)
-    async fn send_request(&self, model: &str, request: GeminiRequest) -> Result<GeminiResponse> {
+    /// Send request to Gemini API (with retry on 429 + automatic model downgrade)
+    ///
+    /// Returns `(GeminiResponse, actual_model_used)` — the model may differ from
+    /// the requested one if a 429 triggered an automatic downgrade.
+    async fn send_request(
+        &self,
+        model: &str,
+        request: GeminiRequest,
+    ) -> Result<(GeminiResponse, String)> {
         const MAX_RETRIES: u32 = 2;
+        let mut current_model = model.to_string();
 
-        for attempt in 0..=MAX_RETRIES {
-            match self.send_request_once(model, &request).await {
-                Ok(resp) => return Ok(resp),
-                Err(Error::RateLimit) if attempt < MAX_RETRIES => {
-                    // Use Gemini's reported retry-after, with minimum 2s and max 30s
-                    let gemini_delay = self.last_retry_after.load(std::sync::atomic::Ordering::Relaxed);
-                    let delay_secs = gemini_delay.clamp(2, 30);
-                    tracing::info!(
-                        attempt = attempt + 1,
-                        delay_secs,
-                        gemini_reported = gemini_delay,
-                        "Gemini rate limited, retrying after reported delay"
-                    );
-                    tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+        loop {
+            for attempt in 0..=MAX_RETRIES {
+                match self.send_request_once(&current_model, &request).await {
+                    Ok(resp) => return Ok((resp, current_model)),
+                    Err(Error::RateLimit) if attempt < MAX_RETRIES => {
+                        let gemini_delay =
+                            self.last_retry_after.load(std::sync::atomic::Ordering::Relaxed);
+                        let delay_secs = if gemini_delay > 0 {
+                            gemini_delay.clamp(1, 15)
+                        } else {
+                            2 + (attempt as u64) * 2 // exponential: 2, 4
+                        };
+                        tracing::info!(
+                            attempt = attempt + 1,
+                            model = %current_model,
+                            delay_secs,
+                            gemini_hint_secs = gemini_delay,
+                            "Gemini rate limited, retrying same model"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+                    }
+                    Err(Error::RateLimit) => break, // MAX_RETRIES exhausted, try downgrade
+                    Err(Error::Api(ref msg)) if msg.contains("authentication") && attempt == 0 => {
+                        // Token expired — try re-reading from disk
+                        if self.try_refresh_cli_token() {
+                            tracing::info!("Retrying after token refresh");
+                            continue;
+                        }
+                        return Err(Error::Api(msg.clone()));
+                    }
+                    Err(e) => return Err(e),
                 }
-                Err(e) => return Err(e),
+            }
+
+            // Same-model retries exhausted → try downgrading
+            if let Some(cheaper) = downgrade_model(&current_model) {
+                tracing::warn!(
+                    from = %current_model,
+                    to = %cheaper,
+                    "Gemini rate limited, downgrading model"
+                );
+                current_model = cheaper.to_string();
+            } else {
+                return Err(Error::RateLimit);
             }
         }
-        Err(Error::RateLimit)
     }
 
     /// Single attempt to send request to Gemini API
@@ -845,10 +922,11 @@ impl GeminiProvider {
         // SECURITY: Don't log the full URL (may contain API key)
         debug!("Sending request to Gemini model: {} (auth_source={:?})", model, self.config.auth_source);
 
-        // OAuth tokens use Code Assist API; API keys use standard API
-        let is_code_assist = matches!(&self.config.auth, GeminiAuth::OAuth(_));
+        // Only GeminiCli auth uses Code Assist API; all others use standard API
+        let is_code_assist = self.config.auth_source == AuthSource::GeminiCli;
 
-        let mut request_builder = match &self.config.auth {
+        let current_auth = self.current_auth();
+        let mut request_builder = match &current_auth {
             GeminiAuth::ApiKey(key) => {
                 let url = format!(
                     "{}/models/{}:generateContent?key={}",
@@ -1048,7 +1126,7 @@ impl LlmProvider for GeminiProvider {
             tool_config: None,
         };
 
-        let response = self.send_request(model, gemini_request).await?;
+        let (response, actual_model) = self.send_request(model, gemini_request).await?;
 
         let candidate = response
             .candidates
@@ -1056,7 +1134,7 @@ impl LlmProvider for GeminiProvider {
             .ok_or_else(|| Error::InvalidResponse("No candidates in response".to_string()))?;
 
         // Extract text content
-        let content = candidate
+        let mut content: String = candidate
             .content
             .parts
             .iter()
@@ -1067,9 +1145,16 @@ impl LlmProvider for GeminiProvider {
             .collect::<Vec<_>>()
             .join("");
 
+        if content.is_empty() {
+            if candidate.finish_reason.as_deref() == Some("MAX_TOKENS") {
+                tracing::warn!("Gemini response empty (MAX_TOKENS). Code Assist API may be limiting output.");
+            }
+            content = "(empty response)".to_string();
+        }
+
         let usage = response.usage_metadata.map(|u| TokenUsage {
             prompt_tokens: u.prompt_token_count,
-            completion_tokens: u.candidates_token_count,
+            completion_tokens: u.candidates_token_count.unwrap_or(0),
             total_tokens: u.total_token_count,
         });
 
@@ -1077,7 +1162,7 @@ impl LlmProvider for GeminiProvider {
             content,
             usage,
             finish_reason: candidate.finish_reason.clone(),
-            model: model.to_string(),
+            model: actual_model,
         })
     }
 
@@ -1114,7 +1199,7 @@ impl LlmProvider for GeminiProvider {
             tool_config,
         };
 
-        let response = self.send_request(model, gemini_request).await?;
+        let (response, actual_model) = self.send_request(model, gemini_request).await?;
 
         let candidate = response
             .candidates
@@ -1142,9 +1227,16 @@ impl LlmProvider for GeminiProvider {
             }
         }
 
+        if content.is_none() && tool_calls.is_empty() {
+            if candidate.finish_reason.as_deref() == Some("MAX_TOKENS") {
+                tracing::warn!("Gemini tool response empty (MAX_TOKENS). Code Assist API may be limiting output.");
+            }
+            content = Some("(empty response)".to_string());
+        }
+
         let usage = response.usage_metadata.map(|u| TokenUsage {
             prompt_tokens: u.prompt_token_count,
-            completion_tokens: u.candidates_token_count,
+            completion_tokens: u.candidates_token_count.unwrap_or(0),
             total_tokens: u.total_token_count,
         });
 
@@ -1153,7 +1245,7 @@ impl LlmProvider for GeminiProvider {
             tool_calls,
             usage,
             finish_reason: candidate.finish_reason.clone(),
-            model: model.to_string(),
+            model: actual_model,
         })
     }
 }
@@ -1245,6 +1337,17 @@ mod tests {
 
         assert!(!debug_str.contains("long-oauth-token"));
         assert!(debug_str.contains("OAuth(ya29...7890)"));
+    }
+
+    #[test]
+    fn test_downgrade_chain() {
+        assert_eq!(downgrade_model("gemini-2.5-pro"), Some("gemini-2.5-flash"));
+        assert_eq!(
+            downgrade_model("gemini-2.5-flash"),
+            Some("gemini-2.5-flash-lite")
+        );
+        assert_eq!(downgrade_model("gemini-2.5-flash-lite"), None);
+        assert_eq!(downgrade_model("gemini-1.5-pro"), None);
     }
 
     #[test]

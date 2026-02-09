@@ -189,7 +189,7 @@ impl ModelTier {
             // ================================================================
             // Google Gemini - Gemini 2.5 family
             // ================================================================
-            (ModelTier::UltraBudget, "gemini") => "gemini-2.5-flash",
+            (ModelTier::UltraBudget, "gemini") => "gemini-2.5-flash-lite",
             (ModelTier::Fast, "gemini") => "gemini-2.5-flash",
             (ModelTier::Standard, "gemini") => "gemini-2.5-pro",
             (ModelTier::Premium, "gemini") => "gemini-2.5-pro",
@@ -1115,7 +1115,7 @@ mod tests {
         // Gemini (Gemini 2.5 family)
         assert_eq!(
             ModelTier::UltraBudget.default_model("gemini"),
-            "gemini-2.5-flash"
+            "gemini-2.5-flash-lite"
         );
         assert_eq!(ModelTier::Fast.default_model("gemini"), "gemini-2.5-flash");
         assert_eq!(ModelTier::Standard.default_model("gemini"), "gemini-2.5-pro");
