@@ -773,6 +773,28 @@ impl CostTracker {
         stats
     }
 
+    /// Non-blocking stats snapshot (for TUI render loop).
+    /// Returns `None` if the lock is held by another task.
+    pub fn try_get_stats(&self) -> Option<UsageStats> {
+        let records = self.records.try_read().ok()?;
+        let mut stats = UsageStats::default();
+
+        for record in records.iter() {
+            stats.total_input_tokens += record.input_tokens as u64;
+            stats.total_output_tokens += record.output_tokens as u64;
+            stats.total_cost += record.estimated_cost;
+            stats.total_requests += 1;
+
+            if record.success {
+                stats.successful_requests += 1;
+            } else {
+                stats.failed_requests += 1;
+            }
+        }
+
+        Some(stats)
+    }
+
     /// Get recent records
     pub async fn get_recent_records(&self, limit: usize) -> Vec<UsageRecord> {
         let records = self.records.read().await;

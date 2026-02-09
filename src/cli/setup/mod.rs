@@ -415,7 +415,7 @@ async fn resolve_google_auth(
     match check_cratos_google_oauth_status() {
         CratosOAuthStatus::Valid => {
             println!("\n  {} {}", t.oauth_detected, t.oauth_token_valid);
-            
+
             // Ask if user wants to reuse existing token
             if prompts::confirm(t.oauth_reuse_prompt, true, None)? {
                 return Ok(String::new());
@@ -423,7 +423,7 @@ async fn resolve_google_auth(
         }
         CratosOAuthStatus::Expired => {
             println!("\n  {} {}", t.oauth_detected, t.oauth_token_expired);
-            
+
             if prompts::confirm(t.oauth_reuse_prompt, true, None)? {
                 println!("  {}", t.oauth_refreshing);
 
@@ -452,7 +452,7 @@ async fn resolve_google_auth(
         println!();
         print_header(t.gcloud_detected_title);
         println!("  {}", t.gcloud_detected_desc);
-        
+
         if prompts::confirm(t.gcloud_use_prompt, true, None)? {
             // Verify token is valid (non-empty is checked by get_gcloud_access_token)
             // We use the token to check validity implicitly, but get_gcloud_access_token() essentially does that by running the command.
@@ -463,18 +463,18 @@ async fn resolve_google_auth(
 
     // 3. Browser OAuth login
     let headless = is_headless();
-    
+
     if headless {
         println!("\n  {}", t.oauth_remote_detected);
     }
-    
+
     println!("\n  {}", t.oauth_browser_login_google);
     println!("  {}", t.oauth_restricted_client_hint);
-    
+
     if prompts::confirm(t.oauth_browser_login_prompt, true, None)? {
         println!("  {}", t.oauth_starting);
         // Note: oauth_waiting is printed inside run_oauth_flow for normal mode
-        
+
         let config = cratos_llm::oauth_config::google_oauth_config();
         match oauth_server::run_oauth_flow(&config, headless, t).await {
             Ok(_) => {
@@ -504,7 +504,7 @@ async fn resolve_openai_auth(
     match check_cratos_openai_oauth_status() {
         CratosOAuthStatus::Valid => {
             println!("\n  {} {}", t.oauth_detected, t.oauth_token_valid);
-            
+
             // Ask if user wants to reuse existing token
             if prompts::confirm(t.oauth_reuse_prompt, true, None)? {
                 return Ok(String::new());
@@ -535,7 +535,7 @@ async fn resolve_openai_auth(
 
     // 2. Browser OAuth login
     let headless = is_headless();
-    
+
     if headless {
         println!("\n  {}", t.oauth_remote_detected);
     }
@@ -543,7 +543,7 @@ async fn resolve_openai_auth(
     println!("\n  {}", t.oauth_browser_login_openai);
     if prompts::confirm(t.oauth_browser_login_prompt, true, None)? {
         println!("  {}", t.oauth_starting);
-        
+
         let config = cratos_llm::oauth_config::openai_oauth_config();
         match oauth_server::run_oauth_flow(&config, headless, t).await {
             Ok(_) => {

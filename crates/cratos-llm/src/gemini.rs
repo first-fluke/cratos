@@ -344,7 +344,7 @@ impl GeminiConfig {
                 tokens = Self::try_refresh_blocking(tokens);
             }
             // Determine the source of the token based on configuration.
-            // If CRATOS_GOOGLE_CLIENT_ID is set AND distinct from the default (restricted) ID, 
+            // If CRATOS_GOOGLE_CLIENT_ID is set AND distinct from the default (restricted) ID,
             // we assume a custom client ID (standard API).
             // Otherwise, we assume the token was obtained using the default/extracted Gemini CLI ID (Code Assist API).
             let is_custom_client = if let Ok(id) = std::env::var("CRATOS_GOOGLE_CLIENT_ID") {
@@ -352,7 +352,7 @@ impl GeminiConfig {
             } else {
                 false
             };
-            
+
             let auth_source = if is_custom_client {
                 AuthSource::CratosOAuth
             } else {
@@ -845,8 +845,8 @@ impl GeminiProvider {
         // SECURITY: Don't log the full URL (may contain API key)
         debug!("Sending request to Gemini model: {} (auth_source={:?})", model, self.config.auth_source);
 
-        // Only GeminiCli uses Code Assist API; CratosOAuth uses standard API with Bearer token
-        let is_code_assist = self.config.auth_source == AuthSource::GeminiCli;
+        // OAuth tokens use Code Assist API; API keys use standard API
+        let is_code_assist = matches!(&self.config.auth, GeminiAuth::OAuth(_));
 
         let mut request_builder = match &self.config.auth {
             GeminiAuth::ApiKey(key) => {
