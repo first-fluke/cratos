@@ -60,6 +60,8 @@ pub struct App {
     pub cost_line: String,
     /// Whether the sidebar is visible (toggled with F1).
     pub show_sidebar: bool,
+    /// Whether the terminal mouse capture is active (toggled with F2).
+    pub mouse_captured: bool,
     /// Previous input history for up/down navigation.
     input_history: Vec<String>,
     /// Current position in input history (None = new input).
@@ -96,6 +98,7 @@ impl App {
             quota_status_line: "awaiting first API call".to_string(),
             cost_line: String::new(),
             show_sidebar: false,
+            mouse_captured: true,
             input_history: Vec::new(),
             history_index: None,
             orchestrator,
@@ -245,6 +248,7 @@ impl App {
                      \x20 PageUp/PageDn    Scroll fast\n\
                      \x20 Mouse scroll     Scroll chat\n\
                      \x20 F1               Toggle sidebar\n\
+                     \x20 F2               Toggle mouse (scroll/select)\n\
                      \x20 Ctrl+L           Clear screen\n\
                      \x20 Ctrl+C / Esc     Quit"
                         .into(),

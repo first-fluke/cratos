@@ -1,7 +1,11 @@
 //! Crossterm event handling for the TUI
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
+    MouseEvent, MouseEventKind,
+};
+use crossterm::execute;
 use std::time::Duration;
 
 use super::app::App;
@@ -42,6 +46,14 @@ fn handle_key(app: &mut App, key: KeyEvent) {
             app.scroll_offset = 0;
         }
         (_, KeyCode::F(1)) => app.toggle_sidebar(),
+        (_, KeyCode::F(2)) => {
+            app.mouse_captured = !app.mouse_captured;
+            if app.mouse_captured {
+                execute!(std::io::stdout(), EnableMouseCapture).ok();
+            } else {
+                execute!(std::io::stdout(), DisableMouseCapture).ok();
+            }
+        }
 
         // ── Scroll / History (Up/Down depend on input state) ──
         (_, KeyCode::Up) if app.is_input_empty() => {

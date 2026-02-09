@@ -36,10 +36,11 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let version = env!("CARGO_PKG_VERSION");
     let persona_display = capitalize(&app.persona);
 
-    // Left: persona + provider + version
+    // Left: persona + provider + version + mouse mode
+    let mouse_mode = if app.mouse_captured { "[Scroll]" } else { "[Select]" };
     let left = format!(
-        " Cratos \u{00b7} {} \u{00b7} {} v{}",
-        persona_display, app.provider_name, version,
+        " Cratos \u{00b7} {} \u{00b7} {} v{} {}",
+        persona_display, app.provider_name, version, mouse_mode,
     );
 
     // Center: loading indicator (if active)
