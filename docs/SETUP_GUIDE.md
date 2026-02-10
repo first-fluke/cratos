@@ -24,19 +24,21 @@ Cratos는 **내 컴퓨터**에 설치하여, 외출 중에도 Telegram으로 PC 
 │                     내 컴퓨터 (집/회사)                      │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │                    Cratos                            │   │
-│  │  - 파일 읽기/쓰기                                    │   │
+│  │  - 파일 읽기/쓰기, 웹 검색                           │   │
 │  │  - 명령 실행 (Docker 샌드박스)                        │   │
 │  │  - Git/GitHub 작업                                   │   │
-│  │  - 웹 정보 수집                                      │   │
-│  │  - 13개 LLM 프로바이더 연동                          │   │
+│  │  - 브라우저 제어 (Chrome Extension)                   │   │
+│  │  - 13개 LLM 프로바이더 + MCP 도구 확장               │   │
+│  │  - 대화 메모리 (Graph RAG)                           │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                           ↑                                 │
-│                           │ Telegram API                    │
+│            Telegram / Slack / Discord / REST API             │
 └───────────────────────────┼─────────────────────────────────┘
                             │
                             ↓
                    ┌─────────────────┐
-                   │  Telegram 서버   │
+                   │  채널 서버       │
+                   │  (Telegram 등)   │
                    └─────────────────┘
                             ↑
                             │
@@ -234,9 +236,12 @@ code .env
 
 ```bash
 # ================================
-# 필수: Telegram 봇 토큰
+# 채널 연동 (최소 하나 선택)
 # ================================
 TELEGRAM_BOT_TOKEN=7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxx
+# SLACK_BOT_TOKEN=xoxb-your-token
+# SLACK_APP_TOKEN=xapp-your-token
+# DISCORD_BOT_TOKEN=your-discord-token
 
 # ================================
 # LLM API 키 (최소 하나 선택)
@@ -247,6 +252,9 @@ OPENAI_API_KEY=sk-proj-your-key-here
 
 # 유료: Anthropic
 ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
+
+# 유료: Google Gemini
+GOOGLE_API_KEY=your-gemini-key-here
 
 # 유료: ZhipuAI GLM
 ZHIPU_API_KEY=your-bigmodel-key-here
@@ -269,6 +277,12 @@ NOVITA_API_KEY=your-novita-key-here
 # REDIS_URL=redis://localhost:6379   # 없으면 메모리 세션 사용
 # CRATOS_DATA_DIR=~/.cratos          # 데이터 저장 경로
 RUST_LOG=cratos=info,tower_http=info
+
+# ================================
+# 보안 설정 (선택)
+# ================================
+# CRATOS_AUTH_SECRET=your-hmac-secret    # API 인증 시크릿
+# CRATOS_JWT_SECRET=your-jwt-secret      # JWT 토큰 시크릿
 ```
 
 > **참고**: `DATABASE_URL`은 더 이상 필요 없습니다. 내장 SQLite (`~/.cratos/cratos.db`)를 사용합니다.
@@ -480,6 +494,23 @@ nohup cargo run --release > cratos.log 2>&1 &
 
 ---
 
+## 11. CLI 명령어 요약
+
+| 명령어 | 설명 |
+|--------|------|
+| `cratos init` | 대화형 설정 마법사 |
+| `cratos serve` | 서버 시작 |
+| `cratos doctor` | 시스템 진단 |
+| `cratos quota` | 프로바이더 할당량/비용 조회 |
+| `cratos tui` | TUI 채팅 인터페이스 |
+| `cratos skill list` | 스킬 목록 |
+| `cratos data stats` | 데이터 통계 |
+| `cratos pantheon list` | 페르소나 목록 |
+| `cratos decrees show laws` | 율법 보기 |
+| `cratos chronicle list` | 전공 기록 목록 |
+
+---
+
 ## 다음 단계
 
 설치가 완료되었습니다! [사용 가이드](./USER_GUIDE.md)에서 다양한 기능을 확인하세요.
@@ -491,3 +522,11 @@ nohup cargo run --release > cratos.log 2>&1 &
 ```
 
 Cratos가 할 수 있는 일들을 안내받을 수 있습니다.
+
+### 추가 가이드
+
+- [브라우저 자동화](./guides/BROWSER_AUTOMATION.md)
+- [Telegram 연동](./guides/TELEGRAM.md)
+- [Slack 연동](./guides/SLACK.md)
+- [Discord 연동](./guides/DISCORD.md)
+- [자동 스킬 생성](./guides/SKILL_AUTO_GENERATION.md)

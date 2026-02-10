@@ -17,6 +17,13 @@ Cratos를 설치했다면, 이제 Telegram에서 내 PC를 원격 조종해봅�
 11. [승인 설정](#11-승인-설정)
 12. [효과적인 사용 팁](#12-효과적인-사용-팁)
 13. [올림푸스 OS (페르소나 시스템)](#13-올림푸스-os-페르소나-시스템)
+14. [웹 검색](#14-웹-검색)
+15. [TUI 채팅 (터미널 UI)](#15-tui-채팅-터미널-ui)
+16. [대화 메모리 (Graph RAG)](#16-대화-메모리-graph-rag)
+17. [브라우저 제어 (Chrome Extension)](#17-브라우저-제어-chrome-extension)
+18. [스케줄러 (예약 작업)](#18-스케줄러-예약-작업)
+19. [MCP 도구 확장](#19-mcp-도구-확장)
+20. [REST API & WebSocket](#20-rest-api--websocket)
 
 ---
 
@@ -696,6 +703,270 @@ Cratos는 신화 기반 3-레이어 에이전트 조직 체계를 제공합니�
 나: cratos chronicle log "API 엔드포인트 구현 완료"
 봇: Log entry added to Sindri's chronicle.
 ```
+
+---
+
+## 14. 웹 검색
+
+Cratos는 내장 웹 검색 도구를 제공합니다. API 키 없이 DuckDuckGo를 통해 검색합니다.
+
+### 기본 검색
+
+```
+나: "Rust async runtime" 검색해줘
+봇: 검색 결과:
+    1. Tokio - An asynchronous runtime for Rust
+       https://tokio.rs
+    2. async-std - Async version of the Rust standard library
+       https://async.rs
+    ...
+
+나: 최신 React 19 변경사항 찾아줘
+봇: React 19 주요 변경사항:
+    1. Server Components 기본 지원
+    2. ...
+```
+
+### 검색 + 파일 저장
+
+```
+나: Kubernetes 배포 방법 검색해서 요약을 notes/k8s.md로 저장해줘
+봇: 검색 결과를 요약하여 notes/k8s.md에 저장했습니다.
+```
+
+---
+
+## 15. TUI 채팅 (터미널 UI)
+
+ratatui 기반 대화형 터미널 인터페이스입니다.
+
+### 실행
+
+```bash
+# 기본 실행
+cratos tui
+
+# 특정 페르소나로 시작
+cratos tui --persona sindri
+```
+
+### 주요 기능
+
+| 기능 | 설명 |
+|------|------|
+| **마크다운 렌더링** | 코드 블록, 볼드, 이탤릭 등 마크다운 표시 |
+| **마우스 스크롤** | 대화 히스토리 마우스 스크롤 |
+| **입력 히스토리** | Up/Down 화살표로 이전 입력 탐색 (최대 50개) |
+| **쿼터 표시** | 프로바이더별 할당량/비용 실시간 표시 |
+| **Undo/Redo** | 입력 중 실행 취소/재실행 |
+
+### 단축키
+
+| 키 | 동작 |
+|----|------|
+| `Enter` | 메시지 전송 |
+| `Ctrl+C` | 종료 |
+| `F2` | 마우스 캡처 토글 |
+| `Up/Down` | 입력 히스토리 탐색 |
+| `Scroll Up/Down` | 대화 히스토리 스크롤 |
+
+### 쿼터 표시
+
+프로바이더별 할당량이 색상으로 표시됩니다:
+- **초록색**: 50% 이상 남음
+- **노란색**: 20~50% 남음
+- **빨간색 (볼드)**: 20% 미만
+
+---
+
+## 16. 대화 메모리 (Graph RAG)
+
+Cratos는 대화 내용을 기억하여 세션 간 컨텍스트를 유지합니다.
+
+### 작동 원리
+
+```
+대화 턴 → 엔티티 추출 → 그래프 구성 → 하이브리드 검색
+```
+
+1. **턴 분해**: 대화를 의미 단위로 분리
+2. **엔티티 추출**: 인물, 프로젝트, 기술 등 핵심 엔티티 추출
+3. **그래프 구성**: 엔티티 간 관계를 그래프로 구축
+4. **하이브리드 검색**: 임베딩 유사도 + 근접도 + 엔티티 오버랩
+
+### 사용 예
+
+```
+[이전 대화]
+나: React 프로젝트에서 TypeScript 마이그레이션 중이야
+봇: TypeScript 마이그레이션 가이드를 안내해 드릴게요...
+
+[다음 세션]
+나: 그 마이그레이션 어떻게 됐지?
+봇: 이전에 React 프로젝트의 TypeScript 마이그레이션에 대해
+    이야기했었죠. 진행 상황을 알려주시면 도와드릴게요.
+```
+
+### 데이터 저장
+
+| 파일 | 경로 | 설명 |
+|------|------|------|
+| 메모리 DB | `~/.cratos/memory.db` | SQLite 엔티티 그래프 |
+| 벡터 인덱스 | `~/.cratos/vectors/memory/` | HNSW 임베딩 인덱스 |
+
+---
+
+## 17. 브라우저 제어 (Chrome Extension)
+
+Chrome 확장 프로그램을 통해 브라우저를 원격 제어할 수 있습니다.
+
+### 아키텍처
+
+```
+Chrome Extension ←→ /ws/gateway ←→ Cratos Server ←→ AI 에이전트
+```
+
+### 기본 사용
+
+```
+나: 구글에서 "Rust 비동기" 검색해줘
+봇: 1. browser.navigate("https://google.com")
+    2. browser.type("Rust 비동기")
+    3. browser.click("검색 버튼")
+
+    검색 결과:
+    1. Rust 비동기 프로그래밍 가이드
+    ...
+
+나: 현재 열려있는 탭 목록 보여줘
+봇: 열린 탭:
+    1. Google - "Rust 비동기"
+    2. GitHub - cratos/cratos
+    3. Hacker News
+```
+
+### 스크린샷
+
+```
+나: 현재 페이지 스크린샷 찍어줘
+봇: [스크린샷 이미지 반환]
+```
+
+### 폴백 동작
+
+Chrome 확장 프로그램이 연결되지 않은 경우, MCP 기반 브라우저 자동화(Playwright)로 자동 폴백합니다.
+
+---
+
+## 18. 스케줄러 (예약 작업)
+
+작업을 예약하여 자동 실행할 수 있습니다.
+
+### 스케줄 유형
+
+| 유형 | 예시 | 설명 |
+|------|------|------|
+| **Cron** | `0 9 * * *` | 매일 오전 9시 |
+| **Interval** | `300` | 5분마다 |
+| **OneTime** | `2026-03-01T10:00:00Z` | 1회 실행 |
+
+### 사용 예
+
+```
+나: 매일 오전 9시에 git pull 실행하는 작업 등록해줘
+봇: 스케줄 작업을 등록했습니다.
+    - 작업: git pull
+    - 스케줄: 매일 09:00
+    - ID: task-abc123
+
+나: 등록된 스케줄 작업 목록 보여줘
+봇: 등록된 작업:
+    1. task-abc123: "git pull" (매일 09:00)
+    2. task-def456: "서버 상태 체크" (5분마다)
+
+나: task-abc123 작업 삭제해줘
+봇: 스케줄 작업을 삭제했습니다.
+```
+
+---
+
+## 19. MCP 도구 확장
+
+Model Context Protocol (MCP)을 통해 외부 도구를 자동 연동할 수 있습니다.
+
+### MCP 설정
+
+`~/.cratos/mcp.json` 또는 프로젝트 루트의 `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@anthropic-ai/mcp-server-playwright"],
+      "env": {
+        "BROWSER_TYPE": "chromium"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["@anthropic-ai/mcp-server-filesystem", "/path/to/dir"]
+    }
+  }
+}
+```
+
+### 동작 방식
+
+1. 서버 시작 시 `.mcp.json` 자동 탐지
+2. MCP 서버 프로세스 생성 (stdio/SSE)
+3. 도구 목록 자동 등록 (ToolRegistry에 추가)
+4. LLM이 MCP 도구를 네이티브 도구처럼 호출
+
+### 지원 프로토콜
+
+| 프로토콜 | 설명 |
+|----------|------|
+| **stdio** | 표준 입출력 JSON-RPC (기본) |
+| **SSE** | Server-Sent Events 기반 |
+
+---
+
+## 20. REST API & WebSocket
+
+외부 프로그램이나 스크립트에서 Cratos를 제어할 수 있습니다.
+
+### REST API
+
+```bash
+# 헬스체크
+curl http://localhost:8090/health
+
+# 도구 목록
+curl http://localhost:8090/api/v1/tools
+
+# 실행 기록 조회
+curl http://localhost:8090/api/v1/executions
+
+# 스케줄러 작업 목록
+curl http://localhost:8090/api/v1/scheduler/tasks
+
+# 프로바이더 할당량
+curl http://localhost:8090/api/v1/quota
+
+# 설정 변경
+curl -X PUT http://localhost:8090/api/v1/config \
+  -H "Content-Type: application/json" \
+  -d '{"llm": {"default_provider": "anthropic"}}'
+```
+
+### WebSocket
+
+| 엔드포인트 | 설명 |
+|------------|------|
+| `/ws/chat` | 대화형 채팅 (실시간 스트리밍) |
+| `/ws/events` | 이벤트 스트림 (실행 알림, 상태 변경) |
+| `/ws/gateway` | Chrome 확장 프로그램 게이트웨이 |
 
 ---
 

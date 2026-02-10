@@ -24,19 +24,21 @@ Cratos is an AI assistant that runs on **your computer**, allowing you to remote
 │                   Your Computer (Home/Office)                │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │                      Cratos                          │   │
-│  │  - File read/write                                   │   │
+│  │  - File read/write, Web search                       │   │
 │  │  - Command execution (Docker sandbox)                │   │
 │  │  - Git/GitHub operations                             │   │
-│  │  - Web information gathering                         │   │
-│  │  - 13 LLM provider integrations                      │   │
+│  │  - Browser control (Chrome Extension)                │   │
+│  │  - 13 LLM providers + MCP tool extensions            │   │
+│  │  - Conversation memory (Graph RAG)                   │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                           ↑                                 │
-│                           │ Telegram API                    │
+│            Telegram / Slack / Discord / REST API             │
 └───────────────────────────┼─────────────────────────────────┘
                             │
                             ↓
                    ┌─────────────────┐
-                   │  Telegram Server │
+                   │  Channel Server  │
+                   │  (Telegram etc.) │
                    └─────────────────┘
                             ↑
                             │
@@ -232,9 +234,12 @@ Only fill in the required fields:
 
 ```bash
 # ================================
-# Required: Telegram Bot Token
+# Channel Integration (choose at least one)
 # ================================
 TELEGRAM_BOT_TOKEN=7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxx
+# SLACK_BOT_TOKEN=xoxb-your-token
+# SLACK_APP_TOKEN=xapp-your-token
+# DISCORD_BOT_TOKEN=your-discord-token
 
 # ================================
 # LLM API Key (choose at least one)
@@ -245,6 +250,9 @@ OPENAI_API_KEY=sk-proj-your-key-here
 
 # Paid: Anthropic
 ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
+
+# Paid: Google Gemini
+GOOGLE_API_KEY=your-gemini-key-here
 
 # Paid: ZhipuAI GLM
 ZHIPU_API_KEY=your-bigmodel-key-here
@@ -267,6 +275,12 @@ NOVITA_API_KEY=your-novita-key-here
 # REDIS_URL=redis://localhost:6379   # Uses memory session if not set
 # CRATOS_DATA_DIR=~/.cratos          # Data storage path
 RUST_LOG=cratos=info,tower_http=info
+
+# ================================
+# Security (Optional)
+# ================================
+# CRATOS_AUTH_SECRET=your-hmac-secret    # API auth secret
+# CRATOS_JWT_SECRET=your-jwt-secret      # JWT token secret
 ```
 
 > **Note**: `DATABASE_URL` is no longer needed. Uses embedded SQLite (`~/.cratos/cratos.db`).
@@ -478,6 +492,23 @@ nohup cargo run --release > cratos.log 2>&1 &
 
 ---
 
+## 11. CLI Command Summary
+
+| Command | Description |
+|---------|-------------|
+| `cratos init` | Interactive setup wizard |
+| `cratos serve` | Start the server |
+| `cratos doctor` | System diagnostics |
+| `cratos quota` | Provider quota/cost status |
+| `cratos tui` | TUI chat interface |
+| `cratos skill list` | List skills |
+| `cratos data stats` | Database statistics |
+| `cratos pantheon list` | List personas |
+| `cratos decrees show laws` | View laws |
+| `cratos chronicle list` | Achievement records |
+
+---
+
 ## Next Steps
 
 Installation complete! Check the [User Guide](./USER_GUIDE.md) for various features.
@@ -489,3 +520,11 @@ You: Hi, what can you do?
 ```
 
 Cratos will tell you about its capabilities.
+
+### Additional Guides
+
+- [Browser Automation](../guides/BROWSER_AUTOMATION.md)
+- [Telegram Integration](../guides/TELEGRAM.md)
+- [Slack Integration](../guides/SLACK.md)
+- [Discord Integration](../guides/DISCORD.md)
+- [Skill Auto-Generation](../guides/SKILL_AUTO_GENERATION.md)

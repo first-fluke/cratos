@@ -17,6 +17,13 @@ Now that you've installed Cratos, let's remotely control your PC via Telegram!
 11. [Approval Settings](#11-approval-settings)
 12. [Effective Usage Tips](#12-effective-usage-tips)
 13. [Olympus OS (Persona System)](#13-olympus-os-persona-system)
+14. [Web Search](#14-web-search)
+15. [TUI Chat (Terminal UI)](#15-tui-chat-terminal-ui)
+16. [Conversation Memory (Graph RAG)](#16-conversation-memory-graph-rag)
+17. [Browser Control (Chrome Extension)](#17-browser-control-chrome-extension)
+18. [Scheduler (Scheduled Tasks)](#18-scheduler-scheduled-tasks)
+19. [MCP Tool Extensions](#19-mcp-tool-extensions)
+20. [REST API & WebSocket](#20-rest-api--websocket)
 
 ---
 
@@ -696,6 +703,269 @@ Bot: Chronicle: Sindri Lv1
 You: cratos chronicle log "Completed API endpoint implementation"
 Bot: Log entry added to Sindri's chronicle.
 ```
+
+---
+
+## 14. Web Search
+
+Cratos includes a built-in web search tool. Searches via DuckDuckGo without requiring any API key.
+
+### Basic Search
+
+```
+You: Search for "Rust async runtime"
+Bot: Search results:
+    1. Tokio - An asynchronous runtime for Rust
+       https://tokio.rs
+    2. async-std - Async version of the Rust standard library
+       https://async.rs
+    ...
+
+You: Find the latest React 19 changes
+Bot: React 19 major changes:
+    1. Server Components built-in support
+    2. ...
+```
+
+### Search + Save
+
+```
+You: Search Kubernetes deployment methods and save summary to notes/k8s.md
+Bot: Saved search result summary to notes/k8s.md.
+```
+
+---
+
+## 15. TUI Chat (Terminal UI)
+
+Interactive terminal-based chat interface powered by ratatui.
+
+### Launch
+
+```bash
+# Default launch
+cratos tui
+
+# Start with specific persona
+cratos tui --persona sindri
+```
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Markdown Rendering** | Code blocks, bold, italic, and more |
+| **Mouse Scroll** | Scroll through conversation history |
+| **Input History** | Up/Down arrows to navigate previous inputs (max 50) |
+| **Quota Display** | Real-time per-provider quota/cost display |
+| **Undo/Redo** | Undo/redo while typing |
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Send message |
+| `Ctrl+C` | Quit |
+| `F2` | Toggle mouse capture |
+| `Up/Down` | Navigate input history |
+| `Scroll Up/Down` | Scroll conversation history |
+
+### Quota Display Colors
+
+- **Green**: > 50% remaining
+- **Yellow**: 20-50% remaining
+- **Red (Bold)**: < 20% remaining
+
+---
+
+## 16. Conversation Memory (Graph RAG)
+
+Cratos remembers conversations across sessions using entity graphs and hybrid vector search.
+
+### How It Works
+
+```
+Conversation Turn → Entity Extraction → Graph Construction → Hybrid Search
+```
+
+1. **Turn Decomposition**: Breaks conversations into semantic units
+2. **Entity Extraction**: Extracts people, projects, technologies, etc.
+3. **Graph Construction**: Builds relationship graph between entities
+4. **Hybrid Search**: `embedding_similarity * 0.5 + proximity * 0.3 + entity_overlap * 0.2`
+
+### Example
+
+```
+[Previous Session]
+You: I'm migrating a React project to TypeScript
+Bot: Here's a TypeScript migration guide...
+
+[Next Session]
+You: How's that migration going?
+Bot: We previously discussed your React TypeScript migration.
+    Would you like to continue from where we left off?
+```
+
+### Data Storage
+
+| File | Path | Description |
+|------|------|-------------|
+| Memory DB | `~/.cratos/memory.db` | SQLite entity graph |
+| Vector Index | `~/.cratos/vectors/memory/` | HNSW embedding index |
+
+---
+
+## 17. Browser Control (Chrome Extension)
+
+Control your Chrome browser remotely via a lightweight extension connected through WebSocket gateway.
+
+### Architecture
+
+```
+Chrome Extension ←→ /ws/gateway ←→ Cratos Server ←→ AI Agent
+```
+
+### Basic Usage
+
+```
+You: Search Google for "Rust async"
+Bot: 1. browser.navigate("https://google.com")
+    2. browser.type("Rust async")
+    3. browser.click("Search button")
+
+    Search results:
+    1. Rust Async Programming Guide
+    ...
+
+You: Show me the list of open tabs
+Bot: Open tabs:
+    1. Google - "Rust async"
+    2. GitHub - cratos/cratos
+    3. Hacker News
+```
+
+### Screenshots
+
+```
+You: Take a screenshot of the current page
+Bot: [Screenshot image returned]
+```
+
+### Fallback Behavior
+
+If no Chrome extension is connected, the `browser` tool automatically falls back to MCP-based browser automation (Playwright).
+
+---
+
+## 18. Scheduler (Scheduled Tasks)
+
+Schedule automated task execution.
+
+### Schedule Types
+
+| Type | Example | Description |
+|------|---------|-------------|
+| **Cron** | `0 9 * * *` | Daily at 9 AM |
+| **Interval** | `300` | Every 5 minutes |
+| **OneTime** | `2026-03-01T10:00:00Z` | Single execution |
+
+### Examples
+
+```
+You: Schedule a git pull every day at 9 AM
+Bot: Scheduled task registered.
+    - Task: git pull
+    - Schedule: Daily 09:00
+    - ID: task-abc123
+
+You: Show scheduled tasks
+Bot: Registered tasks:
+    1. task-abc123: "git pull" (Daily 09:00)
+    2. task-def456: "Server health check" (Every 5 min)
+
+You: Delete task-abc123
+Bot: Scheduled task deleted.
+```
+
+---
+
+## 19. MCP Tool Extensions
+
+Extend Cratos with external tools via Model Context Protocol (MCP).
+
+### MCP Configuration
+
+Create `~/.cratos/mcp.json` or `.mcp.json` in project root:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@anthropic-ai/mcp-server-playwright"],
+      "env": {
+        "BROWSER_TYPE": "chromium"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["@anthropic-ai/mcp-server-filesystem", "/path/to/dir"]
+    }
+  }
+}
+```
+
+### How It Works
+
+1. `.mcp.json` auto-detected at server startup
+2. MCP server processes spawned (stdio/SSE)
+3. Tools auto-registered into ToolRegistry
+4. LLM calls MCP tools as if they were native tools
+
+### Supported Protocols
+
+| Protocol | Description |
+|----------|-------------|
+| **stdio** | Standard I/O JSON-RPC (default) |
+| **SSE** | Server-Sent Events based |
+
+---
+
+## 20. REST API & WebSocket
+
+Control Cratos from external programs or scripts.
+
+### REST API
+
+```bash
+# Health check
+curl http://localhost:8090/health
+
+# List tools
+curl http://localhost:8090/api/v1/tools
+
+# Execution history
+curl http://localhost:8090/api/v1/executions
+
+# Scheduler tasks
+curl http://localhost:8090/api/v1/scheduler/tasks
+
+# Provider quota
+curl http://localhost:8090/api/v1/quota
+
+# Update config
+curl -X PUT http://localhost:8090/api/v1/config \
+  -H "Content-Type: application/json" \
+  -d '{"llm": {"default_provider": "anthropic"}}'
+```
+
+### WebSocket Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/ws/chat` | Interactive chat (real-time streaming) |
+| `/ws/events` | Event stream (execution notifications, status changes) |
+| `/ws/gateway` | Chrome extension gateway protocol |
 
 ---
 

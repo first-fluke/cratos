@@ -27,10 +27,17 @@ The installer automatically:
 - **Smart Routing**: Automatic model selection by task type reduces costs by 70%
 - **Free Model Support**: Free LLMs via OpenRouter, Novita (Llama, Qwen, GLM)
 - **Replay Engine**: All executions stored as events, timeline view and replay
-- **Tool System**: 15 built-in tools (file, HTTP, Git, GitHub, command execution, browser, WoL, config)
-- **Channel Adapters**: Telegram, Slack, Discord, Matrix support
-- **Security**: Docker sandbox, credential encryption, prompt injection defense
+- **Tool System**: 17 built-in tools (file, HTTP, Git, GitHub, command execution, browser, web search, WoL, config) + MCP extensibility
+- **Channel Adapters**: Telegram, Slack, Discord, Matrix, WhatsApp support
+- **Chrome Extension**: Browser control via Chrome extension + WebSocket gateway protocol
+- **Graph RAG Memory**: Cross-session conversation memory with entity graph + hybrid vector search
+- **TUI Chat**: ratatui-based interactive terminal with markdown rendering, mouse scroll, input history, multi-provider quota display
+- **Web Search**: Built-in DuckDuckGo search (no API key required)
+- **MCP Integration**: Auto-discovery of MCP servers from `.mcp.json`, SSE/stdio support
+- **Proactive Scheduler**: Cron, interval, and one-time scheduled tasks
+- **Security**: Auth middleware (HMAC/JWT/API Key), rate limiting, Docker sandbox, credential encryption, prompt injection defense
 - **Olympus OS**: Mythology-based 3-layer agent organization (Pantheon/Decrees/Chronicles)
+- **ACP Bridge**: IDE integration via stdin/stdout JSON-lines protocol
 
 ## System Requirements
 
@@ -119,29 +126,34 @@ Data is automatically stored in `~/.cratos/cratos.db`.
 ```
 cratos/
 ├── crates/
-│   ├── cratos-core/      # Orchestration engine, security, credentials
-│   ├── cratos-channels/  # Channel adapters (Telegram, Slack, Discord, Matrix)
-│   ├── cratos-tools/     # Tool registry, sandbox
-│   ├── cratos-llm/       # LLM providers, token counting, embeddings
+│   ├── cratos-core/      # Orchestration engine, security, credentials, shutdown
+│   ├── cratos-channels/  # Channel adapters (Telegram, Slack, Discord, Matrix, WhatsApp)
+│   ├── cratos-tools/     # Tool registry, sandbox, MCP client, browser relay
+│   ├── cratos-llm/       # LLM providers, token counting, ONNX embeddings, quota tracking
 │   ├── cratos-replay/    # Event logging and replay (SQLite)
 │   ├── cratos-skills/    # Automatic skill generation system
-│   ├── cratos-search/    # Vector search, semantic indexing
+│   ├── cratos-search/    # Vector search (usearch), semantic indexing
+│   ├── cratos-memory/    # Graph RAG conversation memory (entity graph + hybrid search)
+│   ├── cratos-crypto/    # Cryptographic utilities
 │   ├── cratos-audio/     # Voice control (STT/TTS, optional)
-│   └── cratos-canvas/    # Canvas (future)
+│   └── cratos-canvas/    # Live Canvas (future)
 ├── config/
 │   ├── default.toml      # Default configuration
 │   ├── pantheon/         # Persona TOML files (14 personas: 5 core + 9 extended)
 │   └── decrees/          # Laws, ranks, development rules
 ├── src/
 │   ├── main.rs           # Application entry point
-│   ├── cli/              # CLI commands (init, doctor, quota, tui, pantheon, decrees, chronicle)
-│   ├── api/              # REST API (config, tools, executions, scheduler, quota)
-│   ├── websocket/        # WebSocket handlers (chat, events)
+│   ├── cli/              # CLI commands (init, doctor, quota, tui, skill, data, acp, browser-ext, ...)
+│   ├── api/              # REST API (config, tools, executions, scheduler, quota, sessions, browser)
+│   ├── websocket/        # WebSocket handlers (chat, events, gateway)
 │   └── server.rs         # Server initialization
 
 ~/.cratos/                # Data directory (auto-created)
 ├── cratos.db             # SQLite main DB (events, execution history)
 ├── skills.db             # SQLite skills DB (skills, patterns)
+├── memory.db             # SQLite Graph RAG memory DB
+├── vectors/              # HNSW vector index (usearch)
+│   └── memory/           # Memory embedding vectors
 └── chronicles/           # Achievement records per persona
 ```
 
@@ -262,7 +274,21 @@ cratos init --lang ko             # Setup wizard in Korean
 cratos serve                      # Start the server
 cratos doctor                     # Run diagnostics
 cratos quota                      # Show provider quota/cost status
+cratos quota --watch              # Live-refresh mode (every 2s)
+cratos quota --json               # JSON output for scripting
 cratos tui                        # Launch interactive TUI chat
+cratos tui --persona sindri       # TUI with specific persona
+cratos acp                        # Start ACP bridge (IDE integration)
+
+# Skills
+cratos skill list                 # List all skills
+cratos skill show <name>          # Show skill details
+cratos skill enable <name>        # Enable a skill
+cratos skill disable <name>       # Disable a skill
+
+# Data Management
+cratos data stats                 # Show database statistics
+cratos data clear                 # Clear stored data
 
 # Pantheon (Personas)
 cratos pantheon list              # List personas
@@ -326,6 +352,8 @@ Automatically detects and blocks malicious prompts:
 
 ## Supported Tools
 
+### Built-in Tools
+
 | Tool | Description | Risk Level |
 |------|-------------|------------|
 | `file_read` | Read files | Low |
@@ -340,9 +368,119 @@ Automatically detects and blocks malicious prompts:
 | `git_diff` | Git diff check | Low |
 | `git_push` | Git push to remote | High |
 | `github_api` | GitHub API integration | Medium |
-| `browser` | Browser automation | Medium |
+| `browser` | Browser automation (MCP or Chrome extension) | Medium |
+| `web_search` | DuckDuckGo web search (no API key required) | Low |
 | `wol` | Wake-on-LAN | Medium |
 | `config` | Natural language configuration | Medium |
+
+### MCP Extension Tools
+
+Additional tools can be auto-registered from `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@anthropic-ai/mcp-server-playwright"]
+    }
+  }
+}
+```
+
+MCP tools are discovered at startup and integrated into the tool registry with a 10-second connection timeout.
+
+## REST API & WebSocket
+
+### REST Endpoints (`/api/v1/*`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check (simple) |
+| GET | `/health/detailed` | Detailed health check (DB/Redis status) |
+| GET | `/metrics` | Prometheus-format metrics |
+| GET/PUT | `/api/v1/config` | Configuration read/update |
+| GET | `/api/v1/tools` | List available tools |
+| GET | `/api/v1/executions` | List executions |
+| GET | `/api/v1/executions/{id}` | Execution details |
+| GET | `/api/v1/executions/{id}/replay` | Replay events for an execution |
+| POST | `/api/v1/executions/{id}/rerun` | Re-run an execution |
+| GET/POST/PUT/DELETE | `/api/v1/scheduler/tasks` | Scheduler task management |
+| GET | `/api/v1/quota` | Provider quota/cost status |
+| GET/POST/DELETE | `/api/v1/sessions` | Session management |
+| POST | `/api/v1/browser/*` | Browser control API |
+
+### WebSocket Endpoints
+
+| Path | Description |
+|------|-------------|
+| `/ws/chat` | Interactive chat |
+| `/ws/events` | Event stream (real-time notifications) |
+| `/ws/gateway` | Chrome extension gateway protocol |
+
+### Security Middleware
+
+All API endpoints are protected with configurable security layers:
+
+- **Authentication**: HMAC signature, JWT token, or API key
+- **Rate Limiting**: Per-IP and per-user request throttling
+- **Approval Nonce**: One-time tokens for high-risk operations
+
+## Chrome Extension (Browser Control)
+
+Control your Chrome browser remotely via a lightweight extension that connects through the WebSocket gateway:
+
+```
+Chrome Extension ←→ /ws/gateway ←→ Cratos Server ←→ BrowserRelay ←→ Tools
+```
+
+Features:
+- Tab management (list, open, close, activate)
+- Page navigation and content extraction
+- DOM interaction (click, type, screenshot)
+- Bidirectional JSON-RPC communication
+
+The `browser` tool automatically detects whether a Chrome extension is connected and falls back to MCP-based browser automation if not.
+
+## Graph RAG Memory
+
+Cross-session conversation memory powered by entity graph and hybrid vector search:
+
+- **Turn Decomposition**: Breaks conversations into semantic units
+- **Entity Extraction**: Rule-based named entity recognition
+- **Graph Construction**: Entities linked by co-occurrence and relationships
+- **Hybrid Search**: `embedding_similarity * 0.5 + proximity * 0.3 + entity_overlap * 0.2`
+
+Data stored in `~/.cratos/memory.db` (SQLite) and `~/.cratos/vectors/memory` (HNSW index).
+
+## TUI Chat
+
+Interactive terminal-based chat interface:
+
+```bash
+cratos tui                    # Launch TUI
+cratos tui --persona athena   # Start with specific persona
+```
+
+| Feature | Description |
+|---------|-------------|
+| **Markdown Rendering** | Rich text rendering via tui-markdown |
+| **Mouse Scroll** | Scroll through conversation history |
+| **Input History** | Up/Down arrow navigation (max 50 entries) |
+| **Multi-Provider Quota** | Real-time quota display per provider |
+| **Keyboard Shortcuts** | F2: toggle mouse, Ctrl+C: quit |
+
+## Proactive Scheduler
+
+Schedule automated tasks:
+
+| Schedule Type | Example | Description |
+|---------------|---------|-------------|
+| **Cron** | `0 9 * * *` | Daily at 9 AM |
+| **Interval** | `300` | Every 5 minutes |
+| **OneTime** | `2026-03-01T10:00:00Z` | Single execution |
+
+Manage via REST API (`/api/v1/scheduler/tasks`) or natural language.
 
 ## Testing
 
@@ -364,6 +502,20 @@ cargo test -p cratos-core
 - [Setup Guide](./docs/SETUP_GUIDE.md) - For first-time users
 - [User Guide](./docs/USER_GUIDE.md) - Feature usage
 - [PRD](./PRD.md) - Detailed requirements
+
+### Detailed Guides
+
+| Guide | Description |
+|-------|-------------|
+| [Browser Automation](./docs/guides/BROWSER_AUTOMATION.md) | MCP-based browser control |
+| [Telegram](./docs/guides/TELEGRAM.md) | Telegram bot integration |
+| [Slack](./docs/guides/SLACK.md) | Slack app integration |
+| [Discord](./docs/guides/DISCORD.md) | Discord bot integration |
+| [WhatsApp](./docs/guides/WHATSAPP.md) | WhatsApp integration |
+| [Skill Auto-Generation](./docs/guides/SKILL_AUTO_GENERATION.md) | Pattern learning and skill creation |
+| [Graceful Shutdown](./docs/guides/GRACEFUL_SHUTDOWN.md) | Safe shutdown mechanism |
+| [Live Canvas](./docs/guides/LIVE_CANVAS.md) | Real-time visual workspace |
+| [Native Apps](./docs/guides/NATIVE_APPS.md) | Tauri desktop application |
 
 ## License
 
