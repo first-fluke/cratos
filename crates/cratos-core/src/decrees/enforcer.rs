@@ -100,6 +100,11 @@ impl Default for EnforcerConfig {
     }
 }
 
+/// Penalty score for missing response format (Article 6) — minor violation
+const FORMAT_VIOLATION_SCORE: f32 = 2.5;
+/// Penalty score for missing commit hash (Article 10) — moderate violation
+const COMMIT_VIOLATION_SCORE: f32 = 2.0;
+
 /// Law Enforcer - validates and enforces compliance
 pub struct LawEnforcer {
     config: EnforcerConfig,
@@ -131,7 +136,10 @@ impl LawEnforcer {
         let mut violations = Vec::new();
 
         // Check Laws Article 6: Response format [Role] Name LvN : Message
-        if !response.starts_with('[') || !response.contains("] ") {
+        // Relaxed: also accept responses that reference the persona name
+        let has_role_prefix = response.starts_with('[') && response.contains("] ");
+        let has_persona_ref = response.to_lowercase().contains(&persona.to_lowercase());
+        if !has_role_prefix && !has_persona_ref {
             violations.push(LawViolation::MissingResponseFormat {
                 persona: persona.to_string(),
             });
@@ -166,8 +174,12 @@ impl LawEnforcer {
             // Auto-judgment: record the violation
             if self.config.auto_judgment {
                 let comment = violation.description();
+                let score = match violation {
+                    LawViolation::MissingResponseFormat { .. } => FORMAT_VIOLATION_SCORE,
+                    LawViolation::MissingCommitHash { .. } => COMMIT_VIOLATION_SCORE,
+                };
                 if let Ok(Some(mut chronicle)) = self.chronicle_store.load(persona) {
-                    chronicle.add_judgment("Cratos", &comment, Some(1.0));
+                    chronicle.add_judgment("Cratos", &comment, Some(score));
                     if let Err(e) = self.chronicle_store.save(&chronicle) {
                         warn!(error = %e, persona = persona, "Failed to save judgment");
                     } else {
@@ -175,7 +187,7 @@ impl LawEnforcer {
                         actions.push(EnforcementAction::JudgmentAdded {
                             persona: persona.clone(),
                             comment,
-                            score: 1.0,
+                            score,
                         });
                     }
                 } else {
@@ -227,12 +239,22 @@ mod tests {
     #[test]
     fn test_validate_missing_format() {
         let enforcer = default_enforcer();
+        // Response with no role prefix AND no persona reference → violation
         let violations = enforcer.validate_response("sindri", "Task completed", false);
         assert!(!violations.is_empty());
         assert!(matches!(
             violations[0],
             LawViolation::MissingResponseFormat { .. }
         ));
+    }
+
+    #[test]
+    fn test_validate_persona_ref_passes() {
+        let enforcer = default_enforcer();
+        // Response references persona name → no format violation
+        let violations =
+            enforcer.validate_response("sindri", "Sindri here. Task completed.", false);
+        assert!(violations.is_empty());
     }
 
     #[test]

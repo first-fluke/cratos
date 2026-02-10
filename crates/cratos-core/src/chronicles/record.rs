@@ -267,13 +267,23 @@ impl Chronicle {
         self.quests.iter().filter(|q| !q.completed).count()
     }
 
+    /// Minimum average rating required for promotion (judgment.toml Article 3)
+    const PROMOTION_RATING_THRESHOLD: f32 = 3.5;
+
     /// Check promotion eligibility
     ///
-    /// Promotion condition: log entries >= (current level + 1) * 5
+    /// Promotion requires BOTH:
+    /// 1. log entries >= (current level + 1) * 5
+    /// 2. average rating >= 3.5 (or no judgments yet for fresh personas)
     #[must_use]
     pub fn is_promotion_eligible(&self) -> bool {
         let required = (self.level as usize + 1) * 5;
-        self.log.len() >= required
+        let has_enough_entries = self.log.len() >= required;
+        let has_good_rating = self
+            .rating
+            .map(|r| r >= Self::PROMOTION_RATING_THRESHOLD)
+            .unwrap_or(true); // no judgments yet → allow promotion
+        has_enough_entries && has_good_rating
     }
 
     /// Return entries needed until promotion
@@ -281,6 +291,17 @@ impl Chronicle {
     pub fn entries_until_promotion(&self) -> usize {
         let required = (self.level as usize + 1) * 5;
         required.saturating_sub(self.log.len())
+    }
+
+    /// Return the rating gap until promotion (0.0 if already sufficient)
+    #[must_use]
+    pub fn rating_gap(&self) -> f32 {
+        match self.rating {
+            Some(r) if r < Self::PROMOTION_RATING_THRESHOLD => {
+                Self::PROMOTION_RATING_THRESHOLD - r
+            }
+            _ => 0.0,
+        }
     }
 
     /// Level up (promote)
@@ -391,8 +412,42 @@ mod tests {
             chronicle.add_entry(&format!("Task {i}"), None);
         }
 
+        // No judgments yet → rating is None → eligible (fresh persona grace)
         assert!(chronicle.is_promotion_eligible());
         assert_eq!(chronicle.entries_until_promotion(), 0);
+    }
+
+    #[test]
+    fn test_promotion_blocked_by_low_rating() {
+        let mut chronicle = Chronicle::new("sindri");
+
+        for i in 0..10 {
+            chronicle.add_entry(&format!("Task {i}"), None);
+        }
+
+        // Add low-score judgments → average below 3.5
+        chronicle.add_judgment("Cratos", "Format violation", Some(1.0));
+        chronicle.add_judgment("Cratos", "Missing commit hash", Some(2.0));
+        // average = 1.5 → below 3.5
+
+        assert!(!chronicle.is_promotion_eligible());
+        assert!((chronicle.rating_gap() - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_promotion_allowed_with_good_rating() {
+        let mut chronicle = Chronicle::new("sindri");
+
+        for i in 0..10 {
+            chronicle.add_entry(&format!("Task {i}"), None);
+        }
+
+        chronicle.add_judgment("Heimdall", "Excellent work", Some(4.5));
+        chronicle.add_judgment("user", "Good job", Some(5.0));
+        // average = 4.75 → above 3.5
+
+        assert!(chronicle.is_promotion_eligible());
+        assert!((chronicle.rating_gap()).abs() < 0.01);
     }
 
     #[test]
@@ -417,6 +472,27 @@ mod tests {
             .unwrap()
             .achievement
             .contains("Promoted to Lv2"));
+    }
+
+    #[test]
+    fn test_promote_blocked_by_rating() {
+        let mut chronicle = Chronicle::new("sindri");
+
+        for i in 0..10 {
+            chronicle.add_entry(&format!("Task {i}"), None);
+        }
+
+        // Bad rating
+        chronicle.add_judgment("Cratos", "Violation", Some(1.0));
+        assert!(!chronicle.promote());
+        assert_eq!(chronicle.level, 1);
+
+        // Improve rating past threshold
+        chronicle.add_judgment("Heimdall", "Great recovery", Some(5.0));
+        chronicle.add_judgment("user", "Solid work", Some(5.0));
+        // average = (1+5+5)/3 ≈ 3.67 → above 3.5
+        assert!(chronicle.promote());
+        assert_eq!(chronicle.level, 2);
     }
 
     #[test]

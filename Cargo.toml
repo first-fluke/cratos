@@ -167,6 +167,8 @@ serde_json.workspace = true
 uuid.workspace = true
 futures-util = "0.3"
 regex = { workspace = true }
+include_dir = "0.7"
+base64 = "0.22"
 
 [dev-dependencies]
 tokio-test.workspace = true

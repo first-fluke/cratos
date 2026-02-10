@@ -174,7 +174,10 @@ pub enum BrowserAction {
         /// Height in pixels
         height: u32,
     },
-    
+
+    /// List all open browser tabs (extension relay only)
+    GetTabs,
+
     /// Close the browser
     Close,
 }
@@ -206,7 +209,46 @@ impl BrowserAction {
             Self::GoForward => "go_forward",
             Self::Reload => "reload",
             Self::Resize { .. } => "resize",
+            Self::GetTabs => "get_tabs",
             Self::Close => "close",
+        }
+    }
+
+    /// Convert to relay API parameters (for extension relay mode).
+    /// Returns a JSON object with "action" + action-specific fields.
+    #[must_use]
+    pub fn to_relay_args(&self) -> serde_json::Value {
+        match self {
+            Self::Navigate { url, .. } => serde_json::json!({ "action": "navigate", "url": url }),
+            Self::Click { selector, .. } => serde_json::json!({ "action": "click", "selector": selector }),
+            Self::Type { selector, text, .. } => serde_json::json!({ "action": "type", "selector": selector, "text": text }),
+            Self::Fill { selector, value } => serde_json::json!({ "action": "fill", "selector": selector, "value": value }),
+            Self::Screenshot { selector, .. } => {
+                let mut v = serde_json::json!({ "action": "screenshot" });
+                if let Some(s) = selector {
+                    v["selector"] = serde_json::Value::String(s.clone());
+                }
+                v
+            }
+            Self::GetText { selector } => serde_json::json!({ "action": "get_text", "selector": selector }),
+            Self::GetHtml { selector, outer } => serde_json::json!({ "action": "get_html", "selector": selector, "outer": outer }),
+            Self::GetAttribute { selector, attribute } => serde_json::json!({ "action": "get_attribute", "selector": selector, "attribute": attribute }),
+            Self::WaitForSelector { selector, timeout, .. } => serde_json::json!({ "action": "wait_for_selector", "selector": selector, "timeout": timeout }),
+            Self::Evaluate { script } => serde_json::json!({ "action": "evaluate", "script": script }),
+            Self::Select { selector, value } => serde_json::json!({ "action": "select", "selector": selector, "value": value }),
+            Self::Check { selector, checked } => serde_json::json!({ "action": "check", "selector": selector, "checked": checked }),
+            Self::Hover { selector } => serde_json::json!({ "action": "hover", "selector": selector }),
+            Self::Scroll { selector, x, y } => {
+                let mut v = serde_json::json!({ "action": "scroll", "x": x, "y": y });
+                if let Some(s) = selector {
+                    v["selector"] = serde_json::Value::String(s.clone());
+                }
+                v
+            }
+            Self::GetUrl => serde_json::json!({ "action": "get_url" }),
+            Self::GetTitle => serde_json::json!({ "action": "get_title" }),
+            Self::GetTabs => serde_json::json!({ "action": "get_tabs" }),
+            _ => serde_json::json!({ "action": self.name() }),
         }
     }
 

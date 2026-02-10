@@ -580,6 +580,47 @@ impl SkillStore {
         Ok(())
     }
 
+    /// Update skill metrics (usage_count, success_rate, avg_duration_ms, last_used_at) in DB.
+    ///
+    /// Called after each skill execution to persist the in-memory metric updates.
+    #[instrument(skip(self))]
+    pub async fn update_skill_metrics(
+        &self,
+        skill_id: Uuid,
+        usage_count: u64,
+        success_rate: f64,
+        avg_duration_ms: Option<u64>,
+        status: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE skills
+            SET usage_count = ?2,
+                success_rate = ?3,
+                avg_duration_ms = ?4,
+                last_used_at = ?5,
+                status = ?6,
+                updated_at = ?5
+            WHERE id = ?1
+            "#,
+        )
+        .bind(skill_id.to_string())
+        .bind(usage_count as i64)
+        .bind(success_rate)
+        .bind(avg_duration_ms.map(|d| d as i64))
+        .bind(Utc::now().to_rfc3339())
+        .bind(status)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        debug!(
+            "Updated skill {} metrics: usage={}, rate={:.2}, status={}",
+            skill_id, usage_count, success_rate, status
+        );
+        Ok(())
+    }
+
     /// Get execution count for a skill
     #[instrument(skip(self))]
     pub async fn get_skill_execution_count(&self, skill_id: Uuid) -> Result<(u64, u64)> {
@@ -896,5 +937,42 @@ mod tests {
         let (total, successes) = store.get_skill_execution_count(skill.id).await.unwrap();
         assert_eq!(total, 2);
         assert_eq!(successes, 1);
+    }
+
+    #[tokio::test]
+    async fn test_update_skill_metrics() {
+        let store = create_test_store().await;
+        let mut skill = create_test_skill();
+        skill.activate();
+        store.save_skill(&skill).await.unwrap();
+
+        store
+            .update_skill_metrics(skill.id, 10, 0.8, Some(150), "active")
+            .await
+            .unwrap();
+
+        let updated = store.get_skill(skill.id).await.unwrap();
+        assert_eq!(updated.metadata.usage_count, 10);
+        assert!((updated.metadata.success_rate - 0.8).abs() < 0.01);
+        assert_eq!(updated.metadata.avg_duration_ms, Some(150));
+        assert_eq!(updated.status, SkillStatus::Active);
+    }
+
+    #[tokio::test]
+    async fn test_update_skill_metrics_auto_disable() {
+        let store = create_test_store().await;
+        let mut skill = create_test_skill();
+        skill.activate();
+        store.save_skill(&skill).await.unwrap();
+
+        // Simulate low success rate → disabled status
+        store
+            .update_skill_metrics(skill.id, 15, 0.2, Some(100), "disabled")
+            .await
+            .unwrap();
+
+        let updated = store.get_skill(skill.id).await.unwrap();
+        assert_eq!(updated.status, SkillStatus::Disabled);
+        assert!((updated.metadata.success_rate - 0.2).abs() < 0.01);
     }
 }

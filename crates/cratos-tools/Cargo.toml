@@ -27,6 +27,9 @@ futures.workspace = true
 url = "2.5"
 urlencoding = "2.1"
 
+# HTML parsing for web search
+regex.workspace = true
+
 # Configuration parsing (for browser config tests)
 toml = "0.8"
 

@@ -18,6 +18,11 @@ pub async fn run(cmd: ChronicleCommands) -> Result<()> {
             persona,
         } => log(&message, law.as_deref(), persona.as_deref()).await,
         ChronicleCommands::Promote { name } => promote(&name).await,
+        ChronicleCommands::Clean {
+            name,
+            force,
+            reset_judgments,
+        } => clean(name.as_deref(), force, reset_judgments).await,
     }
 }
 
@@ -170,7 +175,18 @@ async fn show(name: &str) -> Result<()> {
                 );
             } else {
                 let remaining = chronicle.entries_until_promotion();
-                println!("  ⏳ {} more entries needed for promotion", remaining);
+                let rating_gap = chronicle.rating_gap();
+                if remaining > 0 {
+                    println!("  ⏳ {} more entries needed for promotion", remaining);
+                }
+                if rating_gap > 0.0 {
+                    println!(
+                        "  ⏳ Rating {:.1}/5 — need {:.1}+ for promotion (gap: +{:.1})",
+                        chronicle.rating.unwrap_or(0.0),
+                        3.5,
+                        rating_gap,
+                    );
+                }
             }
 
             println!();
@@ -252,9 +268,19 @@ async fn promote(name: &str) -> Result<()> {
                     println!("  ⚠️  Already at maximum level.");
                 }
             } else {
-                let remaining = chronicle.entries_until_promotion();
                 println!("  ⚠️  Not eligible for promotion.");
-                println!("     Need {} more log entries.", remaining);
+                let remaining = chronicle.entries_until_promotion();
+                if remaining > 0 {
+                    println!("     Need {} more log entries.", remaining);
+                }
+                let rating_gap = chronicle.rating_gap();
+                if rating_gap > 0.0 {
+                    println!(
+                        "     Rating {:.1}/5 — need 3.5+ (gap: +{:.1})",
+                        chronicle.rating.unwrap_or(0.0),
+                        rating_gap,
+                    );
+                }
                 println!();
                 println!("  Add entries with:");
                 println!("    cratos chronicle log \"Work completed\" --persona {name}");
@@ -266,6 +292,114 @@ async fn promote(name: &str) -> Result<()> {
             println!("  Create a chronicle first:");
             println!("    cratos chronicle log \"First task\" --persona {name}");
         }
+    }
+
+    println!();
+    Ok(())
+}
+
+/// Clean orphaned chronicles or reset judgment scores
+async fn clean(name: Option<&str>, force: bool, reset_judgments: bool) -> Result<()> {
+    let store = ChronicleStore::new();
+
+    if let Some(persona) = name {
+        // Delete all chronicle files for a specific persona
+        let personas = store.list_personas()?;
+        if !personas.iter().any(|p| p.eq_ignore_ascii_case(persona)) {
+            println!("No chronicles found for \"{persona}\".");
+            return Ok(());
+        }
+
+        // Find all level files for this persona
+        let data_dir = store.data_dir();
+        let prefix = persona.to_lowercase();
+        let mut files_to_delete = Vec::new();
+
+        if data_dir.exists() {
+            for entry in std::fs::read_dir(data_dir)?.flatten() {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                if fname.starts_with(&prefix) && fname.ends_with(".json") {
+                    files_to_delete.push(entry.path());
+                }
+            }
+        }
+
+        if files_to_delete.is_empty() {
+            println!("No chronicle files found for \"{persona}\".");
+            return Ok(());
+        }
+
+        println!("\nFound {} file(s) for \"{}\":", files_to_delete.len(), persona);
+        for f in &files_to_delete {
+            println!("  - {}", f.file_name().unwrap_or_default().to_string_lossy());
+        }
+
+        if !force {
+            print!("\nDelete these files? [y/N] ");
+            use std::io::Write;
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !input.trim().eq_ignore_ascii_case("y") {
+                println!("Cancelled.");
+                return Ok(());
+            }
+        }
+
+        let mut deleted = 0;
+        for f in &files_to_delete {
+            if std::fs::remove_file(f).is_ok() {
+                deleted += 1;
+            }
+        }
+        println!("\nDeleted {deleted} chronicle file(s) for \"{persona}\".");
+    }
+
+    if reset_judgments {
+        // Reset judgments for all (or specified) persona(s)
+        let chronicles = store.load_all()?;
+        if chronicles.is_empty() {
+            println!("No chronicles found to reset.");
+            return Ok(());
+        }
+
+        let target_name = name.map(|n| n.to_lowercase());
+        let mut reset_count = 0;
+
+        for mut chronicle in chronicles {
+            if let Some(ref target) = target_name {
+                if chronicle.persona_name.to_lowercase() != *target {
+                    continue;
+                }
+            }
+
+            if chronicle.judgments.is_empty() {
+                continue;
+            }
+
+            let old_count = chronicle.judgments.len();
+            chronicle.judgments.clear();
+            chronicle.rating = None;
+            store.save(&chronicle)?;
+            reset_count += 1;
+            println!(
+                "  Reset {} judgment(s) for {} Lv{}",
+                old_count, chronicle.persona_name, chronicle.level
+            );
+        }
+
+        if reset_count == 0 {
+            println!("No judgments to reset.");
+        } else {
+            println!("\nReset judgments for {reset_count} persona(s).");
+        }
+    }
+
+    if name.is_none() && !reset_judgments {
+        println!("Usage:");
+        println!("  cratos chronicle clean <name> [--force]     Remove orphaned persona chronicles");
+        println!("  cratos chronicle clean --reset-judgments     Reset all judgment scores");
+        println!("  cratos chronicle clean <name> --reset-judgments  Reset judgments for specific persona");
     }
 
     println!();

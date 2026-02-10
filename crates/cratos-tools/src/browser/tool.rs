@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use super::actions::{BrowserAction, BrowserActionResult};
-use super::config::BrowserConfig;
+use super::config::{BrowserBackend, BrowserConfig};
 
 /// Browser automation tool
 ///
@@ -35,7 +35,7 @@ impl BrowserTool {
     pub fn with_config(config: BrowserConfig) -> Self {
         let definition = ToolDefinition::new(
             "browser",
-            "Open and interact with websites in a real web browser. Navigates to URLs, clicks page elements, fills web forms, takes screenshots of web pages. Requires a target URL or an already-open web page to operate on.",
+            "Control the user's real web browser. Capabilities: list open tabs (get_tabs), navigate to URLs, click elements, fill forms, take screenshots, read page text/HTML, execute JavaScript, and more. Use this when the user asks about their browser, open tabs, or needs real browser interaction.",
         )
         .with_category(ToolCategory::External)
         .with_risk_level(RiskLevel::Medium)
@@ -47,7 +47,7 @@ impl BrowserTool {
                     "type": "string",
                     "description": "Action to perform",
                     "enum": [
-                        "navigate", "click", "type", "fill", "screenshot",
+                        "get_tabs", "navigate", "click", "type", "fill", "screenshot",
                         "get_text", "get_html", "get_attribute",
                         "wait_for_selector", "wait_for_navigation",
                         "evaluate", "select", "check", "hover", "press", "scroll",
@@ -156,8 +156,156 @@ impl BrowserTool {
         Ok(())
     }
 
-    /// Execute a browser action
+    /// Execute a browser action using the configured backend.
     async fn execute_action(&self, action: BrowserAction) -> Result<BrowserActionResult> {
+        // GetTabs is extension-only (Chrome tabs API has no MCP equivalent)
+        if matches!(action, BrowserAction::GetTabs) {
+            return self.execute_get_tabs().await;
+        }
+
+        match self.config.backend {
+            BrowserBackend::Mcp => self.execute_via_mcp(action).await,
+            BrowserBackend::Extension => self.execute_via_extension(action).await,
+            BrowserBackend::Auto => {
+                if self.is_extension_connected().await {
+                    info!("Extension connected, trying extension relay first");
+                    match self.execute_via_extension(action.clone()).await {
+                        Ok(result) if result.success => {
+                            info!("Extension relay succeeded");
+                            Ok(result)
+                        }
+                        Ok(result) => {
+                            warn!(error = ?result.error, "Extension execution returned failure, falling back to MCP");
+                            // Fall back to MCP on failure
+                            match self.execute_via_mcp(action).await {
+                                Ok(mcp_result) => Ok(mcp_result),
+                                Err(_) => Ok(result), // Return extension error if MCP also fails
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "Extension relay error, falling back to MCP");
+                            self.execute_via_mcp(action).await
+                        }
+                    }
+                } else {
+                    self.execute_via_mcp(action).await
+                }
+            }
+        }
+    }
+
+    /// Check if the browser extension is connected (via REST status endpoint).
+    async fn is_extension_connected(&self) -> bool {
+        let url = format!("{}/api/v1/browser/status", self.config.server_url);
+        debug!(url = %url, backend = ?self.config.backend, "Checking extension connection");
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(500))
+            .build();
+        let client = match client {
+            Ok(c) => c,
+            Err(e) => {
+                warn!(error = %e, "Failed to build HTTP client for extension check");
+                return false;
+            }
+        };
+        match client.get(&url).send().await {
+            Ok(resp) => {
+                if let Ok(body) = resp.json::<serde_json::Value>().await {
+                    let connected = body.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
+                    info!(connected = connected, url = %self.config.server_url, "Extension status check result");
+                    connected
+                } else {
+                    warn!("Extension status response not parseable");
+                    false
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, url = %url, "Extension status check failed");
+                false
+            }
+        }
+    }
+
+    /// Execute get_tabs via extension relay REST API.
+    async fn execute_get_tabs(&self) -> Result<BrowserActionResult> {
+        let url = format!("{}/api/v1/browser/tabs", self.config.server_url);
+        info!("Fetching browser tabs via extension relay");
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| Error::Execution(format!("HTTP client error: {}", e)))?;
+
+        match client.get(&url).send().await {
+            Ok(resp) => {
+                let body: serde_json::Value = resp
+                    .json()
+                    .await
+                    .map_err(|e| Error::Execution(format!("Tab list response error: {}", e)))?;
+                if let Some(err) = body.get("error").and_then(|v| v.as_str()) {
+                    return Ok(BrowserActionResult::failure(err));
+                }
+                Ok(BrowserActionResult::success(body))
+            }
+            Err(e) => Ok(BrowserActionResult::failure(format!(
+                "Browser extension not connected. Cannot list tabs. Error: {}",
+                e
+            ))),
+        }
+    }
+
+    /// Execute via Chrome extension relay (REST API).
+    async fn execute_via_extension(&self, action: BrowserAction) -> Result<BrowserActionResult> {
+        // Route to correct REST endpoint based on action type
+        let (endpoint, params) = match &action {
+            BrowserAction::Navigate { url, .. } => (
+                "/api/v1/browser/open",
+                serde_json::json!({ "url": url }),
+            ),
+            BrowserAction::Screenshot { .. } => (
+                "/api/v1/browser/screenshot",
+                action.to_relay_args(),
+            ),
+            _ => (
+                "/api/v1/browser/action",
+                action.to_relay_args(),
+            ),
+        };
+        let url = format!("{}{}", self.config.server_url, endpoint);
+
+        info!(action = ?action.name(), endpoint = endpoint, "Executing browser action via extension relay");
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| Error::Execution(format!("HTTP client error: {}", e)))?;
+
+        let resp = client
+            .post(&url)
+            .json(&params)
+            .send()
+            .await
+            .map_err(|e| Error::Execution(format!("Extension relay request failed: {}", e)))?;
+
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| Error::Execution(format!("Extension relay response error: {}", e)))?;
+
+        if let Some(err) = body.get("error").and_then(|v| v.as_str()) {
+            return Ok(BrowserActionResult::failure(err));
+        }
+
+        let screenshot = body.get("screenshot").and_then(|v| v.as_str()).map(String::from);
+        let mut result = BrowserActionResult::success(body);
+        if let Some(ss) = screenshot {
+            result = result.with_screenshot(ss);
+        }
+        Ok(result)
+    }
+
+    /// Execute via MCP server (Playwright/Puppeteer).
+    async fn execute_via_mcp(&self, action: BrowserAction) -> Result<BrowserActionResult> {
         self.ensure_connected().await?;
 
         let client_guard = self.mcp_client.read().await;
@@ -173,7 +321,7 @@ impl BrowserTool {
             server = %server_name,
             tool = %tool_name,
             args = %args,
-            "Executing browser action"
+            "Executing browser action via MCP"
         );
 
         let result = client
@@ -457,6 +605,7 @@ impl BrowserTool {
                 width: input.get("width").and_then(|v| v.as_u64()).unwrap_or(1280) as u32,
                 height: input.get("height").and_then(|v| v.as_u64()).unwrap_or(720) as u32,
             }),
+            "get_tabs" => Ok(BrowserAction::GetTabs),
             "close" => Ok(BrowserAction::Close),
             _ => Err(Error::InvalidInput(format!(
                 "Unknown action: {}",

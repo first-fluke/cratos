@@ -67,10 +67,12 @@ async fn cancel(id: &str, ctx: &DispatchContext<'_>) -> GatewayFrame {
 #[cfg(test)]
 mod tests {
     use super::super::super::dispatch::DispatchContext;
+    use crate::websocket::gateway::browser_relay::BrowserRelay;
     use crate::websocket::protocol::{GatewayErrorCode, GatewayFrame};
     use cratos_core::a2a::A2aRouter;
     use cratos_core::auth::{AuthContext, AuthMethod, Scope};
     use cratos_core::nodes::NodeRegistry;
+    use std::sync::Arc;
 
     fn admin_auth() -> AuthContext {
         AuthContext {
@@ -110,12 +112,17 @@ mod tests {
         A2aRouter::new(100)
     }
 
+    fn test_browser_relay() -> crate::websocket::gateway::browser_relay::SharedBrowserRelay {
+        Arc::new(BrowserRelay::new())
+    }
+
     #[tokio::test]
     async fn test_chat_send_with_scope() {
         let auth = admin_auth();
         let nr = test_node_registry();
         let a2a = test_a2a_router();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a };
+        let br = test_browser_relay();
+        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
         let result = super::handle("2", "chat.send", serde_json::json!({"text": "hello"}), &ctx).await;
         match result {
             GatewayFrame::Response { result: Some(v), .. } => {
@@ -130,7 +137,8 @@ mod tests {
         let auth = readonly_auth();
         let nr = test_node_registry();
         let a2a = test_a2a_router();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a };
+        let br = test_browser_relay();
+        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
         let result = super::handle("3", "chat.send", serde_json::json!({"text": "hello"}), &ctx).await;
         match result {
             GatewayFrame::Response { error: Some(e), .. } => {
@@ -145,7 +153,8 @@ mod tests {
         let auth = admin_auth();
         let nr = test_node_registry();
         let a2a = test_a2a_router();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a };
+        let br = test_browser_relay();
+        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
         let result = super::handle("4", "chat.send", serde_json::json!({}), &ctx).await;
         match result {
             GatewayFrame::Response { error: Some(e), .. } => {

@@ -58,10 +58,12 @@ async fn delete(id: &str, ctx: &DispatchContext<'_>) -> GatewayFrame {
 #[cfg(test)]
 mod tests {
     use super::super::super::dispatch::DispatchContext;
+    use crate::websocket::gateway::browser_relay::BrowserRelay;
     use crate::websocket::protocol::GatewayFrame;
     use cratos_core::a2a::A2aRouter;
     use cratos_core::auth::{AuthContext, AuthMethod, Scope};
     use cratos_core::nodes::NodeRegistry;
+    use std::sync::Arc;
 
     fn readonly_auth() -> AuthContext {
         AuthContext {
@@ -73,12 +75,17 @@ mod tests {
         }
     }
 
+    fn test_browser_relay() -> crate::websocket::gateway::browser_relay::SharedBrowserRelay {
+        Arc::new(BrowserRelay::new())
+    }
+
     #[tokio::test]
     async fn test_session_operations_scope_check() {
         let nr = NodeRegistry::new();
         let a2a = A2aRouter::new(100);
         let ro = readonly_auth();
-        let ctx = DispatchContext { auth: &ro, node_registry: &nr, a2a_router: &a2a };
+        let br = test_browser_relay();
+        let ctx = DispatchContext { auth: &ro, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
 
         // session.list should work with SessionRead
         let result = super::handle("6", "session.list", serde_json::json!({}), &ctx).await;

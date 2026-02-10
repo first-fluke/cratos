@@ -4,6 +4,19 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Browser backend mode — how the browser tool connects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserBackend {
+    /// Use MCP server only (Playwright/Puppeteer)
+    Mcp,
+    /// Use Chrome extension relay only
+    Extension,
+    /// Auto: use extension if connected, fall back to MCP
+    #[default]
+    Auto,
+}
+
 /// Browser engine type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -55,23 +68,37 @@ pub struct BrowserConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
 
-    /// Default browser engine
+    /// Backend mode: auto, mcp, or extension
+    #[serde(default)]
+    pub backend: BrowserBackend,
+
+    /// Default browser engine (for MCP mode)
     #[serde(default)]
     pub default_engine: BrowserEngine,
 
     /// Playwright-specific configuration
     #[serde(default)]
     pub playwright: PlaywrightConfig,
+
+    /// Server URL for extension relay status check
+    #[serde(default = "default_server_url")]
+    pub server_url: String,
 }
 
 impl Default for BrowserConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            backend: BrowserBackend::default(),
             default_engine: BrowserEngine::default(),
             playwright: PlaywrightConfig::default(),
+            server_url: default_server_url(),
         }
     }
+}
+
+fn default_server_url() -> String {
+    "http://127.0.0.1:8090".to_string()
 }
 
 /// Playwright-specific configuration

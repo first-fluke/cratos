@@ -424,30 +424,13 @@ impl AgentOrchestrator {
         let mentions: Vec<_> = MENTION_REGEX.find_iter(input).collect();
 
         if mentions.is_empty() {
-            // No explicit mention - use semantic routing
-            if self.config.semantic_routing {
-                if let Some(agent_id) = self.route_semantically(input) {
-                    tasks.push(ParsedAgentTask {
-                        agent_id,
-                        prompt: input.to_string(),
-                        explicit_mention: false,
-                    });
-                } else {
-                    // Use default agent
-                    tasks.push(ParsedAgentTask {
-                        agent_id: self.config.default_agent.clone(),
-                        prompt: input.to_string(),
-                        explicit_mention: false,
-                    });
-                }
-            } else {
-                // Use default agent
-                tasks.push(ParsedAgentTask {
-                    agent_id: self.config.default_agent.clone(),
-                    prompt: input.to_string(),
-                    explicit_mention: false,
-                });
-            }
+            // No explicit mention — use default agent
+            // (Persona routing is handled at the Orchestrator level via LLM classification)
+            tasks.push(ParsedAgentTask {
+                agent_id: self.config.default_agent.clone(),
+                prompt: input.to_string(),
+                explicit_mention: false,
+            });
         } else if mentions.len() == 1 {
             // Single mention
             let mention = &mentions[0];
@@ -494,33 +477,6 @@ impl AgentOrchestrator {
         }
 
         Ok(tasks)
-    }
-
-    /// Route semantically based on keywords
-    fn route_semantically(&self, input: &str) -> Option<String> {
-        let input_lower = input.to_lowercase();
-
-        // Find agent with highest priority that matches
-        let mut best_match: Option<(&str, u32)> = None;
-
-        for agent in self.agents.values() {
-            if !agent.enabled {
-                continue;
-            }
-
-            // Check keywords
-            for keyword in &agent.routing.keywords {
-                if input_lower.contains(&keyword.to_lowercase()) {
-                    let priority = agent.routing.priority;
-                    if best_match.is_none() || priority > best_match.map(|(_, p)| p).unwrap_or(0) {
-                        best_match = Some((&agent.id, priority));
-                    }
-                    break;
-                }
-            }
-        }
-
-        best_match.map(|(id, _)| id.to_string())
     }
 
     /// Execute a single task
@@ -755,12 +711,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_no_mention_semantic() {
+    fn test_parse_no_mention_uses_default() {
         let orchestrator = AgentOrchestrator::default();
         let tasks = orchestrator.parse_input("design the API").unwrap();
 
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].agent_id, "backend"); // Matches "API" keyword
+        assert_eq!(tasks[0].agent_id, "researcher"); // Default agent (no keyword routing)
         assert!(!tasks[0].explicit_mention);
     }
 

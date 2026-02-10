@@ -8,7 +8,7 @@ use cratos_core::{
 use uuid::Uuid;
 
 use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
-
+use super::browser_relay::SharedBrowserRelay;
 use super::handlers;
 
 /// Shared context for method dispatch, replacing 6 individual parameters.
@@ -16,6 +16,7 @@ pub(crate) struct DispatchContext<'a> {
     pub auth: &'a AuthContext,
     pub node_registry: &'a NodeRegistry,
     pub a2a_router: &'a A2aRouter,
+    pub browser_relay: &'a SharedBrowserRelay,
 }
 
 /// Route a method call to the appropriate handler.
@@ -32,6 +33,7 @@ pub(crate) async fn dispatch_method(
         m if m.starts_with("approval.") => handlers::approval::handle(id, m, params, ctx).await,
         m if m.starts_with("node.") => handlers::node::handle(id, m, params, ctx).await,
         m if m.starts_with("a2a.") => handlers::a2a::handle(id, m, params, ctx).await,
+        m if m.starts_with("browser.") => handlers::browser::handle(id, m, params, ctx.browser_relay).await,
         _ => GatewayFrame::err(
             id,
             GatewayError::new(
@@ -50,11 +52,13 @@ pub async fn dispatch_method_public(
     auth: &AuthContext,
     node_registry: &NodeRegistry,
     a2a_router: &A2aRouter,
+    browser_relay: &SharedBrowserRelay,
 ) -> GatewayFrame {
     let ctx = DispatchContext {
         auth,
         node_registry,
         a2a_router,
+        browser_relay,
     };
     dispatch_method(id, method, params, &ctx).await
 }
@@ -79,8 +83,10 @@ pub(crate) fn parse_uuid_param(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::websocket::gateway::browser_relay::BrowserRelay;
     use cratos_core::auth::AuthMethod;
     use cratos_core::auth::Scope;
+    use std::sync::Arc;
 
     fn admin_auth() -> AuthContext {
         AuthContext {
@@ -110,14 +116,20 @@ mod tests {
         A2aRouter::new(100)
     }
 
+    fn test_browser_relay() -> SharedBrowserRelay {
+        Arc::new(BrowserRelay::new())
+    }
+
     #[tokio::test]
     async fn test_ping() {
         let nr = test_node_registry();
         let a2a = test_a2a_router();
+        let br = test_browser_relay();
         let ctx = DispatchContext {
             auth: &admin_auth(),
             node_registry: &nr,
             a2a_router: &a2a,
+            browser_relay: &br,
         };
         let result = dispatch_method("1", "ping", serde_json::json!({}), &ctx).await;
         match result {
@@ -134,10 +146,12 @@ mod tests {
     async fn test_unknown_method() {
         let nr = test_node_registry();
         let a2a = test_a2a_router();
+        let br = test_browser_relay();
         let ctx = DispatchContext {
             auth: &admin_auth(),
             node_registry: &nr,
             a2a_router: &a2a,
+            browser_relay: &br,
         };
         let result = dispatch_method("5", "unknown.method", serde_json::json!({}), &ctx).await;
         match result {

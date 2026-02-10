@@ -3,7 +3,7 @@
 //! This module provides the main orchestration logic that ties together
 //! the planner, tools, memory, and replay systems.
 
-use crate::agents::{extract_persona_mention, AgentConfig, PersonaMapping};
+use crate::agents::{extract_persona_mention, PersonaMapping};
 use crate::approval::SharedApprovalManager;
 use crate::error::Result;
 use crate::event_bus::{EventBus, OrchestratorEvent};
@@ -18,6 +18,24 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
+
+/// System prompt for lightweight persona classification via LLM.
+const PERSONA_CLASSIFICATION_PROMPT: &str = r#"Classify the user message into the most appropriate persona. Output ONLY the persona name, nothing else.
+
+Personas:
+- sindri: software development, coding, API, database, architecture, debugging, implementation
+- athena: project management, planning, requirements, roadmap, sprint, schedule
+- heimdall: QA, testing, security, code review, bug analysis, vulnerability
+- mimir: research, investigation, analysis, comparison, documentation, study
+- thor: DevOps, deployment, CI/CD, Docker, Kubernetes, infrastructure, server ops
+- apollo: UX/UI design, user experience, prototyping, accessibility, wireframe
+- odin: product ownership, vision, prioritization, OKR, stakeholder management
+- cratos: general tasks, greetings, unclear domain, multi-domain, status, weather, casual
+
+Rules:
+- Output ONLY the persona name, nothing else
+- If uncertain or multi-domain, output "cratos"
+- Understand intent regardless of language (Korean, English, Japanese, etc.)"#;
 
 /// Trait for routing user input to a matching skill
 #[async_trait::async_trait]
@@ -148,6 +166,10 @@ pub struct OrchestratorConfig {
     pub planner_config: PlannerConfig,
     /// Runner configuration
     pub runner_config: RunnerConfig,
+    /// Maximum total execution time in seconds (0 = no limit)
+    pub max_execution_secs: u64,
+    /// Bail out after this many consecutive iterations where ALL tool calls failed
+    pub max_consecutive_failures: usize,
 }
 
 impl Default for OrchestratorConfig {
@@ -157,6 +179,8 @@ impl Default for OrchestratorConfig {
             enable_logging: true,
             planner_config: PlannerConfig::default(),
             runner_config: RunnerConfig::default(),
+            max_execution_secs: 90,
+            max_consecutive_failures: 3,
         }
     }
 }
@@ -209,7 +233,6 @@ pub struct Orchestrator {
     graph_memory: Option<Arc<GraphMemory>>,
     fallback_planner: Option<Planner>,
     persona_mapping: Option<PersonaMapping>,
-    agent_keywords: Vec<(String, Vec<String>, u32)>,
     skill_router: Option<Arc<dyn SkillRouting>>,
     config: OrchestratorConfig,
 }
@@ -236,7 +259,6 @@ impl Orchestrator {
             graph_memory: None,
             fallback_planner: None,
             persona_mapping: None,
-            agent_keywords: Vec::new(),
             skill_router: None,
             config,
         }
@@ -291,19 +313,9 @@ impl Orchestrator {
         self
     }
 
-    /// Set the persona mapping for @mention and keyword-based routing
+    /// Set the persona mapping for @mention and LLM-based routing
     pub fn with_persona_mapping(mut self, mapping: PersonaMapping) -> Self {
         self.persona_mapping = Some(mapping);
-        self
-    }
-
-    /// Set agent routing keywords extracted from AgentConfig
-    pub fn with_agent_routing(mut self, agents: Vec<AgentConfig>) -> Self {
-        self.agent_keywords = agents
-            .into_iter()
-            .filter(|a| a.enabled && !a.routing.keywords.is_empty())
-            .map(|a| (a.id, a.routing.keywords, a.routing.priority))
-            .collect();
         self
     }
 
@@ -372,13 +384,20 @@ impl Orchestrator {
 
         // Get or create session
         let messages = {
-            let mut session = self
-                .memory
-                .get(&session_key)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_else(|| crate::memory::SessionContext::new(&session_key));
+            let mut session = match self.memory.get(&session_key).await {
+                Ok(Some(s)) => {
+                    debug!(session_key = %session_key, messages = s.get_messages().len(), "Session loaded");
+                    s
+                }
+                Ok(None) => {
+                    debug!(session_key = %session_key, "No existing session, creating new");
+                    crate::memory::SessionContext::new(&session_key)
+                }
+                Err(e) => {
+                    warn!(session_key = %session_key, error = %e, "Failed to load session, creating new");
+                    crate::memory::SessionContext::new(&session_key)
+                }
+            };
 
             session.add_user_message(&input.text);
 
@@ -426,57 +445,41 @@ impl Orchestrator {
             }
 
             // Save updated session
-            let _ = self.memory.save(&session).await;
+            match self.memory.save(&session).await {
+                Ok(()) => debug!(session_key = %session_key, messages = session.get_messages().len(), "Session saved (pre-execution)"),
+                Err(e) => warn!(session_key = %session_key, error = %e, "Failed to save session (pre-execution)"),
+            }
             session.get_messages().to_vec()
         };
 
         // ── Persona Routing (Phase 1) ──────────────────────────────────
-        let persona_system_prompt: Option<String> = if let Some(mapping) = &self.persona_mapping {
-            let explicit = extract_persona_mention(&input.text, mapping);
-
-            let matched_persona = if let Some((agent_id, _rest)) = explicit {
-                let mention = input.text.split_whitespace().next()
-                    .unwrap_or("").trim_start_matches('@').to_lowercase();
-                info!(persona = %mention, agent_id = %agent_id, "Explicit persona mention");
-                Some(mention)
+        let (persona_system_prompt, effective_persona): (Option<String>, String) =
+            if let Some(mapping) = &self.persona_mapping {
+                let explicit = extract_persona_mention(&input.text, mapping);
+                if let Some((_agent_id, _rest)) = explicit {
+                    // @mention → highest priority
+                    let mention = input.text.split_whitespace().next()
+                        .unwrap_or("").trim_start_matches('@').to_lowercase();
+                    info!(persona = %mention, "Explicit persona mention");
+                    let prompt = mapping.get_system_prompt(&mention, &input.user_id)
+                        .map(|p| format!("{}\n\n---\n## Active Persona\n{}",
+                            self.planner.config().system_prompt, p));
+                    (prompt, mention)
+                } else {
+                    // LLM semantic classification
+                    let name = self.route_by_llm(&input.text).await;
+                    info!(persona = %name, "LLM-routed persona");
+                    let prompt = mapping.get_system_prompt(&name, &input.user_id)
+                        .map(|p| format!("{}\n\n---\n## Active Persona\n{}",
+                            self.planner.config().system_prompt, p));
+                    (prompt, name)
+                }
             } else {
-                self.route_by_keywords(&input.text)
-                    .and_then(|agent_id| mapping.to_persona_name(&agent_id).map(|n| n.to_string()))
-                    .map(|name| {
-                        info!(persona = %name, "Auto-routed by keyword");
-                        name
-                    })
+                let fb = self.olympus_hooks.as_ref()
+                    .and_then(|h| h.active_persona())
+                    .unwrap_or_else(|| "cratos".to_string());
+                (None, fb)
             };
-
-            matched_persona.and_then(|name| {
-                mapping.get_system_prompt(&name, &input.user_id)
-                    .map(|persona_prompt| {
-                        format!("{}\n\n---\n## Active Persona\n{}",
-                            self.planner.config().system_prompt, persona_prompt)
-                    })
-            })
-        } else {
-            None
-        };
-
-        // Determine the effective persona name for chronicle logging.
-        // Priority: explicit @mention > keyword routing > active_persona file > "cratos" (default)
-        let effective_persona: String = if let Some(mapping) = &self.persona_mapping {
-            let explicit = extract_persona_mention(&input.text, mapping);
-            if let Some((_agent_id, _rest)) = explicit {
-                input.text.split_whitespace().next()
-                    .unwrap_or("cratos").trim_start_matches('@').to_lowercase()
-            } else {
-                self.route_by_keywords(&input.text)
-                    .and_then(|aid| mapping.to_persona_name(&aid).map(|n| n.to_string()))
-                    .or_else(|| self.olympus_hooks.as_ref().and_then(|h| h.active_persona()))
-                    .unwrap_or_else(|| "cratos".to_string())
-            }
-        } else {
-            self.olympus_hooks.as_ref()
-                .and_then(|h| h.active_persona())
-                .unwrap_or_else(|| "cratos".to_string())
-        };
 
         // ── Skill Router (Phase 5) ──────────────────────────────────────
         let skill_hint: Option<String> = if let Some(router) = &self.skill_router {
@@ -504,6 +507,7 @@ impl Orchestrator {
         let mut final_response = String::new();
         let mut model_used = None;
         let mut iteration = 0;
+        let mut consecutive_all_fail = 0_usize;
 
         // Messages accumulate tool call history across iterations
         let mut messages = messages;
@@ -519,6 +523,33 @@ impl Orchestrator {
                     execution_id = %execution_id,
                     iterations = %iteration,
                     "Max iterations reached"
+                );
+                break;
+            }
+
+            // ── Total execution timeout ───────────────────────────────
+            if self.config.max_execution_secs > 0 {
+                let elapsed = start_time.elapsed().as_secs();
+                if elapsed >= self.config.max_execution_secs {
+                    warn!(
+                        execution_id = %execution_id,
+                        elapsed_secs = elapsed,
+                        limit_secs = self.config.max_execution_secs,
+                        "Execution timeout reached"
+                    );
+                    if final_response.is_empty() {
+                        final_response = "처리 시간이 초과되었습니다. 요청을 단순화하거나 다시 시도해주세요.".to_string();
+                    }
+                    break;
+                }
+            }
+
+            // ── Consecutive tool-failure bail-out ──────────────────────
+            if consecutive_all_fail >= self.config.max_consecutive_failures {
+                warn!(
+                    execution_id = %execution_id,
+                    consecutive_failures = consecutive_all_fail,
+                    "Too many consecutive all-fail tool iterations, bailing out"
                 );
                 break;
             }
@@ -550,21 +581,44 @@ impl Orchestrator {
                     )
                     .await;
 
-                    let error_msg = format!("I encountered an error: {}", e);
+                    let user_msg = match &e {
+                        crate::error::Error::Llm(cratos_llm::Error::RateLimit) => {
+                            "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.".to_string()
+                        }
+                        crate::error::Error::Llm(cratos_llm::Error::Api(api_err))
+                            if api_err.contains("INVALID_ARGUMENT") =>
+                        {
+                            warn!("Gemini INVALID_ARGUMENT (likely function call/response mismatch): {}", api_err);
+                            "내부 처리 오류가 발생했습니다. 다시 시도해주세요.".to_string()
+                        }
+                        crate::error::Error::Llm(cratos_llm::Error::Api(api_err))
+                            if api_err.contains("authentication") || api_err.contains("401") =>
+                        {
+                            "API 인증 오류가 발생했습니다. 관리자에게 문의해주세요.".to_string()
+                        }
+                        crate::error::Error::Llm(cratos_llm::Error::ServerError(_)) => {
+                            "AI 서버에 일시적 장애가 발생했습니다. 잠시 후 다시 시도해주세요.".to_string()
+                        }
+                        _ => {
+                            format!("오류가 발생했습니다. 다시 시도해주세요. ({})",
+                                e.to_string().chars().take(80).collect::<String>())
+                        }
+                    };
+                    let error_detail = format!("Error: {}", e);
                     self.emit(OrchestratorEvent::ExecutionFailed {
                         execution_id,
-                        error: error_msg.clone(),
+                        error: error_detail.clone(),
                     });
                     // Update execution status in DB
                     if let Some(store) = &self.event_store {
                         let _ = store
-                            .update_execution_status(execution_id, "failed", Some(&error_msg))
+                            .update_execution_status(execution_id, "failed", Some(&error_detail))
                             .await;
                     }
                     return Ok(ExecutionResult {
                         execution_id,
                         status: ExecutionStatus::Failed,
-                        response: error_msg,
+                        response: user_msg,
                         tool_calls: tool_call_records,
                         artifacts: Vec::new(),
                         iterations: iteration,
@@ -591,31 +645,49 @@ impl Orchestrator {
 
             // Check if this is a final response
             if plan_response.is_final {
+                let content_text = plan_response.content.as_deref().unwrap_or("");
+
                 // Detect tool refusal on first iteration: model says "can't access" instead of using tools.
                 // Nudge it to retry with tools by appending a follow-up user message.
                 if iteration == 1 {
-                    if let Some(ref content) = plan_response.content {
-                        if is_tool_refusal(content) {
-                            warn!(
-                                execution_id = %execution_id,
-                                "Model refused to use tools on first iteration, nudging retry"
-                            );
-                            messages.push(Message::assistant(content));
-                            messages.push(Message::user(
-                                "위 작업을 위해 exec, http_get 등 도구를 사용해주세요. \
-                                 이 기기에서 직접 실행됩니다. 도구 없이 답하지 마세요."
-                            ));
-                            continue;
-                        }
+                    if is_tool_refusal(content_text) {
+                        warn!(
+                            execution_id = %execution_id,
+                            "Model refused to use tools on first iteration, nudging retry"
+                        );
+                        messages.push(Message::assistant(content_text));
+                        messages.push(Message::user(
+                            "위 작업을 위해 exec, http_get 등 도구를 사용해주세요. \
+                             이 기기에서 직접 실행됩니다. 도구 없이 답하지 마세요."
+                        ));
+                        continue;
                     }
                 }
+
+                // If LLM returns empty/very short final after tool use, nudge it to complete
+                if content_text.trim().is_empty() && !tool_call_records.is_empty() && iteration < self.config.max_iterations - 1 {
+                    warn!(
+                        execution_id = %execution_id,
+                        iteration = iteration,
+                        "Model returned empty final response after tool use, nudging to complete"
+                    );
+                    messages.push(Message::user(
+                        "도구 실행 결과를 바탕으로 원래 요청을 계속 수행해주세요. \
+                         작업이 완료되지 않았다면 필요한 도구를 추가로 사용하고, \
+                         완료했다면 결과를 사용자에게 설명해주세요."
+                    ));
+                    continue;
+                }
+
                 if let Some(content) = plan_response.content {
-                    self.emit(OrchestratorEvent::ChatDelta {
-                        execution_id,
-                        delta: content.clone(),
-                        is_final: true,
-                    });
-                    final_response = content;
+                    if !content.is_empty() {
+                        self.emit(OrchestratorEvent::ChatDelta {
+                            execution_id,
+                            delta: content.clone(),
+                            is_final: true,
+                        });
+                        final_response = content;
+                    }
                 }
                 break;
             }
@@ -661,6 +733,7 @@ impl Orchestrator {
                     filtered_calls.clone(),
                 ));
 
+                let pre_count = tool_call_records.len();
                 let results = self
                     .execute_tool_calls(
                         execution_id,
@@ -669,6 +742,20 @@ impl Orchestrator {
                         &mut tool_call_records,
                     )
                     .await;
+
+                // Track consecutive all-fail iterations
+                let new_records = &tool_call_records[pre_count..];
+                let all_failed = !new_records.is_empty() && new_records.iter().all(|r| !r.success);
+                if all_failed {
+                    consecutive_all_fail += 1;
+                    warn!(
+                        execution_id = %execution_id,
+                        consecutive_all_fail = consecutive_all_fail,
+                        "All tool calls failed this iteration"
+                    );
+                } else {
+                    consecutive_all_fail = 0;
+                }
 
                 // Build tool result messages
                 let tool_messages =
@@ -703,6 +790,32 @@ impl Orchestrator {
         // Sanitize response: strip leaked XML tags from weak models
         let final_response = sanitize_response(&final_response);
 
+        // Generate fallback when LLM returns empty/sentinel after tool execution
+        let final_response = if (final_response.is_empty() || final_response == "(empty response)") && !tool_call_records.is_empty() {
+            let failed: Vec<&str> = tool_call_records.iter()
+                .filter(|r| !r.success)
+                .map(|r| r.tool_name.as_str())
+                .collect();
+            if failed.is_empty() {
+                "요청을 처리하는 중 응답 생성에 실패했습니다. 다시 시도해주세요.".to_string()
+            } else {
+                let errors: Vec<String> = tool_call_records.iter()
+                    .filter(|r| !r.success)
+                    .map(|r| {
+                        let err = r.output.get("stderr").and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty())
+                            .or_else(|| r.output.get("error").and_then(|v| v.as_str()))
+                            .unwrap_or("unknown error");
+                        let err_short: String = err.chars().take(100).collect();
+                        format!("- {}: {}", r.tool_name, err_short)
+                    })
+                    .collect();
+                format!("도구 실행에 실패했습니다:\n{}\n\n다른 방법으로 시도하거나 명령을 수정해 다시 요청해주세요.", errors.join("\n"))
+            }
+        } else {
+            final_response
+        };
+
         // Update session with assistant response + execution summary
         // We persist a concise summary of tool usage (not individual tool messages)
         // to keep the session clean and avoid orphaned tool results that confuse LLMs.
@@ -732,7 +845,10 @@ impl Orchestrator {
             } else {
                 session.add_assistant_message(&final_response);
             }
-            let _ = self.memory.save(&session).await;
+            match self.memory.save(&session).await {
+                Ok(()) => debug!(session_key = %session_key, messages = session.get_messages().len(), "Session saved (post-execution)"),
+                Err(e) => warn!(session_key = %session_key, error = %e, "Failed to save session (post-execution)"),
+            }
         }
 
         // Run Olympus OS post-execution hooks (fire-and-forget)
@@ -976,20 +1092,48 @@ impl Orchestrator {
                     None => fb.plan_step(messages, tools).await,
                 }
             }
+            Err(crate::error::Error::Llm(cratos_llm::Error::ServerError(ref msg)))
+                if self.fallback_planner.is_some() =>
+            {
+                warn!(error = %msg, "Primary provider server error, trying fallback");
+                let fb = self.fallback_planner.as_ref().unwrap();
+                match system_prompt_override {
+                    Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
+                    None => fb.plan_step(messages, tools).await,
+                }
+            }
             Err(e) => Err(e),
         }
     }
 
-    /// Route input to an agent by keyword matching
-    fn route_by_keywords(&self, input: &str) -> Option<String> {
-        let input_lower = input.to_lowercase();
-        self.agent_keywords
-            .iter()
-            .filter(|(_, keywords, _)| {
-                keywords.iter().any(|kw| input_lower.contains(&kw.to_lowercase()))
-            })
-            .max_by_key(|(_, _, priority)| *priority)
-            .map(|(agent_id, _, _)| agent_id.clone())
+    /// Route input to a persona via LLM classification.
+    /// Returns the persona name (not agent_id).
+    /// Falls back to "cratos" on any error — NO keyword matching.
+    async fn route_by_llm(&self, input: &str) -> String {
+        // Short greetings/interjections → skip LLM call
+        if input.split_whitespace().count() < 3 {
+            return "cratos".to_string();
+        }
+
+        let start = std::time::Instant::now();
+        match self.planner.classify(PERSONA_CLASSIFICATION_PROMPT, input).await {
+            Ok(raw) => {
+                let persona = raw.trim().trim_matches('"').to_lowercase();
+                let ms = start.elapsed().as_millis();
+                if let Some(mapping) = &self.persona_mapping {
+                    if mapping.is_persona(&persona) {
+                        debug!(persona = %persona, ms = %ms, "LLM persona classification");
+                        return persona;
+                    }
+                }
+                warn!(raw = %raw, ms = %ms, "LLM returned unknown persona, defaulting to cratos");
+                "cratos".to_string()
+            }
+            Err(e) => {
+                warn!(error = %e, "LLM classify failed, defaulting to cratos");
+                "cratos".to_string()
+            }
+        }
     }
 
     /// Publish an event to the event bus (no-op if no bus is set).
@@ -1040,25 +1184,18 @@ impl Orchestrator {
     }
 }
 
-/// Detect if the model's response is a "tool refusal" — saying it can't do something
-/// when it should have used tools instead.
+/// Detect if the model's first response is likely a refusal to use tools.
+///
+/// Structural detection: on the first iteration, if the model gives a short
+/// text-only response without any tool calls, it's almost certainly refusing
+/// to act. Genuine knowledge answers are typically longer. This avoids
+/// hardcoded keyword lists which are fragile and language-dependent.
 fn is_tool_refusal(content: &str) -> bool {
-    // Common refusal patterns in Korean and English
-    const REFUSAL_PATTERNS: &[&str] = &[
-        "접근할 수 없",      // "can't access"
-        "확인할 수 없",      // "can't check"
-        "직접 확인",          // "directly check" (as in "I can't directly check")
-        "제공할 수 없",      // "can't provide"
-        "I can't access",
-        "I cannot access",
-        "I don't have access",
-        "unable to access",
-        "I can't check",
-        "(empty response)",
-    ];
-
-    let lower = content.to_lowercase();
-    REFUSAL_PATTERNS.iter().any(|p| lower.contains(&p.to_lowercase()))
+    let trimmed = content.trim();
+    // Empty or very short responses (< 200 chars) without tool calls on iteration 1
+    // are almost certainly refusals. Genuine conversational answers or knowledge
+    // responses are longer.
+    trimmed.is_empty() || trimmed.len() < 200
 }
 
 /// Sanitize LLM response before sending to users.

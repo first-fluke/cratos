@@ -12,12 +12,15 @@ use clap::{Parser, Subcommand, ValueEnum};
 /// Path to the environment configuration file.
 pub const ENV_FILE_PATH: &str = ".env";
 
+pub mod browser_ext;
 pub mod chronicle;
+pub mod data;
 pub mod decrees;
 pub mod doctor;
 pub mod pantheon;
 pub mod quota;
 pub mod setup;
+pub mod skill;
 pub mod tui;
 
 /// Cratos AI Assistant CLI
@@ -66,11 +69,118 @@ pub enum Commands {
         #[arg(short, long)]
         persona: Option<String>,
     },
+    /// Manage skills (list, show, enable, disable)
+    #[command(subcommand)]
+    Skill(SkillCommands),
+    /// Manage stored data (stats, clear)
+    #[command(subcommand)]
+    Data(DataCommands),
     /// Start ACP bridge (stdin/stdout JSON-lines for IDE integration)
     Acp {
         /// Auth token (optional, defaults to localhost trust if auth disabled)
         #[arg(long)]
         token: Option<String>,
+    },
+    /// Browser extension and browser control
+    #[command(subcommand)]
+    Browser(BrowserCommands),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BrowserCommands {
+    /// Manage Chrome extension
+    #[command(subcommand)]
+    Extension(BrowserExtCommands),
+    /// List open browser tabs
+    Tabs,
+    /// Open URL in browser
+    Open {
+        /// URL to open
+        url: String,
+    },
+    /// Take browser screenshot
+    Screenshot {
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<String>,
+        /// CSS selector to screenshot a specific element
+        #[arg(short, long)]
+        selector: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BrowserExtCommands {
+    /// Install Chrome extension to ~/.cratos/extensions/chrome
+    Install,
+    /// Print extension install path
+    Path,
+}
+
+/// Data management subcommands
+#[derive(Subcommand, Debug)]
+pub enum DataCommands {
+    /// Show data statistics (record counts, file sizes)
+    Stats,
+    /// Clear data
+    Clear {
+        /// Target to clear (omit for all)
+        #[command(subcommand)]
+        target: Option<ClearTarget>,
+        /// Skip confirmation prompt
+        #[arg(short, long, global = true)]
+        force: bool,
+    },
+}
+
+/// Specific data targets for clearing
+#[derive(Subcommand, Debug)]
+pub enum ClearTarget {
+    /// Redis sessions
+    Sessions,
+    /// Graph RAG memory (entities, turns)
+    Memory,
+    /// Execution history
+    History {
+        /// Delete records older than N days (0 = all)
+        #[arg(long, default_value = "0")]
+        older_than: u32,
+    },
+    /// Persona chronicles
+    Chronicles {
+        /// Specific persona name
+        #[arg(long)]
+        persona: Option<String>,
+    },
+    /// Vector search indexes
+    Vectors,
+    /// Skills and patterns
+    Skills,
+}
+
+/// Skill subcommands
+#[derive(Subcommand, Debug)]
+pub enum SkillCommands {
+    /// List all skills
+    List {
+        /// Show only active skills
+        #[arg(long)]
+        active: bool,
+    },
+    /// Show skill details
+    Show {
+        /// Skill name
+        name: String,
+    },
+    /// Enable (activate) a skill
+    Enable {
+        /// Skill name to enable
+        name: String,
+    },
+    /// Disable a skill
+    Disable {
+        /// Skill name to disable
+        name: String,
     },
 }
 
@@ -153,6 +263,17 @@ pub enum ChronicleCommands {
         /// Persona name to promote
         name: String,
     },
+    /// Clean orphaned chronicles or reset judgment scores
+    Clean {
+        /// Persona name to remove (e.g., "unknown")
+        name: Option<String>,
+        /// Skip confirmation prompt
+        #[arg(long)]
+        force: bool,
+        /// Reset all judgment scores (clear accumulated penalties)
+        #[arg(long)]
+        reset_judgments: bool,
+    },
 }
 
 /// Run the CLI command
@@ -172,8 +293,21 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             }
             crate::server::run().await
         }
+        Some(Commands::Skill(cmd)) => skill::run(cmd).await,
+        Some(Commands::Data(cmd)) => data::run(cmd).await,
         Some(Commands::Tui { persona }) => tui::run(persona).await,
         Some(Commands::Acp { token }) => crate::acp::bridge::run_acp(token).await,
+        Some(Commands::Browser(cmd)) => match cmd {
+            BrowserCommands::Extension(ext) => match ext {
+                BrowserExtCommands::Install => browser_ext::install().await,
+                BrowserExtCommands::Path => browser_ext::path().await,
+            },
+            BrowserCommands::Tabs => browser_ext::tabs().await,
+            BrowserCommands::Open { url } => browser_ext::open(&url).await,
+            BrowserCommands::Screenshot { output, selector } => {
+                browser_ext::screenshot(output.as_deref(), selector.as_deref()).await
+            }
+        },
         None => {
             let mut cmd = <Cli as clap::CommandFactory>::command();
             cmd.print_help()?;

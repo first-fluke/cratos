@@ -14,6 +14,7 @@ mod api;
 mod cli;
 mod middleware;
 mod server;
+mod tools;
 mod websocket;
 
 #[tokio::main]

@@ -78,5 +78,5 @@ mod tool;
 pub const DEFAULT_BROWSER_TIMEOUT_MS: u64 = 120000;
 
 pub use actions::{BrowserAction, BrowserActionResult};
-pub use config::{BrowserConfig, BrowserEngine, BrowserType, PlaywrightConfig};
+pub use config::{BrowserBackend, BrowserConfig, BrowserEngine, BrowserType, PlaywrightConfig};
 pub use tool::BrowserTool;

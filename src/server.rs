@@ -855,6 +855,23 @@ pub async fn run() -> Result<()> {
         ..BuiltinsConfig::default()
     };
     register_builtins_with_config(&mut tool_registry, &builtins_config);
+
+    // Register application-level tools (bridge multiple crates)
+    tool_registry.register(Arc::new(crate::tools::StatusTool::new(
+        skill_store.clone(),
+    )));
+
+    // MCP tool auto-registration from .mcp.json
+    let mcp_json_path = std::path::Path::new(".mcp.json");
+    if mcp_json_path.exists() {
+        match cratos_tools::mcp::register_mcp_tools(&mut tool_registry, mcp_json_path).await {
+            Ok(_mcp_client) => {
+                info!("MCP tools registered from .mcp.json");
+            }
+            Err(e) => warn!("Failed to register MCP tools: {}", e),
+        }
+    }
+
     let tool_count = tool_registry.len();
     let tool_registry = Arc::new(tool_registry);
     info!("Tool registry initialized with {} tools", tool_count);
@@ -953,8 +970,7 @@ pub async fn run() -> Result<()> {
             .with_memory(session_store)
             .with_approval_manager(approval_manager)
             .with_olympus_hooks(olympus_hooks)
-            .with_persona_mapping(cratos_core::PersonaMapping::default_mapping())
-            .with_agent_routing(cratos_core::AgentConfig::defaults());
+            .with_persona_mapping(cratos_core::PersonaMapping::default_mapping());
     if let Some(gm) = graph_memory {
         orchestrator = orchestrator.with_graph_memory(gm);
     }
@@ -1262,6 +1278,13 @@ pub async fn run() -> Result<()> {
     let a2a_router = Arc::new(cratos_core::A2aRouter::default());
     info!("A2A router initialized");
 
+    // ================================================================
+    // Browser Relay (Extension ↔ Server bridge)
+    // ================================================================
+    let browser_relay: crate::websocket::gateway::SharedBrowserRelay =
+        Arc::new(crate::websocket::gateway::BrowserRelay::new());
+    info!("Browser relay initialized");
+
     // Build the main router with all endpoints
     let app = Router::new()
         // Health and metrics endpoints (no auth required for load balancers)
@@ -1280,6 +1303,7 @@ pub async fn run() -> Result<()> {
         .layer(Extension(event_bus))
         .layer(Extension(node_registry))
         .layer(Extension(a2a_router))
+        .layer(Extension(browser_relay))
         .layer(rate_limit_layer);
 
     let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)

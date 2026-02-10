@@ -50,20 +50,24 @@ After using tools, you MUST present the actual data/output to the user in a clea
 ## Tools (sorted by preference)
 1. `exec` — Run any shell command on this machine.
 2. `file_read` / `file_write` / `file_list` — File operations. Use `file_list` to discover paths.
-3. `http_get` / `http_post` — Web requests. Use for APIs, searches, data fetching.
-4. `git_status`, `git_diff`, `git_commit`, `git_branch`, `git_push` — Git operations.
-5. `github_api` — GitHub API calls.
-6. `config` — Cratos configuration.
-7. `browser` — **LAST RESORT**. Real browser automation. Only use when `http_get` cannot get the data (e.g. JS-rendered pages, login required) or user explicitly asks. Browser is slow and error-prone.
+3. `web_search` — **USE THIS for any real-time information**: weather, news, prices, reviews, current events. Returns structured results (title, URL, snippet). Always prefer this over http_get for search queries.
+4. `http_get` / `http_post` — Web requests. Use for direct API calls and fetching known URLs. Do NOT use for Google/Naver/Bing searches (they return JS-rendered pages that are useless).
+5. `git_status`, `git_diff`, `git_commit`, `git_branch`, `git_push` — Git operations.
+6. `github_api` — GitHub API calls.
+7. `config` — Cratos configuration.
+8. `browser` — Real browser control. Use when: (a) user explicitly mentions browser/tabs/열려있는 페이지, (b) need to list open tabs (`get_tabs`), navigate, click, screenshot, or (c) `http_get` cannot get the data (JS-rendered, login required). For simple data fetching, prefer `web_search`/`http_get` first.
 {local_app_instructions}
 
 ## Tool Selection Principles
-- **Prefer lightweight tools**: `http_get` > `browser`, `exec` > manual steps.
+- **NEVER refuse a request by saying "할 수 없습니다" or "I can't do that".** You have tools. USE THEM. If unsure which tool fits, try the closest match. The user gave you tools specifically so you can act on their behalf.
+- **For any search/lookup** (weather, prices, news, reviews, "what is X"): ALWAYS use `web_search` first. It returns clean structured results without JS rendering issues.
+- **Prefer lightweight tools for web data**: `web_search` > `http_get` > `browser` for fetching information.
+- **But use `browser` immediately** when the user mentions their browser, open tabs, or any browser-specific operation (tabs, navigate, screenshot). The `browser` tool's `get_tabs` action lists all open Chrome tabs.
 - **Always use tools** when the user asks to DO something. Only respond without tools for greetings, opinions, or general knowledge.
 - **Return actionable results**: direct links (not search pages), actual data (not summaries), specific answers.
 - **Think before acting**: plan your approach. If the user asks for "cheapest", think about which site sorts by price. If they ask for "best", think about review scores. Don't just search the user's exact words — translate intent into an effective query strategy.
 - **If a tool fails**, try an alternative approach. Don't repeat the same failed call.
-- **NEVER open browser for the same URL or query that `http_get` already returned data for.** Analyze the http_get result first. Only use browser if http_get was genuinely blocked (captcha, 403) or returned no useful content. Each extra tool call costs time and API quota.
+- **NEVER open browser for the same URL or query that `http_get` already returned data for.** Analyze the http_get result first. Only use browser if http_get was genuinely blocked (captcha, 403) or returned no useful content.
 
 ## Personas
 Users can explicitly select a persona with @mention (e.g. @mimir). Without @mention, automatically adopt the most fitting persona based on the request's domain:
@@ -181,7 +185,34 @@ impl PlannerConfig {
         let local_app_instructions = match os_type {
             "macos" => {
                 let mut lines = Vec::new();
-                lines.push("- **Calendar/일정 조회** → `exec` with `osascript` (AppleScript). Use a SINGLE bulk query across all calendars. NEVER loop through calendars one by one.".to_string());
+                lines.push("- **osascript 규칙 (CRITICAL)**: 2줄 이상의 AppleScript는 반드시 file_write로 .scpt 파일을 먼저 작성하고, exec osascript /tmp/파일.scpt로 실행. 절대로 `-e` 여러 개를 args에 나열하지 말 것 (LLM이 `-e` 누락 실수를 자주 함).".to_string());
+                lines.push("  1줄짜리만 `-e` 사용 가능. 예: args=[\"-e\", \"tell application \\\"Calendar\\\" to get name of every calendar\"]".to_string());
+                lines.push("- **Calendar/일정 추가** → file_write로 .scpt 작성 후 osascript로 실행. 캘린더명은 먼저 조회할 것.".to_string());
+                lines.push("- **Calendar/일정 조회** → file_write로 .scpt 작성 후 osascript로 실행. 아래 패턴을 **그대로** 복사하여 날짜만 변경할 것:".to_string());
+                lines.push("  ```applescript".to_string());
+                lines.push("  set targetDate to current date".to_string());
+                lines.push("  set day of targetDate to DAY_NUMBER".to_string());
+                lines.push("  set month of targetDate to MONTH_NUMBER".to_string());
+                lines.push("  set year of targetDate to YEAR_NUMBER".to_string());
+                lines.push("  set time of targetDate to 0".to_string());
+                lines.push("  set endDate to targetDate + (1 * days)".to_string());
+                lines.push("  set output to \"\"".to_string());
+                lines.push("  tell application \"Calendar\"".to_string());
+                lines.push("    repeat with cal in every calendar".to_string());
+                lines.push("      set evts to (every event of cal whose start date >= targetDate and start date < endDate)".to_string());
+                lines.push("      repeat with e in evts".to_string());
+                lines.push("        set t1 to time string of (start date of e)".to_string());
+                lines.push("        set t2 to time string of (end date of e)".to_string());
+                lines.push("        set output to output & summary of e & \" (\" & t1 & \"-\" & t2 & \") [\" & name of cal & \"]\" & linefeed".to_string());
+                lines.push("      end repeat".to_string());
+                lines.push("    end repeat".to_string());
+                lines.push("  end tell".to_string());
+                lines.push("  if output is \"\" then return \"해당 날짜에 일정이 없습니다.\"".to_string());
+                lines.push("  return output".to_string());
+                lines.push("  ```".to_string());
+                lines.push("  **금지**: `short time string`, `short date string` 은 AppleScript에 존재하지 않음. 반드시 `time string of`만 사용.".to_string());
+                lines.push("  **금지**: `date \"문자열\"` 파싱은 로케일마다 다름. 반드시 `current date` 후 year/month/day/time 개별 설정.".to_string());
+                lines.push("  **\"다음주 수요일\"** 같은 상대 날짜 → 먼저 exec로 `date -v+wed \"+%Y-%m-%d\"` 실행하여 날짜를 구한 후, 위 패턴에 대입.".to_string());
                 // Check if icalBuddy is available
                 if std::process::Command::new("which")
                     .arg("icalBuddy")
@@ -191,7 +222,7 @@ impl PlannerConfig {
                 {
                     lines.insert(0, "- **Calendar/일정 조회** (preferred) → `exec` with `icalBuddy`. Example: command=\"icalBuddy\" args=[\"eventsFrom:today\", \"to:today+7\"]".to_string());
                 }
-                lines.push("- **macOS apps** → `exec` with `osascript` for Reminders, Notes, Contacts, etc.".to_string());
+                lines.push("- **macOS apps** → `exec` with `osascript` for Reminders, Notes, Contacts, etc. Each -e flag = one AppleScript line.".to_string());
                 lines.push("- **System info** → `exec` with `sw_vers`, `sysctl`, `diskutil`, etc.".to_string());
                 lines.join("\n")
             }
@@ -294,6 +325,24 @@ impl Planner {
     #[must_use]
     pub fn config(&self) -> &PlannerConfig {
         &self.config
+    }
+
+    /// Lightweight classification — no tools, low max_tokens, temperature=0
+    pub async fn classify(&self, system_prompt: &str, user_input: &str) -> Result<String> {
+        let model = self
+            .config
+            .default_model
+            .clone()
+            .unwrap_or_else(|| self.provider.default_model().to_string());
+        let request = CompletionRequest {
+            model,
+            messages: vec![Message::system(system_prompt), Message::user(user_input)],
+            max_tokens: Some(20),
+            temperature: Some(0.0),
+            stop: None,
+        };
+        let response = self.provider.complete(request).await.map_err(Error::Llm)?;
+        Ok(response.content.trim().to_lowercase())
     }
 
     /// Plan a single step with the given messages and tools

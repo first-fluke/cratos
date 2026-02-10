@@ -16,6 +16,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tracing::{debug, info, warn};
 
 use super::protocol::AcpMessage;
+use crate::websocket::gateway::browser_relay::{BrowserRelay, SharedBrowserRelay};
 use crate::websocket::protocol::{GatewayError, GatewayErrorCode};
 
 /// ACP bridge state.
@@ -24,6 +25,7 @@ pub struct AcpBridge {
     event_bus: Arc<EventBus>,
     node_registry: Arc<NodeRegistry>,
     a2a_router: Arc<A2aRouter>,
+    browser_relay: SharedBrowserRelay,
 }
 
 impl AcpBridge {
@@ -39,6 +41,7 @@ impl AcpBridge {
             event_bus,
             node_registry,
             a2a_router,
+            browser_relay: Arc::new(BrowserRelay::new()),
         }
     }
 
@@ -167,6 +170,7 @@ impl AcpBridge {
                     auth,
                     &self.node_registry,
                     &self.a2a_router,
+                    &self.browser_relay,
                 ).await;
                 frame.into()
             }

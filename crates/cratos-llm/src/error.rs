@@ -17,6 +17,10 @@ pub enum Error {
     #[error("rate limit exceeded")]
     RateLimit,
 
+    /// Server error (5xx) — retryable
+    #[error("server error: {0}")]
+    ServerError(String),
+
     /// Invalid response
     #[error("invalid response: {0}")]
     InvalidResponse(String),

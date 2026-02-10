@@ -53,6 +53,9 @@ pub struct PostExecutionSummary {
     pub new_level: Option<u8>,
 }
 
+/// Score awarded for successful task completion without violations
+const REWARD_SCORE: f32 = 4.0;
+
 /// Olympus OS hooks for post-execution processing
 pub struct OlympusHooks {
     config: OlympusConfig,
@@ -121,6 +124,16 @@ impl OlympusHooks {
             match self.chronicle_store.load(persona) {
                 Ok(Some(mut chronicle)) => {
                     chronicle.add_entry(&entry_text, None);
+
+                    // Reward: successful task completion without violations
+                    if violations.is_empty() && task_completed {
+                        chronicle.add_judgment(
+                            "Cratos",
+                            "Task completed successfully",
+                            Some(REWARD_SCORE),
+                        );
+                    }
+
                     if let Err(e) = self.chronicle_store.save(&chronicle) {
                         warn!(error = %e, persona = persona, "Failed to save chronicle entry");
                     } else {
@@ -151,6 +164,15 @@ impl OlympusHooks {
                     let mut chronicle =
                         crate::chronicles::Chronicle::new(persona);
                     chronicle.add_entry(&entry_text, None);
+
+                    if violations.is_empty() && task_completed {
+                        chronicle.add_judgment(
+                            "Cratos",
+                            "Task completed successfully",
+                            Some(REWARD_SCORE),
+                        );
+                    }
+
                     if let Err(e) = self.chronicle_store.save(&chronicle) {
                         warn!(error = %e, persona = persona, "Failed to create chronicle");
                     } else {

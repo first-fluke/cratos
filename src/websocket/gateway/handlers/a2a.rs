@@ -131,10 +131,12 @@ async fn history(
 #[cfg(test)]
 mod tests {
     use super::super::super::dispatch::{dispatch_method, DispatchContext};
+    use crate::websocket::gateway::browser_relay::BrowserRelay;
     use crate::websocket::protocol::{GatewayErrorCode, GatewayFrame};
     use cratos_core::a2a::A2aRouter;
     use cratos_core::auth::{AuthContext, AuthMethod, Scope};
     use cratos_core::nodes::NodeRegistry;
+    use std::sync::Arc;
 
     fn admin_auth() -> AuthContext {
         AuthContext {
@@ -166,12 +168,17 @@ mod tests {
         }
     }
 
+    fn test_browser_relay() -> crate::websocket::gateway::browser_relay::SharedBrowserRelay {
+        Arc::new(BrowserRelay::new())
+    }
+
     #[tokio::test]
     async fn test_a2a_send() {
         let nr = NodeRegistry::new();
         let a2a = A2aRouter::new(100);
         let auth = admin_auth();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a };
+        let br = test_browser_relay();
+        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
 
         let result = dispatch_method(
             "50",
@@ -204,7 +211,8 @@ mod tests {
         let nr = NodeRegistry::new();
         let a2a = A2aRouter::new(100);
         let auth = admin_auth();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a };
+        let br = test_browser_relay();
+        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
 
         let result = dispatch_method(
             "51",
@@ -226,7 +234,8 @@ mod tests {
         let nr = NodeRegistry::new();
         let a2a = A2aRouter::new(100);
         let auth = admin_auth();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a };
+        let br = test_browser_relay();
+        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
 
         // Send a message first
         a2a.send(cratos_core::a2a::A2aMessage::new("backend", "frontend", "s1", "hello"))
@@ -253,7 +262,8 @@ mod tests {
         let nr = NodeRegistry::new();
         let a2a = A2aRouter::new(100);
         let auth = admin_auth();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a };
+        let br = test_browser_relay();
+        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
 
         // Send some messages
         a2a.send(cratos_core::a2a::A2aMessage::new("backend", "frontend", "s1", "msg1"))
@@ -282,7 +292,8 @@ mod tests {
         let nr = NodeRegistry::new();
         let a2a = A2aRouter::new(100);
         let auth = readonly_auth();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a };
+        let br = test_browser_relay();
+        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
         let result = dispatch_method(
             "54",
             "a2a.send",

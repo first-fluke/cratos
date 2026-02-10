@@ -198,6 +198,11 @@ impl<T: ToolExecutor> SkillExecutor<T> {
         self
     }
 
+    /// Minimum usage count before auto-disable can trigger
+    const AUTO_DISABLE_MIN_USES: u64 = 10;
+    /// Success rate threshold below which a skill is automatically disabled
+    const AUTO_DISABLE_RATE_THRESHOLD: f64 = 0.3;
+
     /// Execute a skill with the given variables
     #[instrument(skip(self, skill, variables), fields(skill_id = %skill.id, skill_name = %skill.name))]
     pub async fn execute(
@@ -305,7 +310,7 @@ impl<T: ToolExecutor> SkillExecutor<T> {
             error: final_error,
         };
 
-        // Record execution if we have a store
+        // Record execution and update skill metrics
         if let Some(ref store) = self.store {
             let step_results_json: Vec<Value> = step_results
                 .iter()
@@ -323,6 +328,41 @@ impl<T: ToolExecutor> SkillExecutor<T> {
                 .await
             {
                 error!("Failed to record skill execution: {}", e);
+            }
+
+            // Update in-memory metrics and persist to DB
+            let mut updated_skill = skill.clone();
+            if overall_success {
+                updated_skill.record_success(total_duration);
+            } else {
+                updated_skill.record_failure();
+            }
+
+            // Auto-disable skill if success rate falls below threshold
+            let auto_disabled = updated_skill.metadata.usage_count >= Self::AUTO_DISABLE_MIN_USES
+                && updated_skill.metadata.success_rate < Self::AUTO_DISABLE_RATE_THRESHOLD
+                && updated_skill.is_active();
+            if auto_disabled {
+                updated_skill.disable();
+                warn!(
+                    skill_name = %skill.name,
+                    usage_count = updated_skill.metadata.usage_count,
+                    success_rate = %format!("{:.1}%", updated_skill.metadata.success_rate * 100.0),
+                    "Skill auto-disabled due to low success rate"
+                );
+            }
+
+            if let Err(e) = store
+                .update_skill_metrics(
+                    skill.id,
+                    updated_skill.metadata.usage_count,
+                    updated_skill.metadata.success_rate,
+                    updated_skill.metadata.avg_duration_ms,
+                    updated_skill.status.as_str(),
+                )
+                .await
+            {
+                error!("Failed to update skill metrics: {}", e);
             }
         }
 

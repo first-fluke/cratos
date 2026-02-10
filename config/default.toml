@@ -30,7 +30,7 @@ port = 8090
 [redis]
 # SECURITY: Enable Redis AUTH in production
 # When using docker-compose, use port 63791
-url = "redis://localhost:63791"
+url = "redis://localhost:6379"
 
 [llm]
 # Auto-detect provider from environment variables
@@ -322,7 +322,7 @@ max_duration_secs = 30        # Maximum recording duration
 # Default: "크레토스" (Korean), can be anything you want
 [voice.wake_word]
 name = "크레토스"
-alternatives = ["크라토스", "Hey Cratos"]
+alternatives = ["크레토스", "Hey Cratos"]
 # sensitivity = 0.5
 
 # TTS Voice Selection

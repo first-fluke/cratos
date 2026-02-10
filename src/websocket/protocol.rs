@@ -121,6 +121,13 @@ pub struct ConnectParams {
     /// Protocol version requested
     #[serde(default = "default_protocol_version")]
     pub protocol_version: u32,
+    /// Client role: "operator" (default) or "browser" (extension)
+    #[serde(default = "default_role")]
+    pub role: String,
+}
+
+fn default_role() -> String {
+    "operator".to_string()
 }
 
 fn default_protocol_version() -> u32 {

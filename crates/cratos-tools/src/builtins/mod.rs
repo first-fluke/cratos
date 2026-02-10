@@ -16,6 +16,7 @@ mod file;
 mod git;
 mod github;
 mod http;
+mod web_search;
 mod wol;
 
 pub use config::{ConfigAction, ConfigInput, ConfigTarget, ConfigTool};
@@ -24,6 +25,7 @@ pub use file::{FileListTool, FileReadTool, FileWriteTool};
 pub use git::{GitBranchTool, GitCommitTool, GitDiffTool, GitPushTool, GitStatusTool};
 pub use github::GitHubApiTool;
 pub use http::{HttpGetTool, HttpPostTool};
+pub use web_search::WebSearchTool;
 pub use wol::WolTool;
 
 use crate::browser::BrowserTool;
@@ -77,6 +79,9 @@ pub fn register_builtins_with_config(registry: &mut ToolRegistry, config: &Built
 
     // Config tool (natural language configuration)
     registry.register(Arc::new(ConfigTool::new()));
+
+    // Web search tool (DuckDuckGo, no API key required)
+    registry.register(Arc::new(WebSearchTool::new()));
 }
 
 #[cfg(test)]
@@ -103,6 +108,7 @@ mod tests {
         assert!(registry.has("browser"));
         assert!(registry.has("wol"));
         assert!(registry.has("config"));
-        assert_eq!(registry.len(), 15);
+        assert!(registry.has("web_search"));
+        assert_eq!(registry.len(), 16);
     }
 }

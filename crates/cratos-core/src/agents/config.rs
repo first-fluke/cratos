@@ -186,15 +186,7 @@ impl AgentConfig {
             },
             tools: AgentToolConfig::default(),
             routing: AgentRouting {
-                keywords: vec![
-                    "API".to_string(),
-                    "database".to_string(),
-                    "server".to_string(),
-                    "backend".to_string(),
-                    "DB".to_string(),
-                    "SQL".to_string(),
-                    "endpoint".to_string(),
-                ],
+                keywords: vec![],
                 intents: vec!["api_design".to_string(), "database_query".to_string()],
                 priority: 100,
             },
@@ -230,15 +222,7 @@ impl AgentConfig {
             },
             tools: AgentToolConfig::default(),
             routing: AgentRouting {
-                keywords: vec![
-                    "UI".to_string(),
-                    "frontend".to_string(),
-                    "component".to_string(),
-                    "CSS".to_string(),
-                    "React".to_string(),
-                    "page".to_string(),
-                    "screen".to_string(),
-                ],
+                keywords: vec![],
                 intents: vec!["ui_design".to_string(), "component_creation".to_string()],
                 priority: 100,
             },
@@ -274,14 +258,7 @@ impl AgentConfig {
             },
             tools: AgentToolConfig::default(),
             routing: AgentRouting {
-                keywords: vec![
-                    "test".to_string(),
-                    "testing".to_string(),
-                    "QA".to_string(),
-                    "security".to_string(),
-                    "verification".to_string(),
-                    "bug".to_string(),
-                ],
+                keywords: vec![],
                 intents: vec!["test_creation".to_string(), "security_review".to_string()],
                 priority: 90,
             },
@@ -317,14 +294,7 @@ impl AgentConfig {
             },
             tools: AgentToolConfig::with_allowed(["search", "read_file", "list_files"]),
             routing: AgentRouting {
-                keywords: vec![
-                    "plan".to_string(),
-                    "planning".to_string(),
-                    "analysis".to_string(),
-                    "PM".to_string(),
-                    "roadmap".to_string(),
-                    "requirements".to_string(),
-                ],
+                keywords: vec![],
                 intents: vec!["planning".to_string(), "analysis".to_string()],
                 priority: 80,
             },
@@ -360,13 +330,7 @@ impl AgentConfig {
             },
             tools: AgentToolConfig::with_allowed(["search", "read_file", "http_get"]),
             routing: AgentRouting {
-                keywords: vec![
-                    "research".to_string(),
-                    "investigate".to_string(),
-                    "find".to_string(),
-                    "compare".to_string(),
-                    "analyze".to_string(),
-                ],
+                keywords: vec![],
                 intents: vec!["research".to_string(), "comparison".to_string()],
                 priority: 70,
             },
@@ -393,7 +357,7 @@ impl AgentConfig {
             },
             tools: AgentToolConfig::with_allowed(["search", "read_file", "list_files"]),
             routing: AgentRouting {
-                keywords: vec!["product".to_string(), "roadmap".to_string(), "prioritize".to_string(), "OKR".to_string()],
+                keywords: vec![],
                 intents: vec!["product_planning".to_string()],
                 priority: 110,
             },
@@ -430,7 +394,7 @@ impl AgentConfig {
             },
             tools: AgentToolConfig::default(),
             routing: AgentRouting {
-                keywords: vec!["UX".to_string(), "design".to_string(), "prototype".to_string(), "accessibility".to_string()],
+                keywords: vec![],
                 intents: vec!["ux_design".to_string()],
                 priority: 50,
             },
@@ -472,7 +436,7 @@ impl AgentConfig {
             },
             tools: AgentToolConfig::default(),
             routing: AgentRouting {
-                keywords: vec!["deploy".to_string(), "CI".to_string(), "CD".to_string(), "Docker".to_string(), "K8s".to_string(), "infrastructure".to_string()],
+                keywords: vec![],
                 intents: vec!["deployment".to_string(), "infrastructure".to_string()],
                 priority: 60,
             },

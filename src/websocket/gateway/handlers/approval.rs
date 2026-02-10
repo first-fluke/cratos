@@ -37,10 +37,12 @@ async fn respond(id: &str, ctx: &DispatchContext<'_>) -> GatewayFrame {
 #[cfg(test)]
 mod tests {
     use super::super::super::dispatch::DispatchContext;
+    use crate::websocket::gateway::browser_relay::BrowserRelay;
     use crate::websocket::protocol::{GatewayErrorCode, GatewayFrame};
     use cratos_core::a2a::A2aRouter;
     use cratos_core::auth::{AuthContext, AuthMethod, Scope};
     use cratos_core::nodes::NodeRegistry;
+    use std::sync::Arc;
 
     fn admin_auth() -> AuthContext {
         AuthContext {
@@ -72,13 +74,18 @@ mod tests {
         }
     }
 
+    fn test_browser_relay() -> crate::websocket::gateway::browser_relay::SharedBrowserRelay {
+        Arc::new(BrowserRelay::new())
+    }
+
     #[tokio::test]
     async fn test_approval_respond_scope() {
         let nr = NodeRegistry::new();
         let a2a = A2aRouter::new(100);
+        let br = test_browser_relay();
 
         let ro = readonly_auth();
-        let ctx = DispatchContext { auth: &ro, node_registry: &nr, a2a_router: &a2a };
+        let ctx = DispatchContext { auth: &ro, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
         let result = super::handle("9", "approval.respond", serde_json::json!({}), &ctx).await;
         match result {
             GatewayFrame::Response { error: Some(e), .. } => {
@@ -89,7 +96,7 @@ mod tests {
 
         // Admin should work
         let admin = admin_auth();
-        let ctx = DispatchContext { auth: &admin, node_registry: &nr, a2a_router: &a2a };
+        let ctx = DispatchContext { auth: &admin, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
         let result = super::handle("10", "approval.respond", serde_json::json!({}), &ctx).await;
         assert!(matches!(result, GatewayFrame::Response { result: Some(_), .. }));
     }

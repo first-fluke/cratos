@@ -352,6 +352,43 @@ pub fn get_all_auth_sources() -> HashMap<String, AuthSource> {
 }
 
 // ============================================================================
+// Token Write (Gemini)
+// ============================================================================
+
+/// Write refreshed OAuth credentials back to `~/.gemini/oauth_creds.json`.
+///
+/// This allows other processes (and future restarts) to pick up the new token
+/// without requiring `gemini auth login`.
+pub fn write_gemini_oauth(access_token: &str, refresh_token: &str, expiry_date: i64) -> crate::Result<()> {
+    let path = gemini_oauth_path().ok_or_else(|| {
+        crate::Error::OAuth("Home directory not found".to_string())
+    })?;
+
+    let creds = serde_json::json!({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expiry_date": expiry_date,
+    });
+
+    let json = serde_json::to_string_pretty(&creds)
+        .map_err(|e| crate::Error::OAuth(format!("Failed to serialize credentials: {}", e)))?;
+
+    std::fs::write(&path, &json)
+        .map_err(|e| crate::Error::OAuth(format!("Failed to write {}: {}", path.display(), e)))?;
+
+    // Set file permissions to 0600 (owner read/write only) on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(&path, perms).ok();
+    }
+
+    debug!("Wrote refreshed Gemini OAuth credentials to {}", path.display());
+    Ok(())
+}
+
+// ============================================================================
 // Token Refresh (Gemini)
 // ============================================================================
 

@@ -99,8 +99,7 @@ pub async fn run(persona: Option<String>) -> Result<()> {
             .with_event_store(event_store)
             .with_memory(session_store)
             .with_approval_manager(Arc::new(ApprovalManager::new()))
-            .with_persona_mapping(cratos_core::PersonaMapping::default_mapping())
-            .with_agent_routing(cratos_core::AgentConfig::defaults()),
+            .with_persona_mapping(cratos_core::PersonaMapping::default_mapping()),
     );
 
     // ── Gemini quota poller (if OAuth token available) ─────────────

@@ -122,6 +122,7 @@ fn test_tool_registry_with_builtins() {
         "browser",
         "wol",
         "config",
+        "web_search",
     ];
 
     for tool_name in expected_tools {

@@ -6,6 +6,7 @@
 //! - Execution history
 //! - Scheduler management
 
+pub mod browser;
 pub mod config;
 pub mod executions;
 pub mod quota;
@@ -15,6 +16,7 @@ pub mod tools;
 
 use axum::Router;
 
+pub use browser::browser_routes;
 pub use config::config_routes;
 pub use executions::executions_routes;
 pub use quota::quota_routes;
@@ -31,4 +33,5 @@ pub fn api_router() -> Router {
         .merge(scheduler_routes())
         .merge(quota_routes())
         .merge(sessions_routes())
+        .merge(browser_routes())
 }

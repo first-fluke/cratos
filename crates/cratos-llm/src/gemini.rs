@@ -579,21 +579,94 @@ impl GeminiProvider {
             .unwrap_or_else(|| self.config.auth.clone())
     }
 
-    /// Try to re-read Gemini CLI token from disk. Returns true if refreshed.
-    fn try_refresh_cli_token(&self) -> bool {
+    /// Try to refresh Gemini CLI OAuth token. Returns true if refreshed.
+    ///
+    /// Strategy (3-tier fallback):
+    /// 1. Re-read from disk (another process may have refreshed)
+    /// 2. Direct OAuth refresh using refresh_token + Gemini CLI's client_id/secret
+    /// 3. Invoke `gemini auth login --no-launch-browser` as last resort
+    async fn try_refresh_cli_token(&self) -> bool {
         if self.config.auth_source != AuthSource::GeminiCli {
             return false;
         }
-        if let Some(creds) = crate::cli_auth::read_gemini_oauth() {
-            if !creds.access_token.is_empty() {
-                tracing::info!("Gemini CLI token re-read from disk");
+
+        // 1. Re-read from disk — maybe another process already refreshed
+        if let Some(creds) = cli_auth::read_gemini_oauth() {
+            if !cli_auth::is_token_expired(creds.expiry_date) && !creds.access_token.is_empty() {
+                tracing::info!("Gemini CLI token re-read from disk (still valid)");
                 if let Ok(mut guard) = self.refreshed_auth.lock() {
                     *guard = Some(GeminiAuth::OAuth(creds.access_token));
                 }
                 return true;
             }
+
+            // 2. Token expired — try direct OAuth refresh
+            if !creds.refresh_token.is_empty() {
+                match self.refresh_with_token(&creds.refresh_token).await {
+                    Ok(new_access_token) => {
+                        tracing::info!("Gemini CLI token refreshed via OAuth");
+                        if let Ok(mut guard) = self.refreshed_auth.lock() {
+                            *guard = Some(GeminiAuth::OAuth(new_access_token));
+                        }
+                        return true;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Direct OAuth refresh failed: {}", e);
+                    }
+                }
+            }
         }
-        false
+
+        // 3. Fallback: invoke Gemini CLI
+        match cli_auth::refresh_gemini_token().await {
+            Ok(new_creds) => {
+                tracing::info!("Gemini CLI token refreshed via CLI invocation");
+                if let Ok(mut guard) = self.refreshed_auth.lock() {
+                    *guard = Some(GeminiAuth::OAuth(new_creds.access_token));
+                }
+                true
+            }
+            Err(e) => {
+                tracing::error!("All Gemini token refresh methods failed: {}", e);
+                false
+            }
+        }
+    }
+
+    /// Refresh access token using the refresh_token and Gemini CLI's OAuth credentials.
+    ///
+    /// Resolves client_id/secret from the local Gemini CLI installation, then calls
+    /// Google's OAuth token endpoint directly.
+    async fn refresh_with_token(&self, refresh_token: &str) -> Result<String> {
+        // Get Gemini CLI's OAuth client_id/secret
+        let cli_creds = crate::gemini_auth::resolve_gemini_cli_credentials()
+            .ok_or_else(|| Error::OAuth("Gemini CLI credentials not found for refresh".to_string()))?;
+
+        let config = crate::oauth::OAuthProviderConfig {
+            client_id: cli_creds.client_id,
+            client_secret: cli_creds.client_secret,
+            auth_url: String::new(), // not needed for refresh
+            token_url: "https://oauth2.googleapis.com/token".to_string(),
+            scopes: String::new(), // not needed for refresh
+            redirect_path: String::new(),
+            extra_auth_params: vec![],
+            token_file: String::new(),
+        };
+
+        let new_tokens = crate::oauth::refresh_token(&config, refresh_token).await
+            .map_err(|e| Error::OAuth(format!("OAuth token refresh failed: {}", e)))?;
+
+        // Save refreshed tokens back to disk for other processes
+        cli_auth::write_gemini_oauth(
+            &new_tokens.access_token,
+            new_tokens.refresh_token.as_deref().unwrap_or(refresh_token),
+            new_tokens.expiry_date,
+        ).map_err(|e| {
+            tracing::warn!("Failed to write refreshed Gemini credentials to disk: {}", e);
+            e
+        }).ok();
+
+        Ok(new_tokens.access_token)
     }
 
     /// Create from environment variables
@@ -790,15 +863,33 @@ impl GeminiProvider {
                         let response_value = serde_json::from_str(&msg.content)
                             .unwrap_or_else(|_| serde_json::json!({"result": msg.content}));
 
-                        gemini_contents.push(GeminiContent {
-                            role: Some("user".to_string()),
-                            parts: vec![GeminiPart::FunctionResponse {
-                                function_response: FunctionResponse {
-                                    name: tool_name.clone(),
-                                    response: response_value,
-                                },
-                            }],
-                        });
+                        let part = GeminiPart::FunctionResponse {
+                            function_response: FunctionResponse {
+                                name: tool_name.clone(),
+                                response: response_value,
+                            },
+                        };
+
+                        // Gemini requires all FunctionResponse parts in a single user turn
+                        // matching the number of FunctionCall parts. Merge consecutive
+                        // Tool messages into one GeminiContent.
+                        if let Some(last) = gemini_contents.last_mut() {
+                            if last.role.as_deref() == Some("user")
+                                && last.parts.iter().all(|p| matches!(p, GeminiPart::FunctionResponse { .. }))
+                            {
+                                last.parts.push(part);
+                            } else {
+                                gemini_contents.push(GeminiContent {
+                                    role: Some("user".to_string()),
+                                    parts: vec![part],
+                                });
+                            }
+                        } else {
+                            gemini_contents.push(GeminiContent {
+                                role: Some("user".to_string()),
+                                parts: vec![part],
+                            });
+                        }
                     }
                 }
             }
@@ -891,9 +982,24 @@ impl GeminiProvider {
                         tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
                     }
                     Err(Error::RateLimit) => break, // MAX_RETRIES exhausted, try downgrade
+                    Err(Error::ServerError(ref msg)) if attempt < MAX_RETRIES => {
+                        let delay_secs = 2 + (attempt as u64) * 3; // 2, 5
+                        tracing::warn!(
+                            attempt = attempt + 1,
+                            model = %current_model,
+                            delay_secs,
+                            error = %msg,
+                            "Gemini server error, retrying"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+                    }
+                    Err(Error::ServerError(msg)) => {
+                        // MAX_RETRIES exhausted — propagate as ServerError for fallback
+                        return Err(Error::ServerError(msg));
+                    }
                     Err(Error::Api(ref msg)) if msg.contains("authentication") && attempt == 0 => {
-                        // Token expired — try re-reading from disk
-                        if self.try_refresh_cli_token() {
+                        // Token expired — try refreshing (disk re-read → OAuth refresh → CLI)
+                        if self.try_refresh_cli_token().await {
                             tracing::info!("Retrying after token refresh");
                             continue;
                         }
@@ -1058,10 +1164,23 @@ impl GeminiProvider {
                     }
                     return Err(Error::RateLimit);
                 }
+                // 5xx server errors — retryable
+                if status.is_server_error() {
+                    return Err(Error::ServerError(sanitize_api_error(&format!(
+                        "{}: {}",
+                        error.error.status, error.error.message
+                    ))));
+                }
                 // SECURITY: Sanitize error messages
                 return Err(Error::Api(sanitize_api_error(&format!(
                     "{}: {}",
                     error.error.status, error.error.message
+                ))));
+            }
+            // 5xx without parseable error body — still retryable
+            if status.is_server_error() {
+                return Err(Error::ServerError(sanitize_api_error(&format!(
+                    "HTTP {}", status
                 ))));
             }
             // SECURITY: Don't expose raw HTTP response body
