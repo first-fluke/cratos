@@ -409,29 +409,31 @@ block_threshold = "medium"
 
 ```bash
 # 1. Check logs
-docker-compose logs cratos
+RUST_LOG=cratos=debug cargo run --release 2>&1 | tail -50
 
-# 2. Check container status
-docker-compose ps
+# 2. Check process status
+ps aux | grep cratos
 
-# 3. Restart
-docker-compose restart cratos
+# 3. Health check
+curl http://localhost:8090/health
+
+# 4. Restart
+pkill -f cratos && cargo run --release
 ```
 
 ### "Unauthorized" or API Key Error
 
 1. Check API key in `.env` file
 2. Remove leading/trailing whitespace
-3. Restart: `docker-compose restart cratos`
+3. Restart: `pkill -f cratos && cargo run --release`
 
 ### Port Conflict
 
-If port conflicts with another program:
+If port conflicts with another program, create `config/local.toml`:
 
-```yaml
-# Edit docker-compose.yml
-ports:
-  - "9999:8080"  # Use different port instead of 9742
+```toml
+[server]
+port = 9999  # Use different port instead of 8090
 ```
 
 ### Database Errors
@@ -494,6 +496,8 @@ nohup cargo run --release > cratos.log 2>&1 &
 
 ## 11. CLI Command Summary
 
+### Core Commands
+
 | Command | Description |
 |---------|-------------|
 | `cratos init` | Interactive setup wizard |
@@ -501,8 +505,34 @@ nohup cargo run --release > cratos.log 2>&1 &
 | `cratos doctor` | System diagnostics |
 | `cratos quota` | Provider quota/cost status |
 | `cratos tui` | TUI chat interface |
+| `cratos voice` | Start voice assistant |
+| `cratos acp` | ACP bridge (IDE integration) |
+
+### Skill Management
+
+| Command | Description |
+|---------|-------------|
 | `cratos skill list` | List skills |
+| `cratos skill show <name>` | Skill details |
+| `cratos skill enable/disable <name>` | Enable/disable skill |
+| `cratos skill export/import` | Export/import skills |
+| `cratos skill search/install/publish` | Registry search/install/publish |
+
+### Development & Security
+
+| Command | Description |
+|---------|-------------|
+| `cratos develop` | Remote dev automation (Issue → PR) |
+| `cratos security audit` | Security audit |
+| `cratos pair start` | Device pairing |
+| `cratos browser tabs` | Browser tab list |
+
+### Data & Olympus
+
+| Command | Description |
+|---------|-------------|
 | `cratos data stats` | Database statistics |
+| `cratos data clear <target>` | Selective data deletion |
 | `cratos pantheon list` | List personas |
 | `cratos decrees show laws` | View laws |
 | `cratos chronicle list` | Achievement records |
@@ -523,8 +553,11 @@ Cratos will tell you about its capabilities.
 
 ### Additional Guides
 
-- [Browser Automation](../guides/BROWSER_AUTOMATION.md)
 - [Telegram Integration](../guides/TELEGRAM.md)
 - [Slack Integration](../guides/SLACK.md)
 - [Discord Integration](../guides/DISCORD.md)
+- [WhatsApp Integration](../guides/WHATSAPP.md)
+- [Browser Automation](../guides/BROWSER_AUTOMATION.md)
 - [Skill Auto-Generation](../guides/SKILL_AUTO_GENERATION.md)
+- [Graceful Shutdown](../guides/GRACEFUL_SHUTDOWN.md)
+- [Native Apps (Tauri)](../guides/NATIVE_APPS.md)

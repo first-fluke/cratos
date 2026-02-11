@@ -24,6 +24,13 @@ Cratos를 설치했다면, 이제 Telegram에서 내 PC를 원격 조종해봅�
 18. [스케줄러 (예약 작업)](#18-스케줄러-예약-작업)
 19. [MCP 도구 확장](#19-mcp-도구-확장)
 20. [REST API & WebSocket](#20-rest-api--websocket)
+21. [음성 제어 (Voice Control)](#21-음성-제어-voice-control)
+22. [기기 페어링 (Device Pairing)](#22-기기-페어링-device-pairing)
+23. [원격 개발 자동화 (Remote Development)](#23-원격-개발-자동화-remote-development)
+24. [스킬 고급 관리](#24-스킬-고급-관리)
+25. [데이터 관리](#25-데이터-관리)
+26. [보안 감사](#26-보안-감사)
+27. [ACP 브릿지 (IDE 통합)](#27-acp-브릿지-ide-통합)
 
 ---
 
@@ -967,6 +974,290 @@ curl -X PUT http://localhost:8090/api/v1/config \
 | `/ws/chat` | 대화형 채팅 (실시간 스트리밍) |
 | `/ws/events` | 이벤트 스트림 (실행 알림, 상태 변경) |
 | `/ws/gateway` | Chrome 확장 프로그램 게이트웨이 |
+
+---
+
+## 21. 음성 제어 (Voice Control)
+
+Cratos는 음성으로 대화할 수 있습니다. 마이크로 말하면 텍스트로 변환(STT)하고, 응답을 음성으로 읽어줍니다(TTS).
+
+### 실행
+
+```bash
+# 기본 실행 (한국어)
+cratos voice
+
+# 영어 모드
+cratos voice --lang en
+
+# 일본어 / 중국어
+cratos voice --lang ja
+cratos voice --lang zh
+```
+
+### 구성 요소
+
+| 기능 | 엔진 | 설명 |
+|------|------|------|
+| **STT** (음성→텍스트) | OpenAI Whisper API | 클라우드 기반, 정확도 높음 |
+| **STT** (로컬) | candle Whisper | 로컬 실행, GPU 불필요 (`local-stt` 피처) |
+| **TTS** (텍스트→음성) | Edge TTS | 무료, API 키 불필요, 자연스러운 음성 |
+| **VAD** (음성 감지) | Silero VAD (ONNX) | 말하기 시작/끝 자동 감지 |
+
+### 사용 예
+
+```
+[마이크 활성화]
+나: (음성) "오늘 일정 알려줘"
+봇: (텍스트 + 음성) "오늘 일정은..."
+
+나: (음성) "src 폴더에 뭐 있어?"
+봇: (텍스트 + 음성) "src 폴더 내용: index.ts, utils.ts..."
+```
+
+### 로컬 Whisper 사용
+
+GPU 없이도 로컬에서 음성 인식 가능:
+
+```bash
+# local-stt 피처로 빌드
+cargo build --features local-stt
+
+# 첫 실행 시 모델 자동 다운로드 (~150MB)
+cratos voice
+```
+
+---
+
+## 22. 기기 페어링 (Device Pairing)
+
+스마트폰이나 다른 기기를 PIN 코드로 안전하게 연결할 수 있습니다.
+
+### 페어링 시작
+
+```bash
+# PC에서 페어링 PIN 생성
+cratos pair start
+# 출력: 페어링 PIN: 847291 (5분 유효)
+```
+
+### 기기 관리
+
+```bash
+# 연결된 기기 목록
+cratos pair devices
+# 출력:
+#   1. iPhone-13 (2026-02-10 연결)
+#   2. Galaxy-S24 (2026-02-08 연결)
+
+# 기기 연결 해제
+cratos pair unpair iPhone-13
+```
+
+### 동작 방식
+
+페어링된 기기는 REST API 또는 WebSocket을 통해 Cratos를 제어할 수 있으며, 기기 수준 인증이 적용됩니다.
+
+---
+
+## 23. 원격 개발 자동화 (Remote Development)
+
+GitHub 이슈를 분석하고 PR까지 자동으로 생성합니다.
+
+### 사용
+
+```bash
+# 이슈 기반 자동 개발
+cratos develop --repo user/repo
+
+# 미리보기 (실제 변경 없이)
+cratos develop --dry-run
+```
+
+### Telegram에서 사용
+
+```
+나: 이 이슈 처리해줘: https://github.com/user/repo/issues/42
+봇: 이슈 #42 분석 중...
+
+    수행 계획:
+    1. feature/fix-42 브랜치 생성
+    2. src/handler.rs 수정 (에러 처리 추가)
+    3. 테스트 작성 및 실행
+    4. PR 생성
+
+    진행할까요? [승인/취소]
+
+나: 승인
+봇: 작업 완료!
+    PR: https://github.com/user/repo/pull/43
+    변경 파일 3개, 테스트 통과
+```
+
+### 워크플로우
+
+```
+이슈 분석 → 브랜치 생성 → 코드 수정 → 테스트 → PR 생성
+```
+
+전체 과정이 자동화되며, 각 단계에서 승인을 요청합니다.
+
+---
+
+## 24. 스킬 고급 관리
+
+스킬을 내보내고, 가져오고, 레지스트리에서 검색/설치할 수 있습니다.
+
+### 스킬 내보내기/가져오기
+
+```bash
+# 스킬을 파일로 내보내기
+cratos skill export daily_backup
+# 출력: daily_backup.skill.json 생성됨
+
+# 파일에서 스킬 가져오기
+cratos skill import daily_backup.skill.json
+# 출력: "daily_backup" 스킬을 가져왔습니다.
+
+# 여러 스킬을 묶어서 내보내기
+cratos skill bundle
+# 출력: cratos-skills-bundle.json 생성됨
+```
+
+### 스킬 레지스트리
+
+원격 레지스트리에서 다른 사람이 만든 스킬을 검색하고 설치할 수 있습니다:
+
+```bash
+# 스킬 검색
+cratos skill search "git workflow"
+# 출력:
+#   1. git-review-cycle (별점: 4.8)
+#   2. auto-merge-bot (별점: 4.5)
+
+# 설치
+cratos skill install git-review-cycle
+
+# 내 스킬 공유
+cratos skill publish daily_backup
+```
+
+---
+
+## 25. 데이터 관리
+
+Cratos가 저장한 데이터를 조회하고 관리할 수 있습니다.
+
+### 데이터 통계
+
+```bash
+cratos data stats
+# 출력:
+#   이벤트 DB: 1,247개 이벤트 (12.3MB)
+#   스킬 DB: 8개 스킬 (256KB)
+#   메모리 DB: 342개 턴 (4.1MB)
+#   벡터 인덱스: 3개 (8.7MB)
+#   전공 기록: 5개 페르소나
+```
+
+### 선택적 데이터 삭제
+
+```bash
+# 세션 데이터 삭제
+cratos data clear sessions
+
+# Graph RAG 메모리 삭제
+cratos data clear memory
+
+# 실행 히스토리 삭제
+cratos data clear history
+
+# 전공 기록 삭제
+cratos data clear chronicles
+
+# 벡터 인덱스 삭제
+cratos data clear vectors
+
+# 학습된 스킬 삭제
+cratos data clear skills
+```
+
+### 데이터 저장 위치
+
+| 파일 | 경로 | 내용 |
+|------|------|------|
+| 이벤트 DB | `~/.cratos/cratos.db` | 실행 기록, 이벤트 |
+| 스킬 DB | `~/.cratos/skills.db` | 스킬, 패턴 |
+| 메모리 DB | `~/.cratos/memory.db` | 대화 그래프 |
+| 벡터 인덱스 | `~/.cratos/vectors/` | HNSW 임베딩 |
+| 전공 기록 | `~/.cratos/chronicles/` | 페르소나별 JSON |
+
+---
+
+## 26. 보안 감사
+
+보안 상태를 점검하고 취약점을 확인할 수 있습니다.
+
+### 실행
+
+```bash
+cratos security audit
+# 출력:
+#   보안 감사 결과
+#   ──────────────
+#   [PASS] 인증: API 키 암호화 저장
+#   [PASS] 샌드박스: Docker 격리 활성
+#   [PASS] 인젝션 방어: 20+ 패턴 감지
+#   [WARN] Rate Limit: 분당 60회 (권장: 30회)
+#   [PASS] 자격증명: OS 키체인 사용
+#
+#   총점: 9/10 (우수)
+```
+
+### 점검 항목
+
+| 항목 | 설명 |
+|------|------|
+| 인증 | API 키 저장 방식, 인증 미들웨어 상태 |
+| 샌드박스 | Docker 격리 설정, 네트워크 차단 여부 |
+| 인젝션 방어 | 프롬프트 인젝션, 커맨드 인젝션 패턴 |
+| Rate Limit | 요청 제한 설정 |
+| 자격증명 | OS 키체인, zeroize 메모리 정리 |
+
+---
+
+## 27. ACP 브릿지 (IDE 통합)
+
+ACP(Agent Communication Protocol)를 통해 IDE에서 Cratos를 직접 사용할 수 있습니다.
+
+### 실행
+
+```bash
+# ACP 브릿지 시작
+cratos acp
+
+# 토큰 인증 모드
+cratos acp --token my-secret-token
+
+# MCP 호환 모드
+cratos acp --mcp
+```
+
+### 동작 방식
+
+```
+IDE (Claude Code, etc.)
+    ↓ stdin (JSON-lines)
+Cratos ACP Bridge
+    ↓
+Orchestrator → Tools → LLM
+    ↓
+ACP Bridge
+    ↓ stdout (JSON-lines)
+IDE
+```
+
+ACP 브릿지는 stdin/stdout을 통해 JSON-lines 형식으로 통신하며, IDE가 Cratos의 모든 도구와 기능을 프로그래매틱하게 사용할 수 있게 합니다.
 
 ---
 

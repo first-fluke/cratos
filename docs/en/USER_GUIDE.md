@@ -24,6 +24,13 @@ Now that you've installed Cratos, let's remotely control your PC via Telegram!
 18. [Scheduler (Scheduled Tasks)](#18-scheduler-scheduled-tasks)
 19. [MCP Tool Extensions](#19-mcp-tool-extensions)
 20. [REST API & WebSocket](#20-rest-api--websocket)
+21. [Voice Control](#21-voice-control)
+22. [Device Pairing](#22-device-pairing)
+23. [Remote Development](#23-remote-development)
+24. [Advanced Skill Management](#24-advanced-skill-management)
+25. [Data Management](#25-data-management)
+26. [Security Audit](#26-security-audit)
+27. [ACP Bridge (IDE Integration)](#27-acp-bridge-ide-integration)
 
 ---
 
@@ -966,6 +973,228 @@ curl -X PUT http://localhost:8090/api/v1/config \
 | `/ws/chat` | Interactive chat (real-time streaming) |
 | `/ws/events` | Event stream (execution notifications, status changes) |
 | `/ws/gateway` | Chrome extension gateway protocol |
+
+---
+
+## 21. Voice Control
+
+Cratos supports voice interaction with Speech-to-Text, Text-to-Speech, and Voice Activity Detection.
+
+### Launch
+
+```bash
+# Default (Korean)
+cratos voice
+
+# English / Japanese / Chinese
+cratos voice --lang en
+cratos voice --lang ja
+cratos voice --lang zh
+```
+
+### Components
+
+| Feature | Engine | Notes |
+|---------|--------|-------|
+| **STT** | OpenAI Whisper API | Cloud-based, high accuracy |
+| **STT** (Local) | candle Whisper | Local inference, no GPU needed (`local-stt` feature) |
+| **TTS** | Edge TTS | Free, no API key, natural voices |
+| **VAD** | Silero VAD (ONNX) | Auto-detects speech start/end |
+
+### Local Whisper
+
+```bash
+# Build with local-stt feature
+cargo build --features local-stt
+
+# Model auto-downloads on first run (~150MB)
+cratos voice
+```
+
+---
+
+## 22. Device Pairing
+
+Securely connect smartphones or other devices via PIN code.
+
+### Start Pairing
+
+```bash
+cratos pair start
+# Output: Pairing PIN: 847291 (valid for 5 minutes)
+```
+
+### Manage Devices
+
+```bash
+# List connected devices
+cratos pair devices
+
+# Unpair a device
+cratos pair unpair iPhone-13
+```
+
+Paired devices can control Cratos via REST API or WebSocket with device-level authentication.
+
+---
+
+## 23. Remote Development
+
+Analyze GitHub issues and automatically create PRs end-to-end.
+
+### Usage
+
+```bash
+# Issue-based auto development
+cratos develop --repo user/repo
+
+# Preview without changes
+cratos develop --dry-run
+```
+
+### Via Telegram
+
+```
+You: Fix this issue: https://github.com/user/repo/issues/42
+Bot: Analyzing issue #42...
+
+    Plan:
+    1. Create feature/fix-42 branch
+    2. Modify src/handler.rs (add error handling)
+    3. Write and run tests
+    4. Create PR
+
+    Proceed? [Approve/Cancel]
+
+You: Approve
+Bot: Done! PR: https://github.com/user/repo/pull/43
+```
+
+---
+
+## 24. Advanced Skill Management
+
+Export, import, and use the remote skill registry.
+
+### Export / Import
+
+```bash
+# Export skill to file
+cratos skill export daily_backup
+
+# Import skill from file
+cratos skill import daily_backup.skill.json
+
+# Bundle multiple skills
+cratos skill bundle
+```
+
+### Skill Registry
+
+```bash
+# Search remote registry
+cratos skill search "git workflow"
+
+# Install from registry
+cratos skill install git-review-cycle
+
+# Publish your skill
+cratos skill publish daily_backup
+```
+
+---
+
+## 25. Data Management
+
+View and manage stored data.
+
+### Statistics
+
+```bash
+cratos data stats
+# Output:
+#   Event DB: 1,247 events (12.3MB)
+#   Skill DB: 8 skills (256KB)
+#   Memory DB: 342 turns (4.1MB)
+#   Vector Index: 3 indices (8.7MB)
+#   Chronicles: 5 personas
+```
+
+### Selective Deletion
+
+```bash
+cratos data clear sessions      # Session data
+cratos data clear memory        # Graph RAG memory
+cratos data clear history       # Execution history
+cratos data clear chronicles    # Achievement records
+cratos data clear vectors       # Vector indices
+cratos data clear skills        # Learned skills
+```
+
+### Data Locations
+
+| File | Path | Contents |
+|------|------|----------|
+| Event DB | `~/.cratos/cratos.db` | Execution history, events |
+| Skill DB | `~/.cratos/skills.db` | Skills, patterns |
+| Memory DB | `~/.cratos/memory.db` | Conversation graph |
+| Vector Index | `~/.cratos/vectors/` | HNSW embeddings |
+| Chronicles | `~/.cratos/chronicles/` | Per-persona JSON |
+
+---
+
+## 26. Security Audit
+
+Run a security audit to check for vulnerabilities.
+
+```bash
+cratos security audit
+# Output:
+#   Security Audit Results
+#   ──────────────────────
+#   [PASS] Authentication: API keys encrypted
+#   [PASS] Sandbox: Docker isolation active
+#   [PASS] Injection Defense: 20+ patterns detected
+#   [WARN] Rate Limit: 60/min (recommend: 30/min)
+#   [PASS] Credentials: OS keychain in use
+#
+#   Score: 9/10 (Excellent)
+```
+
+---
+
+## 27. ACP Bridge (IDE Integration)
+
+Use Cratos directly from your IDE via Agent Communication Protocol.
+
+### Launch
+
+```bash
+# Start ACP bridge
+cratos acp
+
+# With token auth
+cratos acp --token my-secret-token
+
+# MCP-compatible mode
+cratos acp --mcp
+```
+
+### How It Works
+
+```
+IDE (Claude Code, etc.)
+    ↓ stdin (JSON-lines)
+Cratos ACP Bridge
+    ↓
+Orchestrator → Tools → LLM
+    ↓
+ACP Bridge
+    ↓ stdout (JSON-lines)
+IDE
+```
+
+The ACP bridge communicates via stdin/stdout JSON-lines, allowing IDEs to programmatically access all Cratos tools and capabilities.
 
 ---
 

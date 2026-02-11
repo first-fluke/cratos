@@ -27,17 +27,20 @@ The installer automatically:
 - **Smart Routing**: Automatic model selection by task type reduces costs by 70%
 - **Free Model Support**: Free LLMs via OpenRouter, Novita (Llama, Qwen, GLM)
 - **Replay Engine**: All executions stored as events, timeline view and replay
-- **Tool System**: 17 built-in tools (file, HTTP, Git, GitHub, command execution, browser, web search, WoL, config) + MCP extensibility
-- **Channel Adapters**: Telegram, Slack, Discord, Matrix, WhatsApp support
+- **Tool System**: 19 built-in tools (file, HTTP, Git, GitHub, shell exec, PTY bash, browser, web search, WoL, config) + MCP extensibility
+- **Channel Adapters**: Telegram, Slack, Discord, Matrix, WhatsApp — with slash commands, DM policy, EventBus notifications
 - **Chrome Extension**: Browser control via Chrome extension + WebSocket gateway protocol
 - **Graph RAG Memory**: Cross-session conversation memory with entity graph + hybrid vector search
 - **TUI Chat**: ratatui-based interactive terminal with markdown rendering, mouse scroll, input history, multi-provider quota display
+- **Voice Control**: STT (Whisper API / local Whisper) + TTS (Edge TTS) + VAD (Silero), supports ko/en/ja/zh
 - **Web Search**: Built-in DuckDuckGo search (no API key required)
 - **MCP Integration**: Auto-discovery of MCP servers from `.mcp.json`, SSE/stdio support
-- **Proactive Scheduler**: Cron, interval, and one-time scheduled tasks
+- **Proactive Scheduler**: Cron, interval, one-time, file-watch, and system-event triggers
 - **Security**: Auth middleware (HMAC/JWT/API Key), rate limiting, Docker sandbox, credential encryption, prompt injection defense
 - **Olympus OS**: Mythology-based 3-layer agent organization (Pantheon/Decrees/Chronicles)
 - **ACP Bridge**: IDE integration via stdin/stdout JSON-lines protocol
+- **Device Pairing**: PIN-based mobile pairing for remote device management
+- **Remote Development**: Issue → PR end-to-end automation (`cratos develop`)
 
 ## System Requirements
 
@@ -280,15 +283,48 @@ cratos tui                        # Launch interactive TUI chat
 cratos tui --persona sindri       # TUI with specific persona
 cratos acp                        # Start ACP bridge (IDE integration)
 
+# Voice
+cratos voice                      # Start voice assistant (default: ko)
+cratos voice --lang en            # Voice assistant in English
+
+# Remote Development
+cratos develop --repo user/repo   # Issue → PR automation
+cratos develop --dry-run          # Preview without changes
+
+# Device Pairing
+cratos pair start                 # Start PIN-based pairing
+cratos pair devices               # List paired devices
+cratos pair unpair <device>       # Unpair a device
+
+# Browser
+cratos browser tabs               # List open browser tabs
+cratos browser open <url>         # Open a URL
+cratos browser screenshot         # Capture screenshot
+cratos browser extension install  # Install Chrome extension
+
+# Security
+cratos security audit             # Run security audit
+
 # Skills
 cratos skill list                 # List all skills
 cratos skill show <name>          # Show skill details
 cratos skill enable <name>        # Enable a skill
 cratos skill disable <name>       # Disable a skill
+cratos skill export <name>        # Export a skill to file
+cratos skill import <file>        # Import a skill from file
+cratos skill bundle               # Bundle skills for sharing
+cratos skill search <query>       # Search remote skill registry
+cratos skill install <name>       # Install from registry
+cratos skill publish <name>       # Publish to registry
 
 # Data Management
 cratos data stats                 # Show database statistics
-cratos data clear                 # Clear stored data
+cratos data clear sessions        # Clear session data
+cratos data clear memory          # Clear Graph RAG memory
+cratos data clear history         # Clear execution history
+cratos data clear chronicles      # Clear achievement records
+cratos data clear vectors         # Clear vector indices
+cratos data clear skills          # Clear learned skills
 
 # Pantheon (Personas)
 cratos pantheon list              # List personas
@@ -312,6 +348,7 @@ cratos chronicle list             # List achievement records
 cratos chronicle show sindri      # Show individual record
 cratos chronicle log "message"    # Add log entry
 cratos chronicle promote sindri   # Request promotion
+cratos chronicle clean            # Clean up stale records
 ```
 
 ## Security Features
@@ -361,12 +398,15 @@ Automatically detects and blocks malicious prompts:
 | `file_list` | List directory | Low |
 | `http_get` | HTTP GET request | Low |
 | `http_post` | HTTP POST request | Medium |
-| `exec` | Command execution (sandboxed) | High |
+| `exec` | Command execution (meta-char blocked, sandboxed) | High |
+| `bash` | PTY-based shell (5-layer security: validation, pipeline analysis, env isolation, resource limits, output masking) | High |
 | `git_status` | Git status check | Low |
 | `git_commit` | Git commit creation | Medium |
 | `git_branch` | Git branch management | Medium |
 | `git_diff` | Git diff check | Low |
 | `git_push` | Git push to remote | High |
+| `git_clone` | Clone a repository | Medium |
+| `git_log` | View commit history | Low |
 | `github_api` | GitHub API integration | Medium |
 | `browser` | Browser automation (MCP or Chrome extension) | Medium |
 | `web_search` | DuckDuckGo web search (no API key required) | Low |
@@ -394,21 +434,23 @@ MCP tools are discovered at startup and integrated into the tool registry with a
 
 ### REST Endpoints (`/api/v1/*`)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check (simple) |
-| GET | `/health/detailed` | Detailed health check (DB/Redis status) |
-| GET | `/metrics` | Prometheus-format metrics |
-| GET/PUT | `/api/v1/config` | Configuration read/update |
-| GET | `/api/v1/tools` | List available tools |
-| GET | `/api/v1/executions` | List executions |
-| GET | `/api/v1/executions/{id}` | Execution details |
-| GET | `/api/v1/executions/{id}/replay` | Replay events for an execution |
-| POST | `/api/v1/executions/{id}/rerun` | Re-run an execution |
-| GET/POST/PUT/DELETE | `/api/v1/scheduler/tasks` | Scheduler task management |
-| GET | `/api/v1/quota` | Provider quota/cost status |
-| GET/POST/DELETE | `/api/v1/sessions` | Session management |
-| POST | `/api/v1/browser/*` | Browser control API |
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/health` | Health check (simple) | No |
+| GET | `/health/detailed` | Detailed health check (DB/Redis/LLM status) | Yes |
+| GET | `/metrics` | Prometheus-format metrics | Yes |
+| GET/PUT | `/api/v1/config` | Configuration read/update | Yes |
+| GET | `/api/v1/tools` | List available tools | Yes |
+| GET | `/api/v1/executions` | List executions (filterable, max 50) | Yes |
+| GET | `/api/v1/executions/{id}` | Execution details | Yes |
+| GET | `/api/v1/executions/{id}/replay` | Replay events for an execution | Yes |
+| POST | `/api/v1/executions/{id}/rerun` | Re-run an execution | Yes |
+| GET/POST/PUT/DELETE | `/api/v1/scheduler/tasks` | Scheduler task management | Yes |
+| GET | `/api/v1/quota` | Provider quota/cost status | Yes |
+| GET | `/api/v1/dev/sessions` | Active AI dev sessions (Claude, Gemini, Codex, Cursor) | Yes |
+| GET | `/api/v1/dev/sessions/{tool}` | Sessions filtered by tool | Yes |
+| GET/POST/DELETE | `/api/v1/pairing/*` | PIN-based device pairing | Yes |
+| POST | `/api/v1/browser/*` | Browser control API | Yes |
 
 ### WebSocket Endpoints
 
@@ -470,15 +512,50 @@ cratos tui --persona athena   # Start with specific persona
 | **Multi-Provider Quota** | Real-time quota display per provider |
 | **Keyboard Shortcuts** | F2: toggle mouse, Ctrl+C: quit |
 
+## Voice Control
+
+Built-in voice assistant with Speech-to-Text, Text-to-Speech, and Voice Activity Detection:
+
+```bash
+cratos voice                  # Start voice assistant (Korean)
+cratos voice --lang en        # English
+cratos voice --lang ja        # Japanese
+cratos voice --lang zh        # Chinese
+```
+
+| Component | Engine | Notes |
+|-----------|--------|-------|
+| **STT** | OpenAI Whisper API / Local Whisper (candle) | Local requires `local-stt` feature |
+| **TTS** | Edge TTS | Free, no API key required |
+| **VAD** | Silero VAD (ONNX) | Detects speech activity |
+
+> Local Whisper STT: `cargo build --features local-stt` (downloads model on first run)
+
+## Device Pairing
+
+PIN-based device pairing for secure remote management:
+
+```bash
+cratos pair start             # Generate pairing PIN
+cratos pair devices           # List paired devices
+cratos pair unpair <device>   # Remove a paired device
+```
+
+Paired devices can control Cratos via REST API or WebSocket with device-level authentication.
+
 ## Proactive Scheduler
 
 Schedule automated tasks:
 
-| Schedule Type | Example | Description |
-|---------------|---------|-------------|
+| Trigger Type | Example | Description |
+|--------------|---------|-------------|
 | **Cron** | `0 9 * * *` | Daily at 9 AM |
-| **Interval** | `300` | Every 5 minutes |
-| **OneTime** | `2026-03-01T10:00:00Z` | Single execution |
+| **Interval** | `{ seconds: 300, immediate: true }` | Every 5 minutes |
+| **OneTime** | `{ at: "2026-03-01T10:00:00Z" }` | Single execution |
+| **File** | `{ pattern: "*.json", action: "watch" }` | On file change |
+| **System** | `{ metric: "cpu", threshold: 80 }` | On system event |
+
+Task actions: `NaturalLanguage`, `ToolCall`, `Notification`, `Shell`, `Webhook`.
 
 Manage via REST API (`/api/v1/scheduler/tasks`) or natural language.
 
@@ -499,21 +576,23 @@ cargo test -p cratos-core
 
 ## Documentation
 
-- [Setup Guide](./docs/SETUP_GUIDE.md) - For first-time users
-- [User Guide](./docs/USER_GUIDE.md) - Feature usage
+- [Setup Guide (한국어)](./docs/SETUP_GUIDE.md) | [Setup Guide (English)](./docs/en/SETUP_GUIDE.md)
+- [User Guide (한국어)](./docs/USER_GUIDE.md) | [User Guide (English)](./docs/en/USER_GUIDE.md)
+- [Developer Test Guide](./docs/TEST_GUIDE_DEV.md) - Build & test verification
+- [User Test Guide](./docs/TEST_GUIDE_USER.md) - End-user testing scenarios
 - [PRD](./PRD.md) - Detailed requirements
 
 ### Detailed Guides
 
 | Guide | Description |
 |-------|-------------|
-| [Browser Automation](./docs/guides/BROWSER_AUTOMATION.md) | MCP-based browser control |
-| [Telegram](./docs/guides/TELEGRAM.md) | Telegram bot integration |
-| [Slack](./docs/guides/SLACK.md) | Slack app integration |
-| [Discord](./docs/guides/DISCORD.md) | Discord bot integration |
-| [WhatsApp](./docs/guides/WHATSAPP.md) | WhatsApp integration |
+| [Telegram](./docs/guides/TELEGRAM.md) | Telegram bot integration (teloxide) |
+| [Slack](./docs/guides/SLACK.md) | Slack app integration (Socket Mode / Events API) |
+| [Discord](./docs/guides/DISCORD.md) | Discord bot integration (serenity) |
+| [WhatsApp](./docs/guides/WHATSAPP.md) | WhatsApp integration (Baileys / Business API) |
+| [Browser Automation](./docs/guides/BROWSER_AUTOMATION.md) | MCP-based browser control + Chrome extension |
 | [Skill Auto-Generation](./docs/guides/SKILL_AUTO_GENERATION.md) | Pattern learning and skill creation |
-| [Graceful Shutdown](./docs/guides/GRACEFUL_SHUTDOWN.md) | Safe shutdown mechanism |
+| [Graceful Shutdown](./docs/guides/GRACEFUL_SHUTDOWN.md) | 5-phase safe shutdown mechanism |
 | [Live Canvas](./docs/guides/LIVE_CANVAS.md) | Real-time visual workspace |
 | [Native Apps](./docs/guides/NATIVE_APPS.md) | Tauri desktop application |
 

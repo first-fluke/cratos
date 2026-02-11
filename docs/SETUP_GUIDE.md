@@ -411,29 +411,31 @@ block_threshold = "medium"
 
 ```bash
 # 1. 로그 확인
-docker-compose logs cratos
+RUST_LOG=cratos=debug cargo run --release 2>&1 | tail -50
 
-# 2. 컨테이너 상태 확인
-docker-compose ps
+# 2. 프로세스 상태 확인
+ps aux | grep cratos
 
-# 3. 재시작
-docker-compose restart cratos
+# 3. 헬스체크
+curl http://localhost:8090/health
+
+# 4. 재시작
+pkill -f cratos && cargo run --release
 ```
 
 ### "Unauthorized" 또는 API 키 오류
 
 1. `.env` 파일의 API 키 확인
 2. 키 앞뒤 공백 제거
-3. 재시작: `docker-compose restart cratos`
+3. Cratos 재시작: `pkill -f cratos && cargo run --release`
 
 ### 포트 충돌
 
-다른 프로그램과 포트가 겹칠 경우:
+다른 프로그램과 포트가 겹칠 경우 `config/local.toml`을 생성:
 
-```yaml
-# docker-compose.yml 수정
-ports:
-  - "9999:8080"  # 9742 대신 다른 포트
+```toml
+[server]
+port = 9999  # 8090 대신 다른 포트
 ```
 
 ### 데이터베이스 오류
@@ -496,6 +498,8 @@ nohup cargo run --release > cratos.log 2>&1 &
 
 ## 11. CLI 명령어 요약
 
+### 기본 명령어
+
 | 명령어 | 설명 |
 |--------|------|
 | `cratos init` | 대화형 설정 마법사 |
@@ -503,8 +507,34 @@ nohup cargo run --release > cratos.log 2>&1 &
 | `cratos doctor` | 시스템 진단 |
 | `cratos quota` | 프로바이더 할당량/비용 조회 |
 | `cratos tui` | TUI 채팅 인터페이스 |
+| `cratos voice` | 음성 어시스턴트 시작 |
+| `cratos acp` | ACP 브릿지 (IDE 통합) |
+
+### 스킬 관리
+
+| 명령어 | 설명 |
+|--------|------|
 | `cratos skill list` | 스킬 목록 |
+| `cratos skill show <name>` | 스킬 상세 정보 |
+| `cratos skill enable/disable <name>` | 스킬 활성화/비활성화 |
+| `cratos skill export/import` | 스킬 내보내기/가져오기 |
+| `cratos skill search/install/publish` | 레지스트리 검색/설치/배포 |
+
+### 개발 & 보안
+
+| 명령어 | 설명 |
+|--------|------|
+| `cratos develop` | 원격 개발 자동화 (Issue → PR) |
+| `cratos security audit` | 보안 감사 |
+| `cratos pair start` | 기기 페어링 시작 |
+| `cratos browser tabs` | 브라우저 탭 목록 |
+
+### 데이터 & 올림푸스
+
+| 명령어 | 설명 |
+|--------|------|
 | `cratos data stats` | 데이터 통계 |
+| `cratos data clear <target>` | 선택적 데이터 삭제 |
 | `cratos pantheon list` | 페르소나 목록 |
 | `cratos decrees show laws` | 율법 보기 |
 | `cratos chronicle list` | 전공 기록 목록 |
@@ -525,8 +555,11 @@ Cratos가 할 수 있는 일들을 안내받을 수 있습니다.
 
 ### 추가 가이드
 
-- [브라우저 자동화](./guides/BROWSER_AUTOMATION.md)
 - [Telegram 연동](./guides/TELEGRAM.md)
 - [Slack 연동](./guides/SLACK.md)
 - [Discord 연동](./guides/DISCORD.md)
+- [WhatsApp 연동](./guides/WHATSAPP.md)
+- [브라우저 자동화](./guides/BROWSER_AUTOMATION.md)
 - [자동 스킬 생성](./guides/SKILL_AUTO_GENERATION.md)
+- [Graceful Shutdown](./guides/GRACEFUL_SHUTDOWN.md)
+- [네이티브 앱 (Tauri)](./guides/NATIVE_APPS.md)
