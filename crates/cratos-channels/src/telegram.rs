@@ -653,9 +653,12 @@ impl TelegramAdapter {
 
         match orchestrator.process(input).await {
             Ok(result) => {
-                // Cancel progress listener
+                // Cancel progress listener and wait for it to fully stop
+                // to avoid race conditions where a late progress edit
+                // overwrites the final response
                 if let Some(h) = progress_handle {
                     h.abort();
+                    let _ = h.await; // wait for abort to complete
                 }
 
                 let response_text = if result.response.is_empty() {
@@ -667,36 +670,26 @@ impl TelegramAdapter {
                 // Convert standard Markdown (LLM output) to Telegram-safe HTML
                 let html_text = markdown_to_html(&response_text);
 
-                // Try to edit the progress message with the final response
-                let edit_ok = if let Ok(ref pm) = progress_msg {
-                    bot.edit_message_text(msg.chat.id, pm.id, &html_text)
-                        .parse_mode(ParseMode::Html)
-                        .await
-                        .is_ok()
-                } else {
-                    false
-                };
+                // Delete the progress message first to avoid race conditions,
+                // then send the final response as a new message.
+                // Previously we tried edit_message_text but a late progress
+                // edit could overwrite the final response.
+                if let Ok(ref pm) = progress_msg {
+                    let _ = bot.delete_message(msg.chat.id, pm.id).await;
+                }
 
-                // Fall back to sending a new message if edit failed
-                if !edit_ok {
-                    // Delete progress message if it exists
-                    if let Ok(ref pm) = progress_msg {
-                        let _ = bot.delete_message(msg.chat.id, pm.id).await;
-                    }
+                let send_result = bot
+                    .send_message(msg.chat.id, &html_text)
+                    .parse_mode(ParseMode::Html)
+                    .reply_parameters(ReplyParameters::new(msg.id))
+                    .await;
 
-                    let send_result = bot
-                        .send_message(msg.chat.id, &html_text)
-                        .parse_mode(ParseMode::Html)
+                // Fall back to plain text if HTML parsing fails
+                if send_result.is_err() {
+                    let _ = bot
+                        .send_message(msg.chat.id, &response_text)
                         .reply_parameters(ReplyParameters::new(msg.id))
                         .await;
-
-                    // Fall back to plain text if HTML parsing fails
-                    if send_result.is_err() {
-                        let _ = bot
-                            .send_message(msg.chat.id, &response_text)
-                            .reply_parameters(ReplyParameters::new(msg.id))
-                            .await;
-                    }
                 }
 
                 // Handle artifacts (e.g. screenshots)
