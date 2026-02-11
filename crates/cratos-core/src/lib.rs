@@ -21,6 +21,7 @@ pub mod agents;
 pub mod approval;
 pub mod auth;
 pub mod chronicles;
+pub mod dev_sessions;
 pub mod device_auth;
 pub mod external_auth;
 pub mod credentials;
@@ -35,6 +36,7 @@ pub mod orchestrator;
 pub mod pantheon;
 pub mod permissions;
 pub mod planner;
+pub mod queue;
 pub mod scheduler;
 pub mod security;
 pub mod session_manager;
@@ -58,6 +60,7 @@ pub use error::{format_error_for_chat, format_error_for_cli, Error, Result, User
 pub use event_bus::{EventBus, OrchestratorEvent};
 pub use nodes::{Node, NodeError, NodeRegistry, NodeRegisterParams, NodeStatus, NodeSummary, Platform};
 pub use session_manager::{SessionManager, SessionStatus, SessionSummary};
+pub use dev_sessions::{DevSession, DevSessionMonitor, DevTool};
 pub use tool_policy::{PolicyDenial, ToolPolicy};
 pub use device_auth::{
     generate_challenge, generate_device_keypair, sign_challenge, verify_signature,
@@ -80,6 +83,7 @@ pub use permissions::{
     PermissionStatus, TimeRestrictions, ToolPermissions,
 };
 pub use planner::{PlanResponse, PlanStep, Planner, PlannerConfig};
+pub use queue::{ExecutionQueue, QueueConfig, QueueMode, QueuePermit};
 pub use security::{
     sanitize_input, validate_tool_output, InjectionDetector, InjectionError, InjectionPattern,
     SecurityConfig, ThreatLevel,

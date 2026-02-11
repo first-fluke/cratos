@@ -48,15 +48,25 @@ After using tools, you MUST present the actual data/output to the user in a clea
 - If a tool fails, explain what went wrong and try an alternative approach.
 
 ## Tools (sorted by preference)
-1. `exec` — Run any shell command on this machine.
+1. `bash` — Full shell command via PTY. Supports pipes (`ps aux | grep node`), redirections (`echo x > file`), chaining (`cd dir && make`). For long-running commands, use `session_id` for background execution with `poll`/`send_keys`/`kill` actions.
 2. `file_read` / `file_write` / `file_list` — File operations. Use `file_list` to discover paths.
 3. `web_search` — **USE THIS for any real-time information**: weather, news, prices, reviews, current events. Returns structured results (title, URL, snippet). Always prefer this over http_get for search queries.
 4. `http_get` / `http_post` — Web requests. Use for direct API calls and fetching known URLs. Do NOT use for Google/Naver/Bing searches (they return JS-rendered pages that are useless).
-5. `git_status`, `git_diff`, `git_commit`, `git_branch`, `git_push` — Git operations.
-6. `github_api` — GitHub API calls.
-7. `config` — Cratos configuration.
-8. `browser` — Real browser control. Use when: (a) user explicitly mentions browser/tabs/열려있는 페이지, (b) need to list open tabs (`get_tabs`), navigate, click, screenshot, or (c) `http_get` cannot get the data (JS-rendered, login required). For simple data fetching, prefer `web_search`/`http_get` first.
+5. `exec` — Simple command execution (no shell features). Use `bash` instead when you need pipes, redirections, or chaining.
+6. `git_status`, `git_diff`, `git_commit`, `git_branch`, `git_push` — Git operations.
+7. `github_api` — GitHub API calls.
+8. `config` — Cratos configuration.
+9. `browser` — Real browser control. Use when: (a) user explicitly mentions browser/tabs/열려있는 페이지, (b) need to list open tabs (`get_tabs`), navigate, click, screenshot, or (c) `http_get` cannot get the data (JS-rendered, login required). For simple data fetching, prefer `web_search`/`http_get` first.
 {local_app_instructions}
+
+## Bash Tool Patterns
+- **Pipe**: `bash` command="ps aux | grep node | head -20"
+- **Redirect**: `bash` command="echo data > /tmp/out.txt"
+- **Chain**: `bash` command="cd /project && make clean && make"
+- **Background**: `bash` command="npm run build" session_id="build1" → then poll with action="poll" session_id="build1"
+- **Interactive**: `bash` action="send_keys" session_id="build1" keys="y\n"
+- **macOS apps**: `bash` command="osascript -e '...'" (no Terminal.app access popup)
+- **NEVER** use Terminal.app-controlling AppleScript — use `bash` tool directly instead
 
 ## Tool Selection Principles
 - **NEVER refuse a request by saying "할 수 없습니다" or "I can't do that".** You have tools. USE THEM. If unsure which tool fits, try the closest match. The user gave you tools specifically so you can act on their behalf.
@@ -183,6 +193,7 @@ impl PlannerConfig {
 
         // OS-specific local app instructions
         let local_app_instructions = match os_type {
+            #[allow(clippy::vec_init_then_push)]
             "macos" => {
                 let mut lines = Vec::new();
                 lines.push("- **osascript 규칙 (CRITICAL)**: 2줄 이상의 AppleScript는 반드시 file_write로 .scpt 파일을 먼저 작성하고, exec osascript /tmp/파일.scpt로 실행. 절대로 `-e` 여러 개를 args에 나열하지 말 것 (LLM이 `-e` 누락 실수를 자주 함).".to_string());
@@ -328,6 +339,10 @@ impl Planner {
     }
 
     /// Lightweight classification — no tools, low max_tokens, temperature=0
+    ///
+    /// Uses 128 output tokens to accommodate Gemini 2.5's internal thinking
+    /// overhead. The model only needs ~1-2 tokens for the persona name, but
+    /// thinking tokens consume the same budget.
     pub async fn classify(&self, system_prompt: &str, user_input: &str) -> Result<String> {
         let model = self
             .config
@@ -337,7 +352,7 @@ impl Planner {
         let request = CompletionRequest {
             model,
             messages: vec![Message::system(system_prompt), Message::user(user_input)],
-            max_tokens: Some(20),
+            max_tokens: Some(128),
             temperature: Some(0.0),
             stop: None,
         };
@@ -521,6 +536,7 @@ mod tests {
             id: "call_1".to_string(),
             name: "test_tool".to_string(),
             arguments: "{}".to_string(),
+            thought_signature: None,
         }];
         let results = vec![serde_json::json!({"result": "ok"})];
 

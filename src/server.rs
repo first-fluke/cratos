@@ -849,6 +849,7 @@ pub async fn run() -> Result<()> {
             allowed_commands: sec.allowed_commands.clone(),
             blocked_paths: sec.blocked_paths.clone(),
             allow_network_commands: false,
+            ..ExecConfig::default()
         }
     };
     let builtins_config = BuiltinsConfig {
@@ -965,7 +966,7 @@ pub async fn run() -> Result<()> {
     info!("EventBus initialized (capacity: 256)");
 
     let mut orchestrator =
-        Orchestrator::new(llm_provider.clone(), tool_registry, orchestrator_config)
+        Orchestrator::new(llm_provider.clone(), tool_registry.clone(), orchestrator_config)
             .with_event_store(event_store.clone())
             .with_event_bus(event_bus.clone())
             .with_memory(session_store)
@@ -1010,6 +1011,13 @@ pub async fn run() -> Result<()> {
     let orchestrator = Arc::new(orchestrator);
     info!("Orchestrator initialized");
 
+    // Dev Session Monitor (AI session detection) - created early for channel use
+    let dev_monitor = Arc::new(cratos_core::DevSessionMonitor::new(
+        std::time::Duration::from_secs(30),
+    ));
+    dev_monitor.clone().start();
+    info!("Dev session monitor started (30s poll)");
+
     let mut channel_handles = Vec::new();
 
     if config.channels.telegram.enabled {
@@ -1017,11 +1025,12 @@ pub async fn run() -> Result<()> {
             Ok(telegram_config) => {
                 let telegram_adapter = Arc::new(TelegramAdapter::new(telegram_config));
                 let telegram_orchestrator = orchestrator.clone();
+                let telegram_dev_monitor = Some(dev_monitor.clone());
                 let telegram_shutdown = shutdown_controller.token();
 
                 let handle = tokio::spawn(async move {
                     tokio::select! {
-                        result = telegram_adapter.run(telegram_orchestrator) => {
+                        result = telegram_adapter.run(telegram_orchestrator, telegram_dev_monitor) => {
                             if let Err(e) = result {
                                 error!("Telegram adapter error: {}", e);
                             }
@@ -1305,6 +1314,9 @@ pub async fn run() -> Result<()> {
         .layer(Extension(node_registry))
         .layer(Extension(a2a_router))
         .layer(Extension(browser_relay))
+        .layer(Extension(orchestrator.clone()))
+        .layer(Extension(tool_registry.clone()))
+        .layer(Extension(dev_monitor.clone()))
         .layer(rate_limit_layer);
 
     let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)
