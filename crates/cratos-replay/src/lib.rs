@@ -23,6 +23,7 @@ pub use store::{
 };
 pub use viewer::{
     ExecutionDetail, ExecutionStats, ExecutionSummary, ExecutionViewer, ReplayOptions,
+    ReplayResult, ReplayStep,
 };
 
 // Re-export search types when feature is enabled
