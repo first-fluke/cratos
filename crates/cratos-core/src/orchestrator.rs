@@ -14,8 +14,10 @@ use cratos_llm::{LlmProvider, Message, ToolCall, ToolDefinition};
 use cratos_memory::GraphMemory;
 use cratos_replay::{Event, EventStoreTrait, EventType, Execution};
 use cratos_tools::{RunnerConfig, ToolRegistry, ToolRunner};
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
@@ -238,6 +240,8 @@ pub struct Orchestrator {
     persona_mapping: Option<PersonaMapping>,
     skill_router: Option<Arc<dyn SkillRouting>>,
     config: OrchestratorConfig,
+    /// Active executions with cancellation tokens for chat.cancel support
+    active_executions: Arc<DashMap<Uuid, CancellationToken>>,
 }
 
 impl Orchestrator {
@@ -264,6 +268,7 @@ impl Orchestrator {
             persona_mapping: None,
             skill_router: None,
             config,
+            active_executions: Arc::new(DashMap::new()),
         }
     }
 
@@ -334,6 +339,42 @@ impl Orchestrator {
         &self.runner
     }
 
+    /// Get the approval manager (if set)
+    #[must_use]
+    pub fn approval_manager(&self) -> Option<&SharedApprovalManager> {
+        self.approval_manager.as_ref()
+    }
+
+    /// Get the active executions map (for chat.cancel support)
+    #[must_use]
+    pub fn active_executions(&self) -> &Arc<DashMap<Uuid, CancellationToken>> {
+        &self.active_executions
+    }
+
+    /// Get the number of active executions
+    #[must_use]
+    pub fn active_execution_count(&self) -> Option<usize> {
+        Some(self.active_executions.len())
+    }
+
+    /// List all registered tool names
+    #[must_use]
+    pub fn list_tool_names(&self) -> Vec<String> {
+        self.runner.registry().list_names().iter().map(|s| s.to_string()).collect()
+    }
+
+    /// Cancel an active execution by ID
+    pub fn cancel_execution(&self, execution_id: Uuid) -> bool {
+        if let Some((_id, token)) = self.active_executions.remove(&execution_id) {
+            token.cancel();
+            self.emit(OrchestratorEvent::ExecutionCancelled { execution_id });
+            info!(execution_id = %execution_id, "Execution cancelled");
+            true
+        } else {
+            false
+        }
+    }
+
     /// Process an input and return the result
     #[instrument(skip(self), fields(
         channel = %input.channel_type,
@@ -343,6 +384,10 @@ impl Orchestrator {
         let start_time = std::time::Instant::now();
         let execution_id = Uuid::new_v4();
         let session_key = input.session_key();
+
+        // Register cancellation token for this execution
+        let cancel_token = CancellationToken::new();
+        self.active_executions.insert(execution_id, cancel_token.clone());
 
         info!(
             execution_id = %execution_id,
@@ -529,6 +574,25 @@ impl Orchestrator {
                     "Max iterations reached"
                 );
                 break;
+            }
+
+            // ── Cancellation check ────────────────────────────────────
+            if cancel_token.is_cancelled() {
+                info!(execution_id = %execution_id, "Execution cancelled by user");
+                self.active_executions.remove(&execution_id);
+                if let Some(store) = &self.event_store {
+                    let _ = store.update_execution_status(execution_id, "cancelled", None).await;
+                }
+                return Ok(ExecutionResult {
+                    execution_id,
+                    status: ExecutionStatus::Cancelled,
+                    response: "실행이 취소되었습니다.".to_string(),
+                    tool_calls: tool_call_records,
+                    artifacts: Vec::new(),
+                    iterations: iteration,
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    model: model_used,
+                });
             }
 
             // ── Total execution timeout ───────────────────────────────
@@ -927,6 +991,9 @@ impl Orchestrator {
         }
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
+
+        // Cleanup: remove from active executions
+        self.active_executions.remove(&execution_id);
 
         // Emit execution completed event
         self.emit(OrchestratorEvent::ExecutionCompleted { execution_id });

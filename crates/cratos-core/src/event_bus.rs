@@ -53,6 +53,8 @@ pub enum OrchestratorEvent {
         execution_id: Uuid,
         /// Tool call ID
         tool_call_id: String,
+        /// Name of the tool that completed
+        tool_name: String,
         /// Whether the tool succeeded
         success: bool,
         /// Execution duration in milliseconds
@@ -293,6 +295,7 @@ mod tests {
             OrchestratorEvent::ToolCompleted {
                 execution_id: id,
                 tool_call_id: "c".to_string(),
+                tool_name: "exec".to_string(),
                 success: true,
                 duration_ms: 100,
             },

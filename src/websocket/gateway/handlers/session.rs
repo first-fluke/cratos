@@ -62,7 +62,10 @@ mod tests {
     use crate::websocket::protocol::GatewayFrame;
     use cratos_core::a2a::A2aRouter;
     use cratos_core::auth::{AuthContext, AuthMethod, Scope};
+    use cratos_core::event_bus::EventBus;
     use cratos_core::nodes::NodeRegistry;
+    use cratos_core::{Orchestrator, OrchestratorConfig};
+    use cratos_tools::ToolRegistry;
     use std::sync::Arc;
 
     fn readonly_auth() -> AuthContext {
@@ -79,13 +82,25 @@ mod tests {
         Arc::new(BrowserRelay::new())
     }
 
+    fn test_orchestrator() -> Arc<Orchestrator> {
+        let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
+        let registry = Arc::new(ToolRegistry::new());
+        Arc::new(Orchestrator::new(provider, registry, OrchestratorConfig::default()))
+    }
+
+    fn test_event_bus() -> Arc<EventBus> {
+        Arc::new(EventBus::new(16))
+    }
+
     #[tokio::test]
     async fn test_session_operations_scope_check() {
         let nr = NodeRegistry::new();
         let a2a = A2aRouter::new(100);
         let ro = readonly_auth();
         let br = test_browser_relay();
-        let ctx = DispatchContext { auth: &ro, node_registry: &nr, a2a_router: &a2a, browser_relay: &br };
+        let orch = test_orchestrator();
+        let eb = test_event_bus();
+        let ctx = DispatchContext { auth: &ro, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
 
         // session.list should work with SessionRead
         let result = super::handle("6", "session.list", serde_json::json!({}), &ctx).await;

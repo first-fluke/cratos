@@ -10,6 +10,7 @@ use cratos_core::{
     auth::{AuthContext, AuthMethod, AuthStore, Scope},
     event_bus::EventBus,
     nodes::NodeRegistry,
+    Orchestrator,
 };
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -26,6 +27,7 @@ pub struct AcpBridge {
     node_registry: Arc<NodeRegistry>,
     a2a_router: Arc<A2aRouter>,
     browser_relay: SharedBrowserRelay,
+    orchestrator: Arc<Orchestrator>,
 }
 
 impl AcpBridge {
@@ -35,6 +37,7 @@ impl AcpBridge {
         event_bus: Arc<EventBus>,
         node_registry: Arc<NodeRegistry>,
         a2a_router: Arc<A2aRouter>,
+        orchestrator: Arc<Orchestrator>,
     ) -> Self {
         Self {
             auth_store,
@@ -42,6 +45,7 @@ impl AcpBridge {
             node_registry,
             a2a_router,
             browser_relay: Arc::new(BrowserRelay::new()),
+            orchestrator,
         }
     }
 
@@ -171,6 +175,9 @@ impl AcpBridge {
                     &self.node_registry,
                     &self.a2a_router,
                     &self.browser_relay,
+                    &self.orchestrator,
+                    &self.event_bus,
+                    None,
                 ).await;
                 frame.into()
             }
@@ -209,8 +216,11 @@ pub async fn run_acp(token: Option<String>) -> anyhow::Result<()> {
     let event_bus = Arc::new(EventBus::new(256));
     let node_registry = Arc::new(NodeRegistry::new());
     let a2a_router = Arc::new(A2aRouter::default());
+    let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
+    let registry = Arc::new(cratos_tools::ToolRegistry::new());
+    let orchestrator = Arc::new(Orchestrator::new(provider, registry, cratos_core::OrchestratorConfig::default()));
 
-    let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router);
+    let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router, orchestrator);
     bridge.run(token).await
 }
 
@@ -218,13 +228,19 @@ pub async fn run_acp(token: Option<String>) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    fn test_orchestrator() -> Arc<Orchestrator> {
+        let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
+        let registry = Arc::new(cratos_tools::ToolRegistry::new());
+        Arc::new(Orchestrator::new(provider, registry, cratos_core::OrchestratorConfig::default()))
+    }
+
     #[test]
     fn test_authenticate_disabled_auth() {
         let auth_store = Arc::new(AuthStore::new(false));
         let event_bus = Arc::new(EventBus::new(16));
         let node_registry = Arc::new(NodeRegistry::new());
         let a2a_router = Arc::new(A2aRouter::default());
-        let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router);
+        let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router, test_orchestrator());
 
         let auth = bridge.authenticate(None).unwrap();
         assert_eq!(auth.user_id, "acp-local");
@@ -240,7 +256,7 @@ mod tests {
         let event_bus = Arc::new(EventBus::new(16));
         let node_registry = Arc::new(NodeRegistry::new());
         let a2a_router = Arc::new(A2aRouter::default());
-        let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router);
+        let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router, test_orchestrator());
 
         let auth = bridge.authenticate(Some(key.expose())).unwrap();
         assert_eq!(auth.user_id, "test");
@@ -252,7 +268,7 @@ mod tests {
         let event_bus = Arc::new(EventBus::new(16));
         let node_registry = Arc::new(NodeRegistry::new());
         let a2a_router = Arc::new(A2aRouter::default());
-        let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router);
+        let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router, test_orchestrator());
 
         let result = bridge.authenticate(None);
         assert!(result.is_err());

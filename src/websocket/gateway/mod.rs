@@ -24,9 +24,11 @@ use axum::{
 };
 use cratos_core::{
     a2a::A2aRouter,
+    approval::SharedApprovalManager,
     auth::{AuthContext, AuthStore},
     event_bus::EventBus,
     nodes::NodeRegistry,
+    Orchestrator,
 };
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -58,10 +60,13 @@ pub async fn gateway_handler(
     Extension(node_registry): Extension<Arc<NodeRegistry>>,
     Extension(a2a_router): Extension<Arc<A2aRouter>>,
     Extension(browser_relay): Extension<SharedBrowserRelay>,
+    Extension(orchestrator): Extension<Arc<Orchestrator>>,
+    approval_manager: Option<Extension<SharedApprovalManager>>,
 ) -> impl IntoResponse {
+    let approval_mgr = approval_manager.map(|Extension(am)| am);
     ws.max_message_size(MAX_MESSAGE_BYTES)
         .on_upgrade(move |socket| {
-            handle_gateway(socket, auth_store, event_bus, node_registry, a2a_router, browser_relay)
+            handle_gateway(socket, auth_store, event_bus, node_registry, a2a_router, browser_relay, orchestrator, approval_mgr)
         })
 }
 
@@ -73,6 +78,8 @@ async fn handle_gateway(
     node_registry: Arc<NodeRegistry>,
     a2a_router: Arc<A2aRouter>,
     browser_relay: SharedBrowserRelay,
+    orchestrator: Arc<Orchestrator>,
+    approval_manager: Option<SharedApprovalManager>,
 ) {
     let conn_id = Uuid::new_v4();
     info!(conn_id = %conn_id, "Gateway WS connection opened");
@@ -136,7 +143,7 @@ async fn handle_gateway(
                             }
                         }
 
-                        if let Some(response) = handle_message(&text, &auth, &node_registry, &a2a_router, &browser_relay).await {
+                        if let Some(response) = handle_message(&text, &auth, &node_registry, &a2a_router, &browser_relay, &orchestrator, &event_bus, approval_manager.as_ref()).await {
                             let json = serde_json::to_string(&response).unwrap_or_default();
                             if ws_tx.send(Message::Text(json)).await.is_err() {
                                 break;
@@ -351,6 +358,9 @@ async fn handle_message(
     node_registry: &NodeRegistry,
     a2a_router: &A2aRouter,
     browser_relay: &SharedBrowserRelay,
+    orchestrator: &Arc<Orchestrator>,
+    event_bus: &Arc<EventBus>,
+    approval_manager: Option<&SharedApprovalManager>,
 ) -> Option<GatewayFrame> {
     let frame: GatewayFrame = match serde_json::from_str(text) {
         Ok(f) => f,
@@ -372,6 +382,9 @@ async fn handle_message(
                 node_registry,
                 a2a_router,
                 browser_relay,
+                orchestrator,
+                event_bus,
+                approval_manager,
             };
             Some(dispatch::dispatch_method(&id, &method, params, &ctx).await)
         }
@@ -385,7 +398,10 @@ mod tests {
     use super::*;
     use cratos_core::a2a::A2aRouter;
     use cratos_core::auth::{AuthMethod, Scope};
+    use cratos_core::event_bus::EventBus;
     use cratos_core::nodes::NodeRegistry;
+    use cratos_core::{Orchestrator, OrchestratorConfig};
+    use cratos_tools::ToolRegistry;
 
     fn admin_auth() -> AuthContext {
         AuthContext {
@@ -419,12 +435,24 @@ mod tests {
         Arc::new(BrowserRelay::new())
     }
 
+    fn test_orchestrator() -> Arc<Orchestrator> {
+        let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
+        let registry = Arc::new(ToolRegistry::new());
+        Arc::new(Orchestrator::new(provider, registry, OrchestratorConfig::default()))
+    }
+
+    fn test_event_bus() -> Arc<EventBus> {
+        Arc::new(EventBus::new(16))
+    }
+
     #[tokio::test]
     async fn test_handle_message_invalid_json() {
         let nr = test_node_registry();
         let a2a = test_a2a_router();
         let br = test_browser_relay();
-        let result = handle_message("not json", &admin_auth(), &nr, &a2a, &br).await;
+        let orch = test_orchestrator();
+        let eb = test_event_bus();
+        let result = handle_message("not json", &admin_auth(), &nr, &a2a, &br, &orch, &eb, None).await;
         assert!(result.is_some());
         match result.unwrap() {
             GatewayFrame::Response { error: Some(e), .. } => {
@@ -439,6 +467,8 @@ mod tests {
         let nr = test_node_registry();
         let a2a = test_a2a_router();
         let br = test_browser_relay();
+        let orch = test_orchestrator();
+        let eb = test_event_bus();
         // Response frame from client should be ignored
         let frame = GatewayFrame::Response {
             id: "1".to_string(),
@@ -446,7 +476,7 @@ mod tests {
             error: None,
         };
         let json = serde_json::to_string(&frame).unwrap();
-        let result = handle_message(&json, &admin_auth(), &nr, &a2a, &br).await;
+        let result = handle_message(&json, &admin_auth(), &nr, &a2a, &br, &orch, &eb, None).await;
         assert!(result.is_none());
     }
 }

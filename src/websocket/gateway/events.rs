@@ -56,6 +56,7 @@ pub fn convert_event(event: &OrchestratorEvent) -> Option<GatewayFrame> {
         OrchestratorEvent::ToolCompleted {
             execution_id,
             tool_call_id,
+            tool_name,
             success,
             duration_ms,
         } => (
@@ -63,6 +64,7 @@ pub fn convert_event(event: &OrchestratorEvent) -> Option<GatewayFrame> {
             serde_json::json!({
                 "execution_id": execution_id,
                 "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
                 "success": success,
                 "duration_ms": duration_ms,
             }),
@@ -144,6 +146,7 @@ mod tests {
             OrchestratorEvent::ToolCompleted {
                 execution_id: id,
                 tool_call_id: "c1".to_string(),
+                tool_name: "exec".to_string(),
                 success: true,
                 duration_ms: 50,
             },

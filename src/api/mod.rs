@@ -8,6 +8,7 @@
 
 pub mod browser;
 pub mod config;
+pub mod dev_sessions;
 pub mod executions;
 pub mod quota;
 pub mod scheduler;
@@ -18,6 +19,7 @@ use axum::Router;
 
 pub use browser::browser_routes;
 pub use config::config_routes;
+pub use dev_sessions::dev_sessions_routes;
 pub use executions::executions_routes;
 pub use quota::quota_routes;
 pub use scheduler::scheduler_routes;
@@ -34,4 +36,5 @@ pub fn api_router() -> Router {
         .merge(quota_routes())
         .merge(sessions_routes())
         .merge(browser_routes())
+        .merge(dev_sessions_routes())
 }

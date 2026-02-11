@@ -36,6 +36,9 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 keyring = { version = "3.6", optional = true }  # Cross-platform keychain (Linux Secret Service, Windows Credential Manager)
 zeroize = { version = "1.8", features = ["derive"] }  # Cryptographic memory wiping
 
+# Concurrent collections
+dashmap = "6"
+
 # Scheduler
 tokio-cron-scheduler = "0.13"  # Cron scheduling (disabled for now, using simplified impl)
 subtle = "2.5"  # Constant-time comparison for secrets
