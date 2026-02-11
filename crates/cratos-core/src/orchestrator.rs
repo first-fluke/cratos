@@ -194,7 +194,7 @@ impl Default for OrchestratorConfig {
             enable_logging: true,
             planner_config: PlannerConfig::default(),
             runner_config: RunnerConfig::default(),
-            max_execution_secs: 90,
+            max_execution_secs: 180,
             max_consecutive_failures: 3,
             max_total_failures: 6,
         }
@@ -612,8 +612,14 @@ impl Orchestrator {
                 warn!(
                     execution_id = %execution_id,
                     iterations = %iteration,
-                    "Max iterations reached"
+                    "Max iterations reached, attempting final summary"
                 );
+                let summary = self
+                    .try_final_summary(&messages, effective_system_prompt.as_deref())
+                    .await;
+                if !summary.is_empty() {
+                    final_response = summary;
+                }
                 break;
             }
 
@@ -650,7 +656,14 @@ impl Orchestrator {
                         "Execution timeout reached"
                     );
                     if final_response.is_empty() {
-                        final_response = "처리 시간이 초과되었습니다. 요청을 단순화하거나 다시 시도해주세요.".to_string();
+                        let summary = self
+                            .try_final_summary(&messages, effective_system_prompt.as_deref())
+                            .await;
+                        final_response = if summary.is_empty() {
+                            "처리 시간이 초과되었습니다. 요청을 단순화하거나 다시 시도해주세요.".to_string()
+                        } else {
+                            summary
+                        };
                     }
                     break;
                 }
@@ -1359,73 +1372,73 @@ impl Orchestrator {
         results
     }
 
-    /// Plan a step with automatic fallback on rate-limit errors
+    /// Dispatch a plan step to the given planner with an optional system prompt override.
+    async fn dispatch_plan(
+        planner: &Planner,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+        system_prompt_override: Option<&str>,
+    ) -> crate::error::Result<crate::planner::PlanResponse> {
+        match system_prompt_override {
+            Some(p) => planner.plan_step_with_system_prompt(messages, tools, p).await,
+            None => planner.plan_step(messages, tools).await,
+        }
+    }
+
+    /// Plan a step with automatic fallback on transient errors.
     async fn plan_with_fallback(
         &self,
         messages: &[Message],
         tools: &[ToolDefinition],
         system_prompt_override: Option<&str>,
     ) -> crate::error::Result<crate::planner::PlanResponse> {
-        let result = match system_prompt_override {
-            Some(p) => self.planner.plan_step_with_system_prompt(messages, tools, p).await,
-            None => self.planner.plan_step(messages, tools).await,
-        };
+        let result = Self::dispatch_plan(&self.planner, messages, tools, system_prompt_override).await;
         match result {
             Ok(resp) => Ok(resp),
-            Err(crate::error::Error::Llm(cratos_llm::Error::RateLimit))
-                if self.fallback_planner.is_some() =>
-            {
-                warn!("Primary provider rate limited, trying fallback");
+            Err(ref e) if self.fallback_planner.is_some() && is_fallback_eligible(e) => {
+                warn!(error = %e, "Primary provider failed, trying fallback");
                 let fb = self.fallback_planner.as_ref().unwrap();
-                match system_prompt_override {
-                    Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
-                    None => fb.plan_step(messages, tools).await,
-                }
-            }
-            Err(crate::error::Error::Llm(cratos_llm::Error::ServerError(ref msg)))
-                if self.fallback_planner.is_some() =>
-            {
-                warn!(error = %msg, "Primary provider server error, trying fallback");
-                let fb = self.fallback_planner.as_ref().unwrap();
-                match system_prompt_override {
-                    Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
-                    None => fb.plan_step(messages, tools).await,
-                }
-            }
-            // Auth/Permission errors (e.g. expired token, 403 PERMISSION_DENIED)
-            Err(crate::error::Error::Llm(cratos_llm::Error::Api(ref msg)))
-                if self.fallback_planner.is_some() && is_auth_or_permission_error(msg) =>
-            {
-                warn!(error = %msg, "Primary provider auth/permission error, trying fallback");
-                let fb = self.fallback_planner.as_ref().unwrap();
-                match system_prompt_override {
-                    Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
-                    None => fb.plan_step(messages, tools).await,
-                }
-            }
-            // Network errors
-            Err(crate::error::Error::Llm(cratos_llm::Error::Network(ref msg)))
-                if self.fallback_planner.is_some() =>
-            {
-                warn!(error = %msg, "Primary provider network error, trying fallback");
-                let fb = self.fallback_planner.as_ref().unwrap();
-                match system_prompt_override {
-                    Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
-                    None => fb.plan_step(messages, tools).await,
-                }
-            }
-            // Timeout errors
-            Err(crate::error::Error::Llm(cratos_llm::Error::Timeout(_)))
-                if self.fallback_planner.is_some() =>
-            {
-                warn!("Primary provider timed out, trying fallback");
-                let fb = self.fallback_planner.as_ref().unwrap();
-                match system_prompt_override {
-                    Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
-                    None => fb.plan_step(messages, tools).await,
-                }
+                Self::dispatch_plan(fb, messages, tools, system_prompt_override).await
             }
             Err(e) => Err(e),
+        }
+    }
+
+    /// Generate a final summary when iterations or timeout are exhausted.
+    ///
+    /// Makes one LLM call **without tools** so the model must produce a
+    /// text answer from whatever context has accumulated in `messages`.
+    async fn try_final_summary(
+        &self,
+        messages: &[Message],
+        system_prompt_override: Option<&str>,
+    ) -> String {
+        // Nothing useful to summarize if conversation is trivially short
+        if messages.len() <= 2 {
+            return String::new();
+        }
+
+        let mut summary_messages = messages.to_vec();
+        summary_messages.push(Message::user(
+            "지금까지의 도구 실행 결과를 바탕으로 최종 답변을 생성해주세요. \
+             더 이상 도구를 사용하지 말고, 현재까지 수집한 정보로 가능한 한 \
+             도움이 되는 답변을 해주세요.",
+        ));
+
+        let result = Self::dispatch_plan(
+            &self.planner,
+            &summary_messages,
+            &[], // empty tools → forces text-only response
+            system_prompt_override,
+        )
+        .await;
+
+        match result {
+            Ok(resp) => resp.content.unwrap_or_default(),
+            Err(e) => {
+                warn!(error = %e, "Final summary generation failed");
+                String::new()
+            }
         }
     }
 
@@ -1536,18 +1549,44 @@ fn is_auth_or_permission_error(msg: &str) -> bool {
         || lower.contains("unauthenticated")
 }
 
-/// Detect if the model's first response is likely a refusal to use tools.
+/// Check if an LLM error is eligible for automatic fallback to a secondary provider.
+fn is_fallback_eligible(e: &crate::error::Error) -> bool {
+    matches!(
+        e,
+        crate::error::Error::Llm(cratos_llm::Error::RateLimit)
+            | crate::error::Error::Llm(cratos_llm::Error::ServerError(_))
+            | crate::error::Error::Llm(cratos_llm::Error::Network(_))
+            | crate::error::Error::Llm(cratos_llm::Error::Timeout(_))
+    ) || matches!(
+        e,
+        crate::error::Error::Llm(cratos_llm::Error::Api(msg)) if is_auth_or_permission_error(msg)
+    )
+}
+
+/// Detect if the model's first response is a refusal to use tools.
 ///
-/// Structural detection: on the first iteration, if the model gives a short
-/// text-only response without any tool calls, it's almost certainly refusing
-/// to act. Genuine knowledge answers are typically longer. This avoids
-/// hardcoded keyword lists which are fragile and language-dependent.
+/// A response is classified as a refusal when it is either:
+/// - empty, or
+/// - very short (<60 chars) and lacks substantive content markers
+///   (code backticks, URLs, lists) that would indicate a genuine answer.
+///
+/// The previous 200-char threshold was too aggressive and incorrectly
+/// flagged legitimate short knowledge answers, forcing unnecessary tool
+/// calls that wasted iterations and caused timeouts.
 fn is_tool_refusal(content: &str) -> bool {
     let trimmed = content.trim();
-    // Empty or very short responses (< 200 chars) without tool calls on iteration 1
-    // are almost certainly refusals. Genuine conversational answers or knowledge
-    // responses are longer.
-    trimmed.is_empty() || trimmed.len() < 200
+    if trimmed.is_empty() {
+        return true;
+    }
+    // Substantive content markers: code, URLs, lists → genuine answer
+    if trimmed.contains('`')
+        || trimmed.contains("http")
+        || trimmed.contains("1.")
+        || trimmed.contains("- ")
+    {
+        return false;
+    }
+    trimmed.len() < 60
 }
 
 /// Sanitize LLM response before sending to users.
@@ -1699,5 +1738,64 @@ mod tests {
             ..OrchestratorConfig::default()
         };
         assert_eq!(custom.max_total_failures, 10);
+    }
+
+    // ── Tool refusal detection ───────────────────────────────────────
+
+    #[test]
+    fn test_tool_refusal_empty() {
+        assert!(is_tool_refusal(""));
+        assert!(is_tool_refusal("   "));
+    }
+
+    #[test]
+    fn test_tool_refusal_short_without_substance() {
+        // Short generic statements with no content markers → refusal
+        assert!(is_tool_refusal("I cannot access the filesystem."));
+        assert!(is_tool_refusal("할 수 없습니다."));
+    }
+
+    #[test]
+    fn test_tool_refusal_allows_short_knowledge_answer() {
+        // Short but contains code backtick → legitimate answer
+        assert!(!is_tool_refusal("`gcloud config set project ID`를 실행하세요."));
+        // Contains URL → legitimate answer
+        assert!(!is_tool_refusal("https://cloud.google.com/docs 참고하세요."));
+        // Contains list marker → legitimate answer
+        assert!(!is_tool_refusal("1. 환경변수 설정\n2. 재시작"));
+    }
+
+    #[test]
+    fn test_tool_refusal_allows_long_response() {
+        let long = "a".repeat(100);
+        assert!(!is_tool_refusal(&long));
+    }
+
+    // ── Fallback eligibility ─────────────────────────────────────────
+
+    #[test]
+    fn test_fallback_eligible_rate_limit() {
+        let err = crate::error::Error::Llm(cratos_llm::Error::RateLimit);
+        assert!(is_fallback_eligible(&err));
+    }
+
+    #[test]
+    fn test_fallback_eligible_network() {
+        let err = crate::error::Error::Llm(cratos_llm::Error::Network("timeout".into()));
+        assert!(is_fallback_eligible(&err));
+    }
+
+    #[test]
+    fn test_fallback_not_eligible_generic_api() {
+        let err = crate::error::Error::Llm(cratos_llm::Error::Api("bad request".into()));
+        assert!(!is_fallback_eligible(&err));
+    }
+
+    // ── Config defaults ──────────────────────────────────────────────
+
+    #[test]
+    fn test_max_execution_secs_default() {
+        let config = OrchestratorConfig::default();
+        assert_eq!(config.max_execution_secs, 180);
     }
 }
