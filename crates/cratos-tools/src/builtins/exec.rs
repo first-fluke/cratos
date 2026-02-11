@@ -31,16 +31,19 @@ const SHELL_METACHARACTERS: &[char] = &[
 
 /// Default dangerous commands that are always blocked
 ///
-/// NOTE: Dev tools (cargo, npm, pip, brew, curl, git, etc.) are intentionally
+/// NOTE: Dev tools (cargo, npm, pip, brew, git, etc.) are intentionally
 /// ALLOWED because Cratos runs on the user's own machine as a personal assistant.
 /// Only truly destructive or privilege-escalation commands are blocked.
+/// Network tools (curl, wget, etc.) are blocked separately via NETWORK_EXFIL_COMMANDS.
 const DEFAULT_BLOCKED_COMMANDS: &[&str] = &[
     // Destructive system commands
     "rm", "rmdir", "dd", "mkfs", "fdisk", "parted",
+    "shred", "truncate",
     // System control
     "shutdown", "reboot", "poweroff", "halt", "init",
     // User/permission manipulation
     "passwd", "useradd", "userdel", "usermod", "groupadd", "groupdel",
+    "chmod", "chown", "chgrp",
     // Network firewall (can lock out user)
     "iptables", "ip6tables", "nft",
     // Shell spawning (prevents shell escape)
@@ -49,6 +52,25 @@ const DEFAULT_BLOCKED_COMMANDS: &[&str] = &[
     "nc", "netcat", "ncat",
     // Privilege escalation
     "sudo", "su", "doas",
+    // Container/VM escape
+    "docker", "podman", "kubectl", "crictl",
+    // Process control
+    "kill", "pkill", "killall",
+    // Persistence mechanisms
+    "crontab", "at", "launchctl", "systemctl",
+    // Symlink attacks
+    "ln",
+    // Interpreters (can bypass all checks)
+    "python", "python3", "perl", "ruby", "node",
+    "php", "lua", "tclsh", "wish",
+];
+
+/// Network exfiltration commands blocked by default.
+/// Users needing HTTP should use http_get/http_post tools instead.
+const NETWORK_EXFIL_COMMANDS: &[&str] = &[
+    "curl", "wget",
+    "scp", "sftp", "rsync",
+    "ftp", "telnet", "socat", "ssh",
 ];
 
 /// Default dangerous path patterns
@@ -79,6 +101,8 @@ pub struct ExecConfig {
     pub allowed_commands: Vec<String>,
     /// Blocked filesystem paths
     pub blocked_paths: Vec<String>,
+    /// Allow network commands (curl, wget, etc.). Default: false.
+    pub allow_network_commands: bool,
 }
 
 impl Default for ExecConfig {
@@ -89,6 +113,7 @@ impl Default for ExecConfig {
             extra_blocked_commands: Vec::new(),
             allowed_commands: Vec::new(),
             blocked_paths: DEFAULT_BLOCKED_PATHS.iter().map(|s| (*s).to_string()).collect(),
+            allow_network_commands: false,
         }
     }
 }
@@ -167,10 +192,12 @@ impl ExecTool {
                 !self.config.allowed_commands.iter().any(|a| a == base_command)
             }
             ExecMode::Permissive => {
-                // In permissive mode, only block built-in + extra blocked commands
+                // In permissive mode, only block built-in + extra + network commands
                 let is_builtin_blocked = DEFAULT_BLOCKED_COMMANDS.contains(&base_command);
+                let is_network_blocked = !self.config.allow_network_commands
+                    && NETWORK_EXFIL_COMMANDS.contains(&base_command);
                 let is_extra_blocked = self.config.extra_blocked_commands.iter().any(|b| b == base_command);
-                is_builtin_blocked || is_extra_blocked
+                is_builtin_blocked || is_network_blocked || is_extra_blocked
             }
         }
     }
@@ -400,9 +427,33 @@ mod tests {
         assert!(!tool.is_command_blocked("npm"));
         assert!(!tool.is_command_blocked("pip"));
         assert!(!tool.is_command_blocked("brew"));
+        assert!(!tool.is_command_blocked("osascript"));
+
+        // Network exfil commands are blocked by default
+        assert!(tool.is_command_blocked("curl"));
+        assert!(tool.is_command_blocked("wget"));
+        assert!(tool.is_command_blocked("scp"));
+        assert!(tool.is_command_blocked("ssh"));
+        assert!(tool.is_command_blocked("rsync"));
+
+        // Expanded blocked commands
+        assert!(tool.is_command_blocked("chmod"));
+        assert!(tool.is_command_blocked("docker"));
+        assert!(tool.is_command_blocked("python3"));
+        assert!(tool.is_command_blocked("kill"));
+        assert!(tool.is_command_blocked("crontab"));
+        assert!(tool.is_command_blocked("ln"));
+    }
+
+    #[test]
+    fn test_network_allowed_with_config() {
+        let tool = ExecTool::with_config(ExecConfig {
+            allow_network_commands: true,
+            ..ExecConfig::default()
+        });
         assert!(!tool.is_command_blocked("curl"));
         assert!(!tool.is_command_blocked("wget"));
-        assert!(!tool.is_command_blocked("osascript"));
+        assert!(!tool.is_command_blocked("ssh"));
     }
 
     #[test]

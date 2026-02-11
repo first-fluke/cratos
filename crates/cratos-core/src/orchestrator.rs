@@ -649,19 +649,17 @@ impl Orchestrator {
 
                 // Detect tool refusal on first iteration: model says "can't access" instead of using tools.
                 // Nudge it to retry with tools by appending a follow-up user message.
-                if iteration == 1 {
-                    if is_tool_refusal(content_text) {
-                        warn!(
-                            execution_id = %execution_id,
-                            "Model refused to use tools on first iteration, nudging retry"
-                        );
-                        messages.push(Message::assistant(content_text));
-                        messages.push(Message::user(
-                            "위 작업을 위해 exec, http_get 등 도구를 사용해주세요. \
-                             이 기기에서 직접 실행됩니다. 도구 없이 답하지 마세요."
-                        ));
-                        continue;
-                    }
+                if iteration == 1 && is_tool_refusal(content_text) {
+                    warn!(
+                        execution_id = %execution_id,
+                        "Model refused to use tools on first iteration, nudging retry"
+                    );
+                    messages.push(Message::assistant(content_text));
+                    messages.push(Message::user(
+                        "위 작업을 위해 exec, http_get 등 도구를 사용해주세요. \
+                         이 기기에서 직접 실행됩니다. 도구 없이 답하지 마세요."
+                    ));
+                    continue;
                 }
 
                 // If LLM returns empty/very short final after tool use, nudge it to complete
@@ -802,15 +800,44 @@ impl Orchestrator {
                 let errors: Vec<String> = tool_call_records.iter()
                     .filter(|r| !r.success)
                     .map(|r| {
-                        let err = r.output.get("stderr").and_then(|v| v.as_str())
+                        r.output.get("stderr").and_then(|v| v.as_str())
                             .filter(|s| !s.is_empty())
                             .or_else(|| r.output.get("error").and_then(|v| v.as_str()))
-                            .unwrap_or("unknown error");
-                        let err_short: String = err.chars().take(100).collect();
-                        format!("- {}: {}", r.tool_name, err_short)
+                            .unwrap_or("unknown error")
+                            .to_string()
                     })
                     .collect();
-                format!("도구 실행에 실패했습니다:\n{}\n\n다른 방법으로 시도하거나 명령을 수정해 다시 요청해주세요.", errors.join("\n"))
+                // Deduplicate error messages (e.g. same "blocked" from exec+bash)
+                let mut unique_errors: Vec<String> = Vec::new();
+                for e in &errors {
+                    if !unique_errors.iter().any(|u| u == e) {
+                        unique_errors.push(e.clone());
+                    }
+                }
+                // Check if all errors are security blocks
+                let all_security = unique_errors.iter().all(|e|
+                    e.contains("blocked") || e.contains("permission denied")
+                        || e.contains("Permission denied")
+                );
+                if all_security {
+                    let reasons: String = unique_errors.iter()
+                        .map(|e| {
+                            let short: String = e.chars().take(120).collect();
+                            format!("- {}", short)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    format!("보안 정책에 의해 해당 명령어가 차단되었습니다.\n{}\n\n안전한 대체 도구(http_get, http_post 등)를 사용해주세요.", reasons)
+                } else {
+                    let detail: String = unique_errors.iter()
+                        .map(|e| {
+                            let short: String = e.chars().take(100).collect();
+                            format!("- {}", short)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    format!("도구 실행에 실패했습니다:\n{}\n\n다른 방법으로 시도하거나 명령을 수정해 다시 요청해주세요.", detail)
+                }
             }
         } else {
             final_response
@@ -997,8 +1024,18 @@ impl Orchestrator {
 
             let (output, success, error) = match result {
                 Ok(exec_result) => {
-                    let output = exec_result.result.output.clone();
-                    (output, exec_result.result.success, exec_result.result.error)
+                    let mut output = exec_result.result.output.clone();
+                    let success = exec_result.result.success;
+                    let error = exec_result.result.error.clone();
+                    // When tool returns failure with null output, embed error in
+                    // the output JSON so downstream consumers (LLM conversation,
+                    // fallback error messages) can access the reason.
+                    if !success && output.is_null() {
+                        if let Some(ref err_msg) = error {
+                            output = serde_json::json!({"error": err_msg});
+                        }
+                    }
+                    (output, success, error)
                 }
                 Err(e) => {
                     error!(
@@ -1041,6 +1078,7 @@ impl Orchestrator {
             self.emit(OrchestratorEvent::ToolCompleted {
                 execution_id,
                 tool_call_id: call.id.clone(),
+                tool_name: call.name.clone(),
                 success,
                 duration_ms,
             });
@@ -1096,6 +1134,39 @@ impl Orchestrator {
                 if self.fallback_planner.is_some() =>
             {
                 warn!(error = %msg, "Primary provider server error, trying fallback");
+                let fb = self.fallback_planner.as_ref().unwrap();
+                match system_prompt_override {
+                    Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
+                    None => fb.plan_step(messages, tools).await,
+                }
+            }
+            // Auth/Permission errors (e.g. expired token, 403 PERMISSION_DENIED)
+            Err(crate::error::Error::Llm(cratos_llm::Error::Api(ref msg)))
+                if self.fallback_planner.is_some() && is_auth_or_permission_error(msg) =>
+            {
+                warn!(error = %msg, "Primary provider auth/permission error, trying fallback");
+                let fb = self.fallback_planner.as_ref().unwrap();
+                match system_prompt_override {
+                    Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
+                    None => fb.plan_step(messages, tools).await,
+                }
+            }
+            // Network errors
+            Err(crate::error::Error::Llm(cratos_llm::Error::Network(ref msg)))
+                if self.fallback_planner.is_some() =>
+            {
+                warn!(error = %msg, "Primary provider network error, trying fallback");
+                let fb = self.fallback_planner.as_ref().unwrap();
+                match system_prompt_override {
+                    Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
+                    None => fb.plan_step(messages, tools).await,
+                }
+            }
+            // Timeout errors
+            Err(crate::error::Error::Llm(cratos_llm::Error::Timeout(_)))
+                if self.fallback_planner.is_some() =>
+            {
+                warn!("Primary provider timed out, trying fallback");
                 let fb = self.fallback_planner.as_ref().unwrap();
                 match system_prompt_override {
                     Some(p) => fb.plan_step_with_system_prompt(messages, tools, p).await,
@@ -1182,6 +1253,16 @@ impl Orchestrator {
             .map(|s| s.message_count())
             .unwrap_or(0)
     }
+}
+
+/// Check if an error message indicates an authentication or permission problem.
+fn is_auth_or_permission_error(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("authentication")
+        || lower.contains("permission")
+        || lower.contains("unauthorized")
+        || lower.contains("forbidden")
+        || lower.contains("unauthenticated")
 }
 
 /// Detect if the model's first response is likely a refusal to use tools.

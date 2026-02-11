@@ -848,6 +848,7 @@ pub async fn run() -> Result<()> {
             extra_blocked_commands: sec.extra_blocked_commands.clone(),
             allowed_commands: sec.allowed_commands.clone(),
             blocked_paths: sec.blocked_paths.clone(),
+            allow_network_commands: false,
         }
     };
     let builtins_config = BuiltinsConfig {
