@@ -326,6 +326,12 @@ impl Planner {
         Self { provider, config }
     }
 
+    /// Get the underlying LLM provider
+    #[must_use]
+    pub fn provider(&self) -> &dyn LlmProvider {
+        self.provider.as_ref()
+    }
+
     /// Create with default configuration
     #[must_use]
     pub fn with_defaults(provider: Arc<dyn LlmProvider>) -> Self {
@@ -409,7 +415,28 @@ impl Planner {
 
             debug!("Making completion request without tools");
 
+            let llm_start = std::time::Instant::now();
             let response = self.provider.complete(request).await.map_err(Error::Llm)?;
+            let llm_secs = llm_start.elapsed().as_secs_f64();
+
+            // Record LLM metrics
+            let provider_name = self.provider.name();
+            crate::utils::metrics_global::labeled_counter("cratos_llm_requests_total")
+                .inc(&[("provider", provider_name), ("model", &response.model)]);
+            crate::utils::metrics_global::labeled_histogram("cratos_llm_duration_seconds")
+                .observe(&[("provider", provider_name)], llm_secs);
+            if let Some(ref usage) = response.usage {
+                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total")
+                    .inc_by(
+                        &[("provider", provider_name), ("direction", "input")],
+                        u64::from(usage.prompt_tokens),
+                    );
+                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total")
+                    .inc_by(
+                        &[("provider", provider_name), ("direction", "output")],
+                        u64::from(usage.completion_tokens),
+                    );
+            }
 
             Ok(PlanResponse {
                 content: Some(response.content),
@@ -437,11 +464,32 @@ impl Planner {
                 "Making completion request with tools"
             );
 
+            let llm_start = std::time::Instant::now();
             let response = self
                 .provider
                 .complete_with_tools(request)
                 .await
                 .map_err(Error::Llm)?;
+            let llm_secs = llm_start.elapsed().as_secs_f64();
+
+            // Record LLM metrics
+            let provider_name = self.provider.name();
+            crate::utils::metrics_global::labeled_counter("cratos_llm_requests_total")
+                .inc(&[("provider", provider_name), ("model", &response.model)]);
+            crate::utils::metrics_global::labeled_histogram("cratos_llm_duration_seconds")
+                .observe(&[("provider", provider_name)], llm_secs);
+            if let Some(ref usage) = response.usage {
+                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total")
+                    .inc_by(
+                        &[("provider", provider_name), ("direction", "input")],
+                        u64::from(usage.prompt_tokens),
+                    );
+                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total")
+                    .inc_by(
+                        &[("provider", provider_name), ("direction", "output")],
+                        u64::from(usage.completion_tokens),
+                    );
+            }
 
             let is_final = response.tool_calls.is_empty();
 

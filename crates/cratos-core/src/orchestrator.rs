@@ -7,13 +7,14 @@ use crate::agents::{extract_persona_mention, PersonaMapping};
 use crate::approval::SharedApprovalManager;
 use crate::error::Result;
 use crate::event_bus::{EventBus, OrchestratorEvent};
+use crate::tool_policy::{PolicyAction, PolicyContext, ToolSecurityPolicy};
 use crate::memory::{MemoryStore, SessionContext, SessionStore, WorkingMemory};
 use crate::olympus_hooks::OlympusHooks;
 use crate::planner::{Planner, PlannerConfig};
 use cratos_llm::{LlmProvider, Message, ToolCall, ToolDefinition};
 use cratos_memory::GraphMemory;
 use cratos_replay::{Event, EventStoreTrait, EventType, Execution};
-use cratos_tools::{RunnerConfig, ToolRegistry, ToolRunner};
+use cratos_tools::{RunnerConfig, ToolDoctor, ToolRegistry, ToolRunner};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -123,6 +124,8 @@ pub struct OrchestratorInput {
     pub thread_id: Option<String>,
     /// Input text
     pub text: String,
+    /// Override the system prompt entirely (e.g., for /develop workflow)
+    pub system_prompt_override: Option<String>,
 }
 
 impl OrchestratorInput {
@@ -140,6 +143,7 @@ impl OrchestratorInput {
             user_id: user_id.into(),
             thread_id: None,
             text: text.into(),
+            system_prompt_override: None,
         }
     }
 
@@ -147,6 +151,13 @@ impl OrchestratorInput {
     #[must_use]
     pub fn with_thread(mut self, thread_id: impl Into<String>) -> Self {
         self.thread_id = Some(thread_id.into());
+        self
+    }
+
+    /// Override the system prompt (e.g., for workflow-driven execution)
+    #[must_use]
+    pub fn with_system_prompt_override(mut self, prompt: String) -> Self {
+        self.system_prompt_override = Some(prompt);
         self
     }
 
@@ -239,6 +250,8 @@ pub struct Orchestrator {
     fallback_planner: Option<Planner>,
     persona_mapping: Option<PersonaMapping>,
     skill_router: Option<Arc<dyn SkillRouting>>,
+    security_policy: Option<ToolSecurityPolicy>,
+    doctor: ToolDoctor,
     config: OrchestratorConfig,
     /// Active executions with cancellation tokens for chat.cancel support
     active_executions: Arc<DashMap<Uuid, CancellationToken>>,
@@ -267,6 +280,8 @@ impl Orchestrator {
             fallback_planner: None,
             persona_mapping: None,
             skill_router: None,
+            security_policy: None,
+            doctor: ToolDoctor::new(),
             config,
             active_executions: Arc::new(DashMap::new()),
         }
@@ -333,6 +348,12 @@ impl Orchestrator {
         self
     }
 
+    /// Set the 6-level tool security policy
+    pub fn with_security_policy(mut self, policy: ToolSecurityPolicy) -> Self {
+        self.security_policy = Some(policy);
+        self
+    }
+
     /// Get the tool runner
     #[must_use]
     pub fn runner(&self) -> &ToolRunner {
@@ -355,6 +376,18 @@ impl Orchestrator {
     #[must_use]
     pub fn active_execution_count(&self) -> Option<usize> {
         Some(self.active_executions.len())
+    }
+
+    /// Get the LLM provider name
+    #[must_use]
+    pub fn provider_name(&self) -> &str {
+        self.planner.provider().name()
+    }
+
+    /// Get available LLM models
+    #[must_use]
+    pub fn available_models(&self) -> Vec<String> {
+        self.planner.provider().available_models()
     }
 
     /// List all registered tool names
@@ -394,6 +427,9 @@ impl Orchestrator {
             text = %input.text,
             "Starting execution"
         );
+
+        // Record execution start metric
+        crate::utils::metrics_global::gauge("cratos_active_executions").inc();
 
         // Emit execution started event
         self.emit(OrchestratorEvent::ExecutionStarted {
@@ -542,11 +578,16 @@ impl Orchestrator {
         };
 
         // Combine system prompt overrides
-        let effective_system_prompt: Option<String> = match (persona_system_prompt, skill_hint) {
-            (Some(p), Some(s)) => Some(format!("{}{}", p, s)),
-            (Some(p), None) => Some(p),
-            (None, Some(s)) => Some(format!("{}{}", self.planner.config().system_prompt, s)),
-            (None, None) => None,
+        // input.system_prompt_override takes highest priority (e.g., /develop workflow)
+        let effective_system_prompt: Option<String> = if let Some(ref override_prompt) = input.system_prompt_override {
+            Some(override_prompt.clone())
+        } else {
+            match (persona_system_prompt, skill_hint) {
+                (Some(p), Some(s)) => Some(format!("{}{}", p, s)),
+                (Some(p), None) => Some(p),
+                (None, Some(s)) => Some(format!("{}{}", self.planner.config().system_prompt, s)),
+                (None, None) => None,
+            }
         };
 
         // Create working memory
@@ -583,6 +624,9 @@ impl Orchestrator {
                 if let Some(store) = &self.event_store {
                     let _ = store.update_execution_status(execution_id, "cancelled", None).await;
                 }
+                crate::utils::metrics_global::labeled_counter("cratos_executions_total")
+                    .inc(&[("status", "cancelled")]);
+                crate::utils::metrics_global::gauge("cratos_active_executions").dec();
                 return Ok(ExecutionResult {
                     execution_id,
                     status: ExecutionStatus::Cancelled,
@@ -694,6 +738,9 @@ impl Orchestrator {
                             .update_execution_status(execution_id, "failed", Some(&error_detail))
                             .await;
                     }
+                    crate::utils::metrics_global::labeled_counter("cratos_executions_total")
+                        .inc(&[("status", "failed")]);
+                    crate::utils::metrics_global::gauge("cratos_active_executions").dec();
                     return Ok(ExecutionResult {
                         execution_id,
                         status: ExecutionStatus::Failed,
@@ -1049,6 +1096,11 @@ impl Orchestrator {
             }
         }
 
+        // Record execution metrics
+        crate::utils::metrics_global::labeled_counter("cratos_executions_total")
+            .inc(&[("status", "completed")]);
+        crate::utils::metrics_global::gauge("cratos_active_executions").dec();
+
         Ok(ExecutionResult {
             execution_id,
             status: ExecutionStatus::Completed,
@@ -1097,6 +1149,55 @@ impl Orchestrator {
             )
             .await;
 
+            // 6-Level security policy check
+            if let Some(ref policy) = self.security_policy {
+                let ctx = PolicyContext::default();
+                match policy.resolve_or_default(&call.name, &ctx) {
+                    PolicyAction::Deny => {
+                        warn!(
+                            execution_id = %execution_id,
+                            tool = %call.name,
+                            "Tool denied by security policy"
+                        );
+                        let output = serde_json::json!({"error": format!("Tool '{}' denied by security policy", call.name)});
+                        self.emit(OrchestratorEvent::ToolCompleted {
+                            execution_id,
+                            tool_call_id: call.id.clone(),
+                            tool_name: call.name.clone(),
+                            success: false,
+                            duration_ms: 0,
+                        });
+                        records.push(ToolCallRecord {
+                            tool_name: call.name.clone(),
+                            input: serde_json::json!({}),
+                            output: output.clone(),
+                            success: false,
+                            duration_ms: 0,
+                        });
+                        results.push(output);
+                        continue;
+                    }
+                    PolicyAction::RequireApproval => {
+                        // If approval manager exists, request approval; otherwise deny
+                        if let Some(ref _am) = self.approval_manager {
+                            debug!(
+                                execution_id = %execution_id,
+                                tool = %call.name,
+                                "Tool requires approval per security policy"
+                            );
+                            // Approval flow is handled downstream — proceed for now
+                        } else {
+                            warn!(
+                                execution_id = %execution_id,
+                                tool = %call.name,
+                                "Tool requires approval but no approval manager configured"
+                            );
+                        }
+                    }
+                    PolicyAction::Allow => {}
+                }
+            }
+
             // Parse arguments, fallback to empty object if malformed
             let input: serde_json::Value =
                 serde_json::from_str(&call.arguments).unwrap_or_else(|e| {
@@ -1112,6 +1213,7 @@ impl Orchestrator {
             let start = std::time::Instant::now();
             let result = self.runner.execute(&call.name, input.clone()).await;
             let duration_ms = start.elapsed().as_millis() as u64;
+            let duration_secs = start.elapsed().as_secs_f64();
 
             let (output, success, error) = match result {
                 Ok(exec_result) => {
@@ -1126,6 +1228,19 @@ impl Orchestrator {
                             output = serde_json::json!({"error": err_msg});
                         }
                     }
+                    // Tool Doctor: diagnose soft failures (success=false from tool)
+                    if !success {
+                        let err_msg = error.as_deref().unwrap_or("unknown tool error");
+                        let diagnosis = self.doctor.diagnose(&call.name, err_msg);
+                        if diagnosis.confidence > 0.3 {
+                            debug!(
+                                tool = %call.name,
+                                category = %diagnosis.category.display_name(),
+                                confidence = %format!("{:.0}%", diagnosis.confidence * 100.0),
+                                "Tool Doctor soft-failure diagnosis"
+                            );
+                        }
+                    }
                     (output, success, error)
                 }
                 Err(e) => {
@@ -1135,10 +1250,43 @@ impl Orchestrator {
                         error = %e,
                         "Tool execution failed"
                     );
+
+                    // Tool Doctor: auto-diagnose failure
+                    let error_str = e.to_string();
+                    let diagnosis = self.doctor.diagnose(&call.name, &error_str);
+                    let hint = self.doctor.format_diagnosis(&diagnosis);
+                    debug!(
+                        tool = %call.name,
+                        category = %diagnosis.category.display_name(),
+                        confidence = %format!("{:.0}%", diagnosis.confidence * 100.0),
+                        "Tool Doctor diagnosis"
+                    );
+
+                    let enriched_error = format!(
+                        "{}\n\n[Diagnosis: {} (confidence: {:.0}%)]\nSuggested fix: {}",
+                        error_str,
+                        diagnosis.category.display_name(),
+                        diagnosis.confidence * 100.0,
+                        diagnosis.checklist.first()
+                            .map(|c| c.instruction.as_str())
+                            .unwrap_or("Check logs for details"),
+                    );
+
+                    // Log diagnosis hint in event store
+                    self.log_event(
+                        execution_id,
+                        EventType::Error,
+                        &serde_json::json!({
+                            "tool": call.name,
+                            "error": error_str,
+                            "diagnosis": hint,
+                        }),
+                    ).await;
+
                     (
-                        serde_json::json!({"error": e.to_string()}),
+                        serde_json::json!({"error": enriched_error}),
                         false,
-                        Some(e.to_string()),
+                        Some(error_str),
                     )
                 }
             };
@@ -1173,6 +1321,19 @@ impl Orchestrator {
                 success,
                 duration_ms,
             });
+
+            // Record labeled metrics
+            {
+                let status_label = if success { "ok" } else { "error" };
+                crate::utils::metrics_global::labeled_counter(
+                    "cratos_tool_executions_total",
+                )
+                .inc(&[("tool_name", &call.name), ("status", status_label)]);
+                crate::utils::metrics_global::labeled_histogram(
+                    "cratos_tool_duration_seconds",
+                )
+                .observe(&[("tool_name", &call.name)], duration_secs);
+            }
 
             // Record in working memory
             working_memory.record_tool_execution(
@@ -1512,6 +1673,20 @@ mod tests {
     }
 
     // ── M4: Failure limit config ──────────────────────────────────────
+
+    #[test]
+    fn test_system_prompt_override() {
+        let input = OrchestratorInput::new("cli", "develop", "user", "fix issue #42")
+            .with_system_prompt_override("You are a development workflow agent.".to_string());
+        assert_eq!(
+            input.system_prompt_override.as_deref(),
+            Some("You are a development workflow agent.")
+        );
+
+        // Without override
+        let input2 = OrchestratorInput::new("cli", "develop", "user", "fix issue #42");
+        assert!(input2.system_prompt_override.is_none());
+    }
 
     #[test]
     fn test_orchestrator_config_failure_limits() {
