@@ -36,6 +36,9 @@ toml = "0.8"
 # Home directory detection
 dirs = "5"
 
+# PTY-based bash execution
+pty-process = { version = "0.5", features = ["async"] }
+
 # Docker sandbox (bollard for Docker API)
 # bollard = "0.18"  # Enable when Docker sandbox is fully implemented
 

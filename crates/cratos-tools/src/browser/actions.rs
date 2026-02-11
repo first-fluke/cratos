@@ -392,7 +392,6 @@ impl BrowserAction {
             }
             Self::WaitForSelector { selector, timeout, .. } => {
                 let sel = serde_json::to_string(selector).unwrap();
-                let timeout = timeout;
                 format!(r#"
                     async () => {{
                         const selector = {};

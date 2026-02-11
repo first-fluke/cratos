@@ -113,6 +113,7 @@ fn test_tool_registry_with_builtins() {
         "http_get",
         "http_post",
         "exec",
+        "bash",
         "git_status",
         "git_commit",
         "git_branch",

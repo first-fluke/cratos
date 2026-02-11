@@ -9,6 +9,7 @@
 //! - Wake-on-LAN tool: wol
 //! - Config tool: config (natural language configuration)
 
+mod bash;
 mod config;
 pub mod config_manager;
 mod exec;
@@ -19,6 +20,7 @@ mod http;
 mod web_search;
 mod wol;
 
+pub use bash::{BashConfig, BashSecurityMode, BashTool};
 pub use config::{ConfigAction, ConfigInput, ConfigTarget, ConfigTool};
 pub use exec::{ExecConfig, ExecMode, ExecTool};
 pub use file::{FileListTool, FileReadTool, FileWriteTool};
@@ -40,6 +42,8 @@ pub struct BuiltinsConfig {
     pub wol_devices: HashMap<String, String>,
     /// Exec tool security configuration
     pub exec: ExecConfig,
+    /// Bash tool (PTY) security configuration
+    pub bash: BashConfig,
 }
 
 /// Register all built-in tools with the registry (default config)
@@ -82,6 +86,9 @@ pub fn register_builtins_with_config(registry: &mut ToolRegistry, config: &Built
 
     // Web search tool (DuckDuckGo, no API key required)
     registry.register(Arc::new(WebSearchTool::new()));
+
+    // Bash tool (PTY-based, full shell support)
+    registry.register(Arc::new(BashTool::with_config(config.bash.clone())));
 }
 
 #[cfg(test)]
@@ -109,6 +116,7 @@ mod tests {
         assert!(registry.has("wol"));
         assert!(registry.has("config"));
         assert!(registry.has("web_search"));
-        assert_eq!(registry.len(), 16);
+        assert!(registry.has("bash"));
+        assert_eq!(registry.len(), 17);
     }
 }

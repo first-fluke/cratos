@@ -893,7 +893,7 @@ impl BashTool {
         match result {
             Ok(Ok(status)) => {
                 let exit_code = status.code().unwrap_or(-1);
-                let success = status.success();
+                let success = status.success() || is_informational_exit(command, exit_code);
 
                 let mut output_json = serde_json::json!({
                     "stdout": sanitized,
@@ -1181,6 +1181,32 @@ impl Tool for BashTool {
 
         self.action_run(command, session_id, timeout_secs, cwd).await
     }
+}
+
+/// Commands where exit code 1 is informational (not an error).
+/// - grep/rg/ag: exit 1 = "no match found"
+/// - diff/cmp: exit 1 = "files differ"
+/// - test/[: exit 1 = "condition false"
+/// - which/command: exit 1 = "not found"
+/// - lsof: exit 1 = "no matches"
+const INFORMATIONAL_EXIT_COMMANDS: &[&str] = &[
+    "grep", "egrep", "fgrep", "rg", "ag",
+    "diff", "cmp",
+    "test", "[",
+    "which", "command",
+    "lsof",
+];
+
+/// Check if an exit code 1 is informational (not a real failure) for the given command.
+fn is_informational_exit(command: &str, exit_code: i32) -> bool {
+    if exit_code != 1 {
+        return false;
+    }
+    // Check the last segment of a pipeline (e.g., `ps aux | grep node` → check `grep`)
+    let last_segment = command.split('|').last().unwrap_or(command).trim();
+    let first_cmd = last_segment.split_whitespace().next().unwrap_or("");
+    let base = first_cmd.rsplit('/').next().unwrap_or(first_cmd);
+    INFORMATIONAL_EXIT_COMMANDS.iter().any(|c| base == *c)
 }
 
 /// H3: Check if a string contains shell glob metacharacters.
@@ -1818,6 +1844,49 @@ mod tests {
     }
 
     // ── M1: Base64 masking ─────────────────────────────────────────────
+
+    // ── Informational exit code 1 ──────────────────────────────────
+
+    #[test]
+    fn test_informational_exit_codes() {
+        // grep exit 1 = no match → informational
+        assert!(is_informational_exit("grep pattern file.txt", 1));
+        // Pipeline: last command is grep
+        assert!(is_informational_exit("ps aux | grep nonexistent", 1));
+        // diff exit 1 = files differ → informational
+        assert!(is_informational_exit("diff a.txt b.txt", 1));
+        // lsof exit 1 = no matches
+        assert!(is_informational_exit("lsof -i :99999", 1));
+        // rg exit 1 = no match
+        assert!(is_informational_exit("rg pattern", 1));
+        // test/[ exit 1 = condition false
+        assert!(is_informational_exit("test -f /nonexistent", 1));
+        // which exit 1 = not found
+        assert!(is_informational_exit("which nonexistent_binary", 1));
+        // Full path
+        assert!(is_informational_exit("/usr/bin/grep pattern", 1));
+        // Exit code != 1 → NOT informational
+        assert!(!is_informational_exit("grep pattern", 2));
+        assert!(!is_informational_exit("grep pattern", 0));
+        // Non-informational command with exit 1 → NOT informational
+        assert!(!is_informational_exit("ls /nonexistent", 1));
+        assert!(!is_informational_exit("cat missing_file", 1));
+    }
+
+    #[tokio::test]
+    async fn test_grep_no_match_is_success() {
+        let tool = BashTool::new();
+        let result = tool
+            .execute(serde_json::json!({
+                "command": "echo 'hello world' | grep nonexistent_string_xyz"
+            }))
+            .await;
+        assert!(result.is_ok());
+        let tr = result.unwrap();
+        // grep exit 1 (no match) should be treated as success
+        assert!(tr.success, "grep no-match should be success, got: {:?}", tr);
+        assert_eq!(tr.output["exit_code"], 1);
+    }
 
     #[test]
     fn test_base64_masking() {
