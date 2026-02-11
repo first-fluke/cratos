@@ -561,12 +561,15 @@ impl BashTool {
                             "Variable expansion in redirection target is not allowed".into(),
                         ));
                     }
-                    for blocked in &self.config.blocked_paths {
-                        if target.starts_with(blocked.as_str()) {
-                            return Err(Error::PermissionDenied(format!(
-                                "Redirection to restricted path '{}' blocked",
-                                target
-                            )));
+                    // Allow /dev/null (safe discard target) even though /dev is blocked
+                    if target != "/dev/null" {
+                        for blocked in &self.config.blocked_paths {
+                            if target.starts_with(blocked.as_str()) {
+                                return Err(Error::PermissionDenied(format!(
+                                    "Redirection to restricted path '{}' blocked",
+                                    target
+                                )));
+                            }
                         }
                     }
                 }
@@ -1674,6 +1677,9 @@ mod tests {
         assert!(tool.analyze_pipeline("echo x > /etc/passwd").is_err());
         assert!(tool.analyze_pipeline("echo x >> /root/.bashrc").is_err());
         assert!(tool.analyze_pipeline("echo x > /tmp/safe.txt").is_ok());
+        // /dev/null is safe even though /dev is blocked
+        assert!(tool.analyze_pipeline("ls 2>/dev/null").is_ok());
+        assert!(tool.analyze_pipeline("echo x > /dev/null").is_ok());
     }
 
     #[test]
