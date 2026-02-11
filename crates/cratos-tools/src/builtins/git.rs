@@ -778,6 +778,337 @@ impl Tool for GitPushTool {
     }
 }
 
+// ============================================================================
+// Git Clone Tool
+// ============================================================================
+
+/// Tool for cloning git repositories
+pub struct GitCloneTool {
+    definition: ToolDefinition,
+}
+
+impl GitCloneTool {
+    /// Create a new git clone tool
+    #[must_use]
+    pub fn new() -> Self {
+        let definition = ToolDefinition::new("git_clone", "Clone a git repository")
+            .with_category(ToolCategory::Utility)
+            .with_risk_level(RiskLevel::Medium)
+            .with_parameters(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Repository URL (https://, git://, or ssh:// protocol)"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Local path to clone into"
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Branch to checkout after cloning"
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "Shallow clone depth (0 = full clone)",
+                        "default": 0
+                    }
+                },
+                "required": ["url"]
+            }));
+
+        Self { definition }
+    }
+}
+
+impl Default for GitCloneTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Validate a git clone URL for security
+fn is_valid_clone_url(url: &str) -> bool {
+    // Must start with a safe protocol
+    let safe_protocols = ["https://", "git://", "ssh://", "git@"];
+    if !safe_protocols.iter().any(|p| url.starts_with(p)) {
+        return false;
+    }
+
+    // Block shell injection characters
+    let dangerous_chars = ['`', '$', '|', ';', '&', '>', '<', '\n', '\r', '\0', '\'', '"'];
+    if url.chars().any(|c| dangerous_chars.contains(&c)) {
+        return false;
+    }
+
+    // Block javascript: and other dangerous pseudo-protocols
+    let lower = url.to_lowercase();
+    if lower.starts_with("javascript:") || lower.starts_with("data:") {
+        return false;
+    }
+
+    true
+}
+
+/// Validate a local path for security (no path traversal)
+fn is_valid_clone_path(path: &str) -> bool {
+    if path.is_empty() || path.len() > 4096 {
+        return false;
+    }
+
+    // Block path traversal
+    if path.contains("..") {
+        return false;
+    }
+
+    // Block shell injection characters
+    let dangerous_chars = ['`', '$', '|', ';', '&', '>', '<', '\n', '\r', '\0'];
+    if path.chars().any(|c| dangerous_chars.contains(&c)) {
+        return false;
+    }
+
+    true
+}
+
+#[async_trait::async_trait]
+impl Tool for GitCloneTool {
+    fn definition(&self) -> &ToolDefinition {
+        &self.definition
+    }
+
+    async fn execute(&self, input: serde_json::Value) -> Result<ToolResult> {
+        let start = Instant::now();
+
+        let url = input
+            .get("url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::InvalidInput("Missing 'url' parameter".to_string()))?;
+
+        // SECURITY: Validate URL
+        if !is_valid_clone_url(url) {
+            return Err(Error::InvalidInput(
+                "Invalid or unsafe repository URL: only https://, git://, ssh:// protocols allowed".to_string()
+            ));
+        }
+
+        let path = input.get("path").and_then(|v| v.as_str());
+        let branch = input.get("branch").and_then(|v| v.as_str());
+        let depth = input
+            .get("depth")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        // SECURITY: Validate path if provided
+        if let Some(p) = path {
+            if !is_valid_clone_path(p) {
+                return Err(Error::InvalidInput(
+                    "Invalid clone path: path traversal or special characters not allowed".to_string(),
+                ));
+            }
+        }
+
+        // SECURITY: Validate branch name if provided
+        if let Some(b) = branch {
+            if !is_valid_branch_name(b) {
+                return Err(Error::InvalidInput(format!(
+                    "Invalid branch name: {}", b
+                )));
+            }
+        }
+
+        debug!(url = %url, path = ?path, branch = ?branch, depth = %depth, "Cloning git repository");
+
+        let mut cmd = Command::new("git");
+        cmd.arg("clone");
+
+        if depth > 0 {
+            cmd.arg("--depth");
+            cmd.arg(depth.to_string());
+        }
+
+        if let Some(b) = branch {
+            cmd.arg("--branch");
+            cmd.arg(b);
+        }
+
+        cmd.arg(url);
+
+        if let Some(p) = path {
+            cmd.arg(p);
+        }
+
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| Error::Execution(format!("Failed to run git clone: {}", e)))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        let duration = start.elapsed().as_millis() as u64;
+
+        if output.status.success() {
+            Ok(ToolResult::success(
+                serde_json::json!({
+                    "success": true,
+                    "url": url,
+                    "path": path,
+                    "branch": branch,
+                    "output": format!("{}{}", stdout, stderr)
+                }),
+                duration,
+            ))
+        } else {
+            // SECURITY: Sanitize error (don't leak URLs with tokens)
+            let sanitized = if stderr.contains("http") || stderr.contains("@") {
+                "git clone failed: authentication or remote error".to_string()
+            } else {
+                format!("git clone failed: {}", stderr)
+            };
+            Ok(ToolResult::failure(sanitized, duration))
+        }
+    }
+}
+
+// ============================================================================
+// Git Log Tool
+// ============================================================================
+
+/// Tool for viewing git commit history
+pub struct GitLogTool {
+    definition: ToolDefinition,
+}
+
+impl GitLogTool {
+    /// Create a new git log tool
+    #[must_use]
+    pub fn new() -> Self {
+        let definition = ToolDefinition::new("git_log", "View git commit history")
+            .with_category(ToolCategory::Utility)
+            .with_risk_level(RiskLevel::Low)
+            .with_parameters(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the git repository (default: current directory)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of commits to show",
+                        "default": 10
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["oneline", "medium"],
+                        "description": "Output format",
+                        "default": "oneline"
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Branch to show history for"
+                    }
+                }
+            }));
+
+        Self { definition }
+    }
+}
+
+impl Default for GitLogTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait::async_trait]
+impl Tool for GitLogTool {
+    fn definition(&self) -> &ToolDefinition {
+        &self.definition
+    }
+
+    async fn execute(&self, input: serde_json::Value) -> Result<ToolResult> {
+        let start = Instant::now();
+
+        let path = input.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+
+        let limit = input
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(10)
+            .min(100); // Cap at 100
+
+        let format = input
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("oneline");
+
+        let branch = input.get("branch").and_then(|v| v.as_str());
+
+        // SECURITY: Validate branch name if provided
+        if let Some(b) = branch {
+            if !is_valid_branch_name(b) {
+                return Err(Error::InvalidInput(format!(
+                    "Invalid branch name: {}", b
+                )));
+            }
+        }
+
+        debug!(path = %path, limit = %limit, format = %format, "Getting git log");
+
+        let mut cmd = Command::new("git");
+        cmd.arg("log");
+
+        let fmt_arg = match format {
+            "medium" => "--format=medium",
+            _ => "--format=%h %s (%an, %ar)",
+        };
+        cmd.arg(fmt_arg);
+
+        cmd.arg(format!("-n{}", limit));
+
+        if let Some(b) = branch {
+            cmd.arg(b);
+        }
+
+        cmd.current_dir(path);
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| Error::Execution(format!("Failed to run git log: {}", e)))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        let duration = start.elapsed().as_millis() as u64;
+
+        if output.status.success() {
+            let commits: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+            Ok(ToolResult::success(
+                serde_json::json!({
+                    "commits": commits,
+                    "count": commits.len(),
+                    "branch": branch,
+                    "format": format
+                }),
+                duration,
+            ))
+        } else {
+            Ok(ToolResult::failure(
+                format!("git log failed: {}", stderr),
+                duration,
+            ))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -898,6 +1229,120 @@ mod tests {
         let result = tool
             .execute(serde_json::json!({
                 "remote": "-f origin"
+            }))
+            .await;
+        assert!(result.is_err());
+    }
+
+    // Git Clone tests
+
+    #[test]
+    fn test_git_clone_definition() {
+        let tool = GitCloneTool::new();
+        let def = tool.definition();
+
+        assert_eq!(def.name, "git_clone");
+        assert_eq!(def.risk_level, RiskLevel::Medium);
+        assert_eq!(def.category, ToolCategory::Utility);
+    }
+
+    #[tokio::test]
+    async fn test_git_clone_missing_url() {
+        let tool = GitCloneTool::new();
+        let result = tool.execute(serde_json::json!({})).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_git_clone_rejects_invalid_url() {
+        let tool = GitCloneTool::new();
+
+        // javascript: protocol
+        let result = tool
+            .execute(serde_json::json!({"url": "javascript:alert(1)"}))
+            .await;
+        assert!(result.is_err());
+
+        // Shell injection in URL
+        let result = tool
+            .execute(serde_json::json!({"url": "https://evil.com/$(whoami)"}))
+            .await;
+        assert!(result.is_err());
+
+        // No protocol
+        let result = tool
+            .execute(serde_json::json!({"url": "ftp://example.com/repo.git"}))
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_git_clone_rejects_path_traversal() {
+        let tool = GitCloneTool::new();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "url": "https://github.com/user/repo.git",
+                "path": "../../etc/passwd"
+            }))
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_valid_clone_urls() {
+        assert!(is_valid_clone_url("https://github.com/user/repo.git"));
+        assert!(is_valid_clone_url("git://github.com/user/repo.git"));
+        assert!(is_valid_clone_url("ssh://git@github.com/user/repo.git"));
+        assert!(is_valid_clone_url("git@github.com:user/repo.git"));
+
+        // Invalid protocols
+        assert!(!is_valid_clone_url("javascript:alert(1)"));
+        assert!(!is_valid_clone_url("data:text/html,<script>"));
+        assert!(!is_valid_clone_url("ftp://example.com/repo"));
+
+        // Shell injection
+        assert!(!is_valid_clone_url("https://example.com/$(whoami)"));
+        assert!(!is_valid_clone_url("https://example.com/`id`"));
+        assert!(!is_valid_clone_url("https://example.com/;rm -rf /"));
+    }
+
+    #[test]
+    fn test_valid_clone_paths() {
+        assert!(is_valid_clone_path("/tmp/myrepo"));
+        assert!(is_valid_clone_path("repos/project"));
+
+        // Path traversal
+        assert!(!is_valid_clone_path("../../etc"));
+        assert!(!is_valid_clone_path("foo/../bar"));
+
+        // Shell injection
+        assert!(!is_valid_clone_path("repo;rm -rf /"));
+        assert!(!is_valid_clone_path("repo`id`"));
+
+        // Empty / too long
+        assert!(!is_valid_clone_path(""));
+    }
+
+    // Git Log tests
+
+    #[test]
+    fn test_git_log_definition() {
+        let tool = GitLogTool::new();
+        let def = tool.definition();
+
+        assert_eq!(def.name, "git_log");
+        assert_eq!(def.risk_level, RiskLevel::Low);
+        assert_eq!(def.category, ToolCategory::Utility);
+    }
+
+    #[tokio::test]
+    async fn test_git_log_rejects_invalid_branch() {
+        let tool = GitLogTool::new();
+
+        let result = tool
+            .execute(serde_json::json!({
+                "branch": "-flag-injection"
             }))
             .await;
         assert!(result.is_err());

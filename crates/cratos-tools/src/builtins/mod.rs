@@ -24,7 +24,7 @@ pub use bash::{BashConfig, BashSecurityMode, BashTool};
 pub use config::{ConfigAction, ConfigInput, ConfigTarget, ConfigTool};
 pub use exec::{ExecConfig, ExecMode, ExecTool};
 pub use file::{FileListTool, FileReadTool, FileWriteTool};
-pub use git::{GitBranchTool, GitCommitTool, GitDiffTool, GitPushTool, GitStatusTool};
+pub use git::{GitBranchTool, GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPushTool, GitStatusTool};
 pub use github::GitHubApiTool;
 pub use http::{HttpGetTool, HttpPostTool};
 pub use web_search::WebSearchTool;
@@ -72,6 +72,10 @@ pub fn register_builtins_with_config(registry: &mut ToolRegistry, config: &Built
     registry.register(Arc::new(GitDiffTool::new()));
     registry.register(Arc::new(GitPushTool::new()));
 
+    // Git clone and log tools
+    registry.register(Arc::new(GitCloneTool::new()));
+    registry.register(Arc::new(GitLogTool::new()));
+
     // GitHub API tool
     registry.register(Arc::new(GitHubApiTool::new()));
 
@@ -117,6 +121,8 @@ mod tests {
         assert!(registry.has("config"));
         assert!(registry.has("web_search"));
         assert!(registry.has("bash"));
-        assert_eq!(registry.len(), 17);
+        assert!(registry.has("git_clone"));
+        assert!(registry.has("git_log"));
+        assert_eq!(registry.len(), 19);
     }
 }

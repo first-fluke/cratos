@@ -1203,10 +1203,10 @@ fn is_informational_exit(command: &str, exit_code: i32) -> bool {
         return false;
     }
     // Check the last segment of a pipeline (e.g., `ps aux | grep node` → check `grep`)
-    let last_segment = command.split('|').last().unwrap_or(command).trim();
+    let last_segment = command.split('|').next_back().unwrap_or(command).trim();
     let first_cmd = last_segment.split_whitespace().next().unwrap_or("");
     let base = first_cmd.rsplit('/').next().unwrap_or(first_cmd);
-    INFORMATIONAL_EXIT_COMMANDS.iter().any(|c| base == *c)
+    INFORMATIONAL_EXIT_COMMANDS.contains(&base)
 }
 
 /// H3: Check if a string contains shell glob metacharacters.
