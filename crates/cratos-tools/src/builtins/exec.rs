@@ -96,6 +96,21 @@ pub enum ExecMode {
     Strict,
 }
 
+/// Execution host target
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecHost {
+    /// Execute on the local machine (default)
+    Local,
+    /// Execute inside a Docker sandbox container
+    Sandbox,
+}
+
+impl Default for ExecHost {
+    fn default() -> Self {
+        Self::Local
+    }
+}
+
 /// Configuration for exec tool security
 #[derive(Debug, Clone)]
 pub struct ExecConfig {
@@ -111,6 +126,12 @@ pub struct ExecConfig {
     pub blocked_paths: Vec<String>,
     /// Allow network commands (curl, wget, etc.). Default: false.
     pub allow_network_commands: bool,
+    /// Docker image for sandbox execution
+    pub sandbox_image: String,
+    /// Memory limit for sandbox containers (e.g. "256m")
+    pub sandbox_memory_limit: String,
+    /// CPU limit for sandbox containers (e.g. "1.0")
+    pub sandbox_cpu_limit: String,
 }
 
 impl Default for ExecConfig {
@@ -122,6 +143,9 @@ impl Default for ExecConfig {
             allowed_commands: Vec::new(),
             blocked_paths: DEFAULT_BLOCKED_PATHS.iter().map(|s| (*s).to_string()).collect(),
             allow_network_commands: false,
+            sandbox_image: "alpine:latest".to_string(),
+            sandbox_memory_limit: "256m".to_string(),
+            sandbox_cpu_limit: "1.0".to_string(),
         }
     }
 }
@@ -176,6 +200,11 @@ impl ExecTool {
                     "timeout_secs": {
                         "type": "integer",
                         "description": timeout_desc
+                    },
+                    "host": {
+                        "type": "string",
+                        "enum": ["local", "sandbox"],
+                        "description": "Execution target: 'local' (default) runs on the host, 'sandbox' runs in an isolated Docker container"
                     }
                 },
                 "required": ["command"]
@@ -337,17 +366,46 @@ impl Tool for ExecTool {
             .unwrap_or(max_timeout)
             .min(max_timeout);
 
-        debug!(command = %command, args = ?args, "Executing command");
+        // Parse execution host
+        let host = match input.get("host").and_then(|v| v.as_str()) {
+            Some("sandbox") => ExecHost::Sandbox,
+            _ => ExecHost::Local,
+        };
 
-        // Build the command
-        let mut cmd = Command::new(command);
-        cmd.args(&args);
+        debug!(command = %command, args = ?args, host = ?host, "Executing command");
+
+        // Build the command based on execution host
+        let mut cmd = match host {
+            ExecHost::Local => {
+                let mut c = Command::new(command);
+                c.args(&args);
+                if let Some(dir) = cwd {
+                    c.current_dir(dir);
+                }
+                c
+            }
+            ExecHost::Sandbox => {
+                let mut c = Command::new("docker");
+                c.arg("run")
+                    .arg("--rm")
+                    .arg("--network=none")             // No network access
+                    .arg("--read-only")                 // Read-only root filesystem
+                    .arg("--tmpfs=/tmp:rw,noexec,nosuid,size=64m")
+                    .arg(format!("--memory={}", self.config.sandbox_memory_limit))
+                    .arg(format!("--cpus={}", self.config.sandbox_cpu_limit))
+                    .arg("--pids-limit=64")
+                    .arg("--security-opt=no-new-privileges");
+                if let Some(dir) = cwd {
+                    c.arg("-w").arg(dir);
+                }
+                c.arg(&self.config.sandbox_image)
+                    .arg(command)
+                    .args(&args);
+                c
+            }
+        };
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
-
-        if let Some(dir) = cwd {
-            cmd.current_dir(dir);
-        }
 
         // Execute with timeout
         let child = cmd.spawn().map_err(|e| {
