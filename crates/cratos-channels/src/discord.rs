@@ -5,16 +5,20 @@
 use crate::error::{Error, Result};
 use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingMessage};
 use crate::util::{mask_for_logging, sanitize_error_for_user, DISCORD_MESSAGE_LIMIT};
+use cratos_core::event_bus::OrchestratorEvent;
 use cratos_core::{Orchestrator, OrchestratorInput};
 use serde::Deserialize;
 use serenity::all::{
-    ChannelId, Client, Context, CreateMessage, EditMessage, EventHandler, GatewayIntents, Message,
-    MessageId, MessageReference, Ready,
+    ButtonStyle, ChannelId, Client, Command, CommandInteraction, CommandOptionType,
+    ComponentInteraction, Context, CreateActionRow, CreateButton, CreateCommand,
+    CreateCommandOption, CreateEmbed, CreateInteractionResponse,
+    CreateInteractionResponseMessage, CreateMessage, EditMessage, EventHandler,
+    GatewayIntents, Interaction, Message, MessageId, MessageReference, Ready,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 /// Discord bot configuration
 #[derive(Debug, Clone, Deserialize)]
@@ -30,6 +34,16 @@ pub struct DiscordConfig {
     /// Whether to require @mention in guild channels
     #[serde(default = "default_true")]
     pub require_mention: bool,
+    /// DM policy: "open" (default) | "disabled"
+    #[serde(default = "default_dm_open")]
+    pub dm_policy: String,
+    /// Notification channel ID for EventBus alerts (approval requests, failures)
+    #[serde(default)]
+    pub notify_channel_id: Option<u64>,
+}
+
+fn default_dm_open() -> String {
+    "open".to_string()
 }
 
 fn default_true() -> bool {
@@ -64,11 +78,19 @@ impl DiscordConfig {
             .map(|s| s != "false" && s != "0")
             .unwrap_or(true);
 
+        let dm_policy = std::env::var("DISCORD_DM_POLICY").unwrap_or_else(|_| "open".to_string());
+
+        let notify_channel_id: Option<u64> = std::env::var("DISCORD_NOTIFY_CHANNEL_ID")
+            .ok()
+            .and_then(|s| s.trim().parse().ok());
+
         Ok(Self {
             bot_token,
             allowed_guilds,
             allowed_channels,
             require_mention,
+            dm_policy,
+            notify_channel_id,
         })
     }
 
@@ -80,6 +102,8 @@ impl DiscordConfig {
             allowed_guilds: Vec::new(),
             allowed_channels: Vec::new(),
             require_mention: true,
+            dm_policy: "open".to_string(),
+            notify_channel_id: None,
         }
     }
 
@@ -154,7 +178,7 @@ impl DiscordAdapter {
             | GatewayIntents::DIRECT_MESSAGES
             | GatewayIntents::MESSAGE_CONTENT;
 
-        let handler = DiscordHandler::new(self.clone(), orchestrator);
+        let handler = DiscordHandler::new(self.clone(), orchestrator.clone());
 
         let mut client = Client::builder(&self.config.bot_token, intents)
             .event_handler(handler)
@@ -165,6 +189,70 @@ impl DiscordAdapter {
         {
             let mut http_guard = self.http.write().await;
             *http_guard = Some(client.http.clone());
+        }
+
+        // Spawn EventBus listener for approval/failure notifications
+        if let (Some(notify_ch), Some(bus)) = (
+            self.config.notify_channel_id,
+            orchestrator.event_bus().cloned(),
+        ) {
+            let http_for_events = client.http.clone();
+            let channel_id = ChannelId::new(notify_ch);
+            let mut rx = bus.subscribe();
+            let orch_for_events = orchestrator.clone();
+            tokio::spawn(async move {
+                loop {
+                    match rx.recv().await {
+                        Ok(OrchestratorEvent::ApprovalRequired {
+                            execution_id,
+                            request_id,
+                        }) => {
+                            let embed = CreateEmbed::new()
+                                .title("Approval Required")
+                                .description(format!("Execution `{}` requires approval.", execution_id))
+                                .field("Request ID", request_id.to_string(), true)
+                                .color(0xffaa00);
+                            let approve_btn = CreateButton::new(format!("approve:{}", request_id))
+                                .label("Approve")
+                                .style(ButtonStyle::Success);
+                            let deny_btn = CreateButton::new(format!("deny:{}", request_id))
+                                .label("Deny")
+                                .style(ButtonStyle::Danger);
+                            let row = CreateActionRow::Buttons(vec![approve_btn, deny_btn]);
+                            let msg = CreateMessage::new()
+                                .embed(embed)
+                                .components(vec![row]);
+                            if let Err(e) = channel_id.send_message(&http_for_events, msg).await {
+                                warn!(error = %e, "Failed to send approval notification to Discord");
+                            }
+                        }
+                        Ok(OrchestratorEvent::ExecutionFailed {
+                            execution_id,
+                            error,
+                        }) => {
+                            let embed = CreateEmbed::new()
+                                .title("Execution Failed")
+                                .description(format!("Execution `{}` failed.", execution_id))
+                                .field("Error", &error, false)
+                                .color(0xff0000);
+                            let msg = CreateMessage::new().embed(embed);
+                            if let Err(e) = channel_id.send_message(&http_for_events, msg).await {
+                                warn!(error = %e, "Failed to send failure notification to Discord");
+                            }
+                        }
+                        Ok(_) => {} // Ignore other events
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("Discord EventBus listener lagged by {} events", n);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            info!("Discord EventBus channel closed, stopping listener");
+                            break;
+                        }
+                    }
+                }
+                let _ = orch_for_events; // keep orchestrator alive
+            });
+            info!("Discord EventBus notification listener started (channel: {})", notify_ch);
         }
 
         client
@@ -187,6 +275,13 @@ impl DiscordAdapter {
         let channel_id = msg.channel_id.get();
         let user_id = msg.author.id.get();
         let guild_id = msg.guild_id.map(|g| g.get());
+
+        // DM policy check: if guild_id is None, the message is a DM
+        let is_dm = guild_id.is_none();
+        if is_dm && self.config.dm_policy == "disabled" {
+            debug!(user_id = %user_id, "DM rejected by dm_policy=disabled");
+            return None;
+        }
 
         // Check permissions
         if let Some(gid) = guild_id {
@@ -373,7 +468,7 @@ impl DiscordHandler {
 
 #[serenity::async_trait]
 impl EventHandler for DiscordHandler {
-    async fn ready(&self, _ctx: Context, ready: Ready) {
+    async fn ready(&self, ctx: Context, ready: Ready) {
         let discriminator = ready
             .user
             .discriminator
@@ -388,6 +483,75 @@ impl EventHandler for DiscordHandler {
         self.adapter
             .bot_user_id
             .store(ready.user.id.get(), Ordering::SeqCst);
+
+        // Register global slash commands
+        let commands = vec![
+            CreateCommand::new("status").description("Show system status"),
+            CreateCommand::new("sessions").description("List active AI sessions"),
+            CreateCommand::new("tools").description("List available tools"),
+            CreateCommand::new("cancel")
+                .description("Cancel an execution")
+                .add_option(
+                    CreateCommandOption::new(
+                        CommandOptionType::String,
+                        "id",
+                        "Execution ID to cancel",
+                    )
+                    .required(true),
+                ),
+            CreateCommand::new("approve")
+                .description("Approve a pending request")
+                .add_option(
+                    CreateCommandOption::new(
+                        CommandOptionType::String,
+                        "id",
+                        "Request ID to approve",
+                    )
+                    .required(true),
+                ),
+        ];
+
+        match Command::set_global_commands(&ctx.http, commands).await {
+            Ok(cmds) => info!("Registered {} Discord slash commands", cmds.len()),
+            Err(e) => error!(error = %e, "Failed to register Discord slash commands"),
+        }
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        match interaction {
+            Interaction::Command(command) => {
+                let response = match command.data.name.as_str() {
+                    "status" => {
+                        let embed = self.status_embed();
+                        CreateInteractionResponseMessage::new().embed(embed)
+                    }
+                    "sessions" => {
+                        CreateInteractionResponseMessage::new().content(self.handle_sessions())
+                    }
+                    "tools" => {
+                        CreateInteractionResponseMessage::new().content(self.handle_tools())
+                    }
+                    "cancel" => {
+                        let id = get_string_option(&command, "id").unwrap_or_default();
+                        CreateInteractionResponseMessage::new().content(self.handle_cancel(&id))
+                    }
+                    "approve" => {
+                        let id = get_string_option(&command, "id").unwrap_or_default();
+                        CreateInteractionResponseMessage::new().content(self.handle_approve(&id))
+                    }
+                    _ => CreateInteractionResponseMessage::new().content("Unknown command"),
+                };
+
+                let builder = CreateInteractionResponse::Message(response);
+                if let Err(e) = command.create_response(&ctx.http, builder).await {
+                    error!(error = %e, "Failed to respond to slash command");
+                }
+            }
+            Interaction::Component(component) => {
+                self.handle_component(&ctx, &component).await;
+            }
+            _ => {}
+        }
     }
 
     async fn message(&self, ctx: Context, msg: Message) {
@@ -453,6 +617,112 @@ impl EventHandler for DiscordHandler {
     }
 }
 
+impl DiscordHandler {
+    /// Build a rich embed for the /status command
+    fn status_embed(&self) -> CreateEmbed {
+        let count = self.orchestrator.active_execution_count().unwrap_or(0);
+        let provider = self.orchestrator.provider_name().to_string();
+        let color = if count == 0 { 0x00ff00 } else { 0xffaa00 };
+        CreateEmbed::new()
+            .title("Cratos Status")
+            .field("Active Executions", count.to_string(), true)
+            .field("Provider", provider, true)
+            .color(color)
+    }
+
+    /// Handle button (component) interactions from approval/deny embeds
+    async fn handle_component(&self, ctx: &Context, component: &ComponentInteraction) {
+        let custom_id = &component.data.custom_id;
+        let response_text = if let Some(id) = custom_id.strip_prefix("approve:") {
+            self.handle_approve(id)
+        } else if let Some(id) = custom_id.strip_prefix("deny:") {
+            format!("Request `{}` denied.", id)
+        } else {
+            "Unknown action.".to_string()
+        };
+
+        let builder = CreateInteractionResponse::Message(
+            CreateInteractionResponseMessage::new()
+                .content(response_text)
+                .ephemeral(true),
+        );
+        if let Err(e) = component.create_response(&ctx.http, builder).await {
+            error!(error = %e, "Failed to respond to component interaction");
+        }
+    }
+
+    fn handle_sessions(&self) -> String {
+        let count = self
+            .orchestrator
+            .active_execution_count()
+            .unwrap_or(0);
+        if count == 0 {
+            "No active sessions.".to_string()
+        } else {
+            format!("{} active session(s) running.", count)
+        }
+    }
+
+    fn handle_tools(&self) -> String {
+        let tools = self.orchestrator.list_tool_names();
+        if tools.is_empty() {
+            "No tools available.".to_string()
+        } else {
+            format!(
+                "**Available tools ({}):**\n{}",
+                tools.len(),
+                tools.join(", ")
+            )
+        }
+    }
+
+    fn handle_cancel(&self, id: &str) -> String {
+        if id.is_empty() {
+            return "Please provide an execution ID.".to_string();
+        }
+        match uuid::Uuid::parse_str(id) {
+            Ok(execution_id) => {
+                if self.orchestrator.cancel_execution(execution_id) {
+                    format!("Execution `{}` cancelled.", id)
+                } else {
+                    format!("Execution `{}` not found or already completed.", id)
+                }
+            }
+            Err(_) => "Invalid execution ID format.".to_string(),
+        }
+    }
+
+    fn handle_approve(&self, id: &str) -> String {
+        if id.is_empty() {
+            return "Please provide a request ID.".to_string();
+        }
+        let request_id = match uuid::Uuid::parse_str(id) {
+            Ok(uid) => uid,
+            Err(_) => return "Invalid request ID format.".to_string(),
+        };
+        match self.orchestrator.approval_manager() {
+            Some(mgr) => {
+                let mgr_clone = mgr.clone();
+                tokio::spawn(async move {
+                    mgr_clone.approve_by(request_id, "discord").await;
+                });
+                format!("Approval request `{}` processed.", id)
+            }
+            None => "Approval manager not configured.".to_string(),
+        }
+    }
+}
+
+/// Extract a string option from a slash command interaction
+fn get_string_option(command: &CommandInteraction, name: &str) -> Option<String> {
+    command
+        .data
+        .options
+        .iter()
+        .find(|o| o.name == name)
+        .and_then(|o| o.value.as_str().map(|s| s.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,6 +756,32 @@ mod tests {
         assert!(adapter.is_guild_allowed(123));
         assert!(adapter.is_guild_allowed(999999));
         assert!(adapter.is_channel_allowed(123));
+    }
+
+    #[test]
+    fn test_dm_policy_default_open() {
+        let config = DiscordConfig::new("token");
+        assert_eq!(config.dm_policy, "open");
+        assert!(config.notify_channel_id.is_none());
+    }
+
+    #[test]
+    fn test_component_custom_id_parsing() {
+        let approve_id = "approve:550e8400-e29b-41d4-a716-446655440000";
+        assert_eq!(
+            approve_id.strip_prefix("approve:"),
+            Some("550e8400-e29b-41d4-a716-446655440000")
+        );
+
+        let deny_id = "deny:550e8400-e29b-41d4-a716-446655440000";
+        assert_eq!(
+            deny_id.strip_prefix("deny:"),
+            Some("550e8400-e29b-41d4-a716-446655440000")
+        );
+
+        let unknown = "unknown:something";
+        assert!(unknown.strip_prefix("approve:").is_none());
+        assert!(unknown.strip_prefix("deny:").is_none());
     }
 
     // Note: mask_for_logging and sanitize_error_for_user tests are in util.rs

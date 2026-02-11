@@ -647,6 +647,10 @@ impl TelegramAdapter {
             &normalized.text,
         );
 
+        // Record channel message metric
+        cratos_core::metrics_global::labeled_counter("cratos_channel_messages_total")
+            .inc(&[("channel_type", "telegram")]);
+
         match orchestrator.process(input).await {
             Ok(result) => {
                 // Cancel progress listener
