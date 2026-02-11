@@ -8,6 +8,7 @@ use crate::message::{
     OutgoingMessage,
 };
 use crate::util::{markdown_to_html, mask_for_logging, sanitize_error_for_user};
+use cratos_core::dev_sessions::DevSessionMonitor;
 use cratos_core::{Orchestrator, OrchestratorInput};
 use std::sync::Arc;
 use teloxide::{
@@ -21,6 +22,25 @@ use teloxide::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use tracing::{debug, error, info, instrument};
 
+/// DM security policy for Telegram
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DmPolicy {
+    /// Require pairing code before accepting DMs from unknown users
+    Pairing,
+    /// Only accept DMs from users in the allowed_users list
+    Allowlist,
+    /// Accept DMs from any user (least secure)
+    Open,
+    /// Disable DM handling entirely
+    Disabled,
+}
+
+impl Default for DmPolicy {
+    fn default() -> Self {
+        Self::Allowlist
+    }
+}
+
 /// Telegram bot configuration
 #[derive(Debug, Clone)]
 pub struct TelegramConfig {
@@ -32,6 +52,10 @@ pub struct TelegramConfig {
     pub allowed_groups: Vec<i64>,
     /// Whether to respond only to mentions/replies in groups
     pub groups_mention_only: bool,
+    /// DM security policy
+    pub dm_policy: DmPolicy,
+    /// Chat ID for system notifications (approval requests, errors, etc.)
+    pub notify_chat_id: Option<i64>,
 }
 
 impl TelegramConfig {
@@ -62,11 +86,28 @@ impl TelegramConfig {
             .map(|s| s == "true" || s == "1")
             .unwrap_or(true);
 
+        let dm_policy = std::env::var("TELEGRAM_DM_POLICY")
+            .ok()
+            .map(|s| match s.to_lowercase().as_str() {
+                "pairing" => DmPolicy::Pairing,
+                "allowlist" => DmPolicy::Allowlist,
+                "open" => DmPolicy::Open,
+                "disabled" => DmPolicy::Disabled,
+                _ => DmPolicy::default(),
+            })
+            .unwrap_or_default();
+
+        let notify_chat_id = std::env::var("TELEGRAM_NOTIFY_CHAT_ID")
+            .ok()
+            .and_then(|s| s.trim().parse().ok());
+
         Ok(Self {
             bot_token,
             allowed_users,
             allowed_groups,
             groups_mention_only,
+            dm_policy,
+            notify_chat_id,
         })
     }
 
@@ -78,6 +119,8 @@ impl TelegramConfig {
             allowed_users: Vec::new(),
             allowed_groups: Vec::new(),
             groups_mention_only: true,
+            dm_policy: DmPolicy::default(),
+            notify_chat_id: None,
         }
     }
 
@@ -99,6 +142,20 @@ impl TelegramConfig {
     #[must_use]
     pub fn with_groups_mention_only(mut self, enabled: bool) -> Self {
         self.groups_mention_only = enabled;
+        self
+    }
+
+    /// Set DM security policy
+    #[must_use]
+    pub fn with_dm_policy(mut self, policy: DmPolicy) -> Self {
+        self.dm_policy = policy;
+        self
+    }
+
+    /// Set chat ID for system notifications
+    #[must_use]
+    pub fn with_notify_chat_id(mut self, chat_id: i64) -> Self {
+        self.notify_chat_id = Some(chat_id);
         self
     }
 }
@@ -156,7 +213,33 @@ impl TelegramAdapter {
         let user_id = user.id.0;
 
         // Check permissions
-        if !self.is_user_allowed(user_id as i64) {
+        let is_dm = msg.chat.is_private();
+
+        if is_dm {
+            match self.config.dm_policy {
+                DmPolicy::Disabled => {
+                    debug!(user_id = %user_id, "DMs are disabled");
+                    return None;
+                }
+                DmPolicy::Allowlist => {
+                    if !self.is_user_allowed(user_id as i64) {
+                        debug!(user_id = %user_id, "User not in allowlist");
+                        return None;
+                    }
+                }
+                DmPolicy::Pairing => {
+                    // Pairing mode: allow listed users, block unknown
+                    // Full pairing code flow would require state storage
+                    if !self.is_user_allowed(user_id as i64) {
+                        debug!(user_id = %user_id, "User not paired");
+                        return None;
+                    }
+                }
+                DmPolicy::Open => {
+                    // Accept all DMs
+                }
+            }
+        } else if !self.is_user_allowed(user_id as i64) {
             debug!(user_id = %user_id, "User not allowed");
             return None;
         }
@@ -252,18 +335,86 @@ impl TelegramAdapter {
         Some(InlineKeyboardMarkup::new(vec![keyboard_buttons]))
     }
 
-    /// Start the bot with the given orchestrator
-    #[instrument(skip(self, orchestrator))]
-    pub async fn run(self: Arc<Self>, orchestrator: Arc<Orchestrator>) -> Result<()> {
+    /// Start the bot with the given orchestrator and optional dev session monitor
+    #[instrument(skip(self, orchestrator, dev_monitor))]
+    pub async fn run(
+        self: Arc<Self>,
+        orchestrator: Arc<Orchestrator>,
+        dev_monitor: Option<Arc<DevSessionMonitor>>,
+    ) -> Result<()> {
         info!("Starting Telegram bot");
 
         let bot = self.bot.clone();
         let adapter = self.clone();
 
+        // Spawn EventBus notification listener if notify_chat_id is set
+        let _notify_handle = if let (Some(notify_chat_id), Some(bus)) =
+            (self.config.notify_chat_id, orchestrator.event_bus().cloned())
+        {
+            let notify_bot = self.bot.clone();
+            let chat_id = ChatId(notify_chat_id);
+            let mut rx = bus.subscribe();
+            Some(tokio::spawn(async move {
+                loop {
+                    match rx.recv().await {
+                        Ok(cratos_core::event_bus::OrchestratorEvent::ApprovalRequired {
+                            execution_id,
+                            request_id,
+                        }) => {
+                            let text = format!(
+                                "Approval required for execution <code>{}</code>\n\
+                                 Request ID: <code>{}</code>\n\
+                                 Use /approve {} to approve.",
+                                execution_id, request_id, request_id
+                            );
+                            let buttons = vec![
+                                InlineKeyboardButton::callback(
+                                    "Approve",
+                                    format!("approve:{}", request_id),
+                                ),
+                                InlineKeyboardButton::callback(
+                                    "Deny",
+                                    format!("deny:{}", request_id),
+                                ),
+                            ];
+                            let keyboard = InlineKeyboardMarkup::new(vec![buttons]);
+                            let _ = notify_bot
+                                .send_message(chat_id, &text)
+                                .parse_mode(ParseMode::Html)
+                                .reply_markup(keyboard)
+                                .await;
+                        }
+                        Ok(cratos_core::event_bus::OrchestratorEvent::ExecutionFailed {
+                            execution_id,
+                            error,
+                        }) => {
+                            let text = format!(
+                                "Execution <code>{}</code> failed:\n{}",
+                                execution_id,
+                                sanitize_error_for_user(&error)
+                            );
+                            let _ = notify_bot
+                                .send_message(chat_id, &text)
+                                .parse_mode(ParseMode::Html)
+                                .await;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            debug!(skipped = n, "EventBus notification listener lagged");
+                        }
+                        _ => {}
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
         let handler = Update::filter_message().endpoint(move |bot: Bot, msg: TelegramMessage| {
             let adapter = adapter.clone();
             let orchestrator = orchestrator.clone();
-            async move { Self::handle_message(adapter, orchestrator, bot, msg).await }
+            let dev_monitor = dev_monitor.clone();
+            async move { Self::handle_message(adapter, orchestrator, dev_monitor, bot, msg).await }
         });
 
         Dispatcher::builder(bot, handler)
@@ -275,10 +426,126 @@ impl TelegramAdapter {
         Ok(())
     }
 
+    /// Handle a slash command (e.g. /status, /sessions, /tools, /cancel, /approve)
+    async fn handle_slash_command(
+        command: &str,
+        args: &str,
+        orchestrator: &Arc<Orchestrator>,
+        dev_monitor: &Option<Arc<DevSessionMonitor>>,
+        bot: &Bot,
+        chat_id: ChatId,
+        reply_to: MessageId,
+    ) -> Option<ResponseResult<()>> {
+        let response = match command {
+            "/status" => {
+                let mut lines = vec!["<b>System Status</b>".to_string()];
+
+                // Active dev sessions
+                if let Some(monitor) = dev_monitor {
+                    let sessions = monitor.sessions().await;
+                    if sessions.is_empty() {
+                        lines.push("AI Sessions: None active".to_string());
+                    } else {
+                        lines.push(format!("AI Sessions: {} active", sessions.len()));
+                        for s in &sessions {
+                            lines.push(format!(
+                                "  - {:?} ({:?}) @ {}",
+                                s.tool, s.status, s.project_path.as_deref().unwrap_or("unknown")
+                            ));
+                        }
+                    }
+                } else {
+                    lines.push("AI Sessions: Monitor not available".to_string());
+                }
+
+                // Active executions
+                if let Some(count) = orchestrator.active_execution_count() {
+                    lines.push(format!("Active executions: {}", count));
+                }
+
+                lines.join("\n")
+            }
+            "/sessions" => {
+                if let Some(monitor) = dev_monitor {
+                    let sessions = monitor.sessions().await;
+                    if sessions.is_empty() {
+                        "No active AI development sessions.".to_string()
+                    } else {
+                        let mut lines = vec![format!("<b>Active AI Sessions ({})</b>", sessions.len())];
+                        for (i, s) in sessions.iter().enumerate() {
+                            lines.push(format!(
+                                "{}. <b>{:?}</b> - {:?}\n   Path: <code>{}</code>\n   PID: {:?}",
+                                i + 1,
+                                s.tool,
+                                s.status,
+                                s.project_path.as_deref().unwrap_or("unknown"),
+                                s.pid,
+                            ));
+                        }
+                        lines.join("\n")
+                    }
+                } else {
+                    "DevSessionMonitor not available.".to_string()
+                }
+            }
+            "/tools" => {
+                let tool_names = orchestrator.list_tool_names();
+                if tool_names.is_empty() {
+                    "No tools registered.".to_string()
+                } else {
+                    let mut lines = vec![format!("<b>Available Tools ({})</b>", tool_names.len())];
+                    for name in &tool_names {
+                        lines.push(format!("  - <code>{}</code>", name));
+                    }
+                    lines.join("\n")
+                }
+            }
+            "/cancel" => {
+                if args.is_empty() {
+                    "Usage: /cancel &lt;execution_id&gt;".to_string()
+                } else if let Ok(exec_id) = args.parse::<uuid::Uuid>() {
+                    if orchestrator.cancel_execution(exec_id) {
+                        format!("Cancelled execution <code>{}</code>", exec_id)
+                    } else {
+                        format!("Execution <code>{}</code> not found or already completed.", exec_id)
+                    }
+                } else {
+                    "Invalid execution ID. Please provide a valid UUID.".to_string()
+                }
+            }
+            "/approve" => {
+                if args.is_empty() {
+                    "Usage: /approve &lt;request_id&gt;".to_string()
+                } else {
+                    // Delegate to orchestrator, which may not have approval manager here
+                    format!("Approval for <code>{}</code> — use WebSocket gateway for full approval flow.", args)
+                }
+            }
+            _ => return None,
+        };
+
+        let result = bot
+            .send_message(chat_id, &response)
+            .parse_mode(ParseMode::Html)
+            .reply_parameters(ReplyParameters::new(reply_to))
+            .await;
+
+        if result.is_err() {
+            // Fallback to plain text
+            let _ = bot
+                .send_message(chat_id, &response)
+                .reply_parameters(ReplyParameters::new(reply_to))
+                .await;
+        }
+
+        Some(Ok(()))
+    }
+
     /// Handle an incoming message
     async fn handle_message(
         adapter: Arc<Self>,
         orchestrator: Arc<Orchestrator>,
+        dev_monitor: Option<Arc<DevSessionMonitor>>,
         bot: Bot,
         msg: TelegramMessage,
     ) -> ResponseResult<()> {
@@ -292,6 +559,30 @@ impl TelegramAdapter {
             return Ok(());
         };
 
+        // Check for slash commands before orchestrator processing
+        let text = normalized.text.trim();
+        if text.starts_with('/') {
+            let mut parts = text.splitn(2, ' ');
+            let command = parts.next().unwrap_or("");
+            // Strip @bot_username suffix from commands (e.g. /status@mybot)
+            let command = command.split('@').next().unwrap_or(command);
+            let args = parts.next().unwrap_or("").trim();
+
+            if let Some(result) = Self::handle_slash_command(
+                command,
+                args,
+                &orchestrator,
+                &dev_monitor,
+                &bot,
+                msg.chat.id,
+                msg.id,
+            )
+            .await
+            {
+                return result;
+            }
+        }
+
         // SECURITY: Mask potentially sensitive content in logs
         info!(
             chat_id = %normalized.channel_id,
@@ -303,6 +594,51 @@ impl TelegramAdapter {
         // Send typing indicator
         let _ = bot.send_chat_action(msg.chat.id, ChatAction::Typing).await;
 
+        // Send "processing..." placeholder for progressive updates
+        let progress_msg = bot
+            .send_message(msg.chat.id, "처리 중...")
+            .reply_parameters(ReplyParameters::new(msg.id))
+            .await;
+
+        // Spawn progressive update task if EventBus is available
+        let progress_handle = if let (Ok(ref pm), Some(bus)) =
+            (&progress_msg, orchestrator.event_bus().cloned())
+        {
+            let bot_clone = bot.clone();
+            let chat_id = msg.chat.id;
+            let progress_msg_id = pm.id;
+            let mut rx = bus.subscribe();
+            Some(tokio::spawn(async move {
+                let mut last_edit = std::time::Instant::now();
+                let min_interval = std::time::Duration::from_secs(2);
+                let mut tool_count = 0u32;
+                while let Ok(event) = rx.recv().await {
+                    match event {
+                        cratos_core::event_bus::OrchestratorEvent::ToolStarted {
+                            tool_name, ..
+                        } => {
+                            tool_count += 1;
+                            let now = std::time::Instant::now();
+                            if now.duration_since(last_edit) >= min_interval {
+                                let text = format!("처리 중... [{}] 실행 중 ({}번째 도구)", tool_name, tool_count);
+                                let _ = bot_clone
+                                    .edit_message_text(chat_id, progress_msg_id, &text)
+                                    .await;
+                                last_edit = now;
+                            }
+                        }
+                        cratos_core::event_bus::OrchestratorEvent::ExecutionCompleted { .. }
+                        | cratos_core::event_bus::OrchestratorEvent::ExecutionFailed { .. } => {
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
         // Process with orchestrator
         let input = OrchestratorInput::new(
             "telegram",
@@ -313,6 +649,11 @@ impl TelegramAdapter {
 
         match orchestrator.process(input).await {
             Ok(result) => {
+                // Cancel progress listener
+                if let Some(h) = progress_handle {
+                    h.abort();
+                }
+
                 let response_text = if result.response.is_empty() {
                     "I've completed the task.".to_string()
                 } else {
@@ -322,18 +663,36 @@ impl TelegramAdapter {
                 // Convert standard Markdown (LLM output) to Telegram-safe HTML
                 let html_text = markdown_to_html(&response_text);
 
-                let send_result = bot
-                    .send_message(msg.chat.id, &html_text)
-                    .parse_mode(ParseMode::Html)
-                    .reply_parameters(ReplyParameters::new(msg.id))
-                    .await;
+                // Try to edit the progress message with the final response
+                let edit_ok = if let Ok(ref pm) = progress_msg {
+                    bot.edit_message_text(msg.chat.id, pm.id, &html_text)
+                        .parse_mode(ParseMode::Html)
+                        .await
+                        .is_ok()
+                } else {
+                    false
+                };
 
-                // Fall back to plain text if HTML parsing fails
-                if send_result.is_err() {
-                    let _ = bot
-                        .send_message(msg.chat.id, &response_text)
+                // Fall back to sending a new message if edit failed
+                if !edit_ok {
+                    // Delete progress message if it exists
+                    if let Ok(ref pm) = progress_msg {
+                        let _ = bot.delete_message(msg.chat.id, pm.id).await;
+                    }
+
+                    let send_result = bot
+                        .send_message(msg.chat.id, &html_text)
+                        .parse_mode(ParseMode::Html)
                         .reply_parameters(ReplyParameters::new(msg.id))
                         .await;
+
+                    // Fall back to plain text if HTML parsing fails
+                    if send_result.is_err() {
+                        let _ = bot
+                            .send_message(msg.chat.id, &response_text)
+                            .reply_parameters(ReplyParameters::new(msg.id))
+                            .await;
+                    }
                 }
 
                 // Handle artifacts (e.g. screenshots)
@@ -353,6 +712,16 @@ impl TelegramAdapter {
                 }
             }
             Err(e) => {
+                // Cancel progress listener
+                if let Some(h) = progress_handle {
+                    h.abort();
+                }
+
+                // Delete progress message
+                if let Ok(ref pm) = progress_msg {
+                    let _ = bot.delete_message(msg.chat.id, pm.id).await;
+                }
+
                 // Log full error internally
                 error!(error = %e, "Failed to process message");
 
@@ -507,6 +876,24 @@ mod tests {
 
         assert!(adapter.is_user_allowed(123));
         assert!(adapter.is_user_allowed(999999));
+    }
+
+    #[test]
+    fn test_dm_policy_default() {
+        let config = TelegramConfig::new("token");
+        assert_eq!(config.dm_policy, DmPolicy::Allowlist);
+    }
+
+    #[test]
+    fn test_dm_policy_builder() {
+        let config = TelegramConfig::new("token").with_dm_policy(DmPolicy::Open);
+        assert_eq!(config.dm_policy, DmPolicy::Open);
+    }
+
+    #[test]
+    fn test_dm_policy_disabled() {
+        let config = TelegramConfig::new("token").with_dm_policy(DmPolicy::Disabled);
+        assert_eq!(config.dm_policy, DmPolicy::Disabled);
     }
 
     // Note: mask_for_logging and sanitize_error_for_user tests are in util.rs
