@@ -44,7 +44,7 @@ pub mod whisper_local;
 mod controller;
 
 pub use config::{SttConfig, VoiceConfig, WakeWordConfig};
-pub use controller::VoiceController;
+pub use controller::{VoiceController, VoiceEvent, VoiceMode};
 pub use error::{Error, Result};
 pub use stt::{SpeechToText, SttBackend};
 pub use tts::TextToSpeech;

@@ -382,6 +382,12 @@ pub trait LlmProvider: Send + Sync {
 /// A mock LLM provider that returns empty responses. Useful for testing.
 pub struct MockProvider;
 
+impl Default for MockProvider {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl MockProvider {
     /// Create a new mock provider.
     #[must_use]
