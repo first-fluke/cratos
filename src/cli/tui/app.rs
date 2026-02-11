@@ -279,7 +279,58 @@ impl App {
         let persona = self.persona.clone();
         let tx = self.response_tx.clone();
 
+        // Subscribe to EventBus for real-time tool execution updates
+        let event_tx = tx.clone();
+        let event_bus = orchestrator.event_bus().cloned();
+
         tokio::spawn(async move {
+            // If EventBus is available, spawn a listener for tool events
+            let event_handle = if let Some(bus) = event_bus {
+                let mut rx = bus.subscribe();
+                let etx = event_tx.clone();
+                Some(tokio::spawn(async move {
+                    while let Ok(event) = rx.recv().await {
+                        match event {
+                            cratos_core::event_bus::OrchestratorEvent::ToolStarted {
+                                tool_name,
+                                ..
+                            } => {
+                                let _ = etx.send(ChatMessage {
+                                    role: Role::System,
+                                    sender: "system".into(),
+                                    content: format!("[{}] executing...", tool_name),
+                                    timestamp: Local::now(),
+                                });
+                            }
+                            cratos_core::event_bus::OrchestratorEvent::ToolCompleted {
+                                tool_name,
+                                success,
+                                duration_ms,
+                                ..
+                            } => {
+                                let status = if success { "OK" } else { "FAILED" };
+                                let _ = etx.send(ChatMessage {
+                                    role: Role::System,
+                                    sender: "system".into(),
+                                    content: format!(
+                                        "[{}] {} ({}ms)",
+                                        tool_name, status, duration_ms
+                                    ),
+                                    timestamp: Local::now(),
+                                });
+                            }
+                            cratos_core::event_bus::OrchestratorEvent::ExecutionCompleted { .. }
+                            | cratos_core::event_bus::OrchestratorEvent::ExecutionFailed { .. } => {
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }))
+            } else {
+                None
+            };
+
             let input = cratos_core::OrchestratorInput::new("tui", &session_id, "tui-user", &text);
 
             let msg = match orchestrator.process(input).await {
@@ -298,6 +349,11 @@ impl App {
             };
 
             let _ = tx.send(msg);
+
+            // Cancel event listener once the main response is received
+            if let Some(handle) = event_handle {
+                handle.abort();
+            }
         });
     }
 
