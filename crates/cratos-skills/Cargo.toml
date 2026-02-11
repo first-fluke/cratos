@@ -40,9 +40,14 @@ dirs = { workspace = true }
 # Optional: Semantic search
 cratos-search = { path = "../cratos-search", optional = true }
 
+# Optional: Remote registry
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"], optional = true }
+semver = { version = "1", optional = true }
+
 [features]
 default = []
 semantic = ["cratos-search"]
+remote = ["dep:reqwest", "dep:semver"]
 
 [dev-dependencies]
 mockall.workspace = true
