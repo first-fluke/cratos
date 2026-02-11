@@ -12,6 +12,9 @@ mod rate_limiter;
 mod retry;
 
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
-pub use metrics::{global as metrics_global, Counter, Gauge, Histogram, MetricsRegistry, Timer};
+pub use metrics::{
+    global as metrics_global, Counter, Gauge, Histogram, LabeledCounter, LabeledHistogram,
+    MetricsRegistry, Timer,
+};
 pub use rate_limiter::{RateLimitConfig, RateLimitResult, RateLimiter, TieredRateLimiter};
 pub use retry::{retry_with_backoff, RetryConfig, RetryError};

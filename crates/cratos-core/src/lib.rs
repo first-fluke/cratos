@@ -23,6 +23,8 @@ pub mod auth;
 pub mod chronicles;
 pub mod dev_sessions;
 pub mod device_auth;
+pub mod discovery;
+pub mod pairing;
 pub mod external_auth;
 pub mod credentials;
 pub mod decrees;
@@ -61,7 +63,11 @@ pub use event_bus::{EventBus, OrchestratorEvent};
 pub use nodes::{Node, NodeError, NodeRegistry, NodeRegisterParams, NodeStatus, NodeSummary, Platform};
 pub use session_manager::{SessionManager, SessionStatus, SessionSummary};
 pub use dev_sessions::{DevSession, DevSessionMonitor, DevTool};
-pub use tool_policy::{PolicyDenial, ToolPolicy};
+pub use discovery::{DiscoveryConfig, DiscoveryService};
+pub use tool_policy::{
+    PolicyAction, PolicyContext, PolicyDenial, PolicyLevel, PolicyRule, ToolPolicy,
+    ToolSecurityPolicy,
+};
 pub use device_auth::{
     generate_challenge, generate_device_keypair, sign_challenge, verify_signature,
     ChallengeStore, DeviceAuthError,
@@ -90,8 +96,8 @@ pub use security::{
 };
 pub use utils::{
     metrics_global, retry_with_backoff, CircuitBreaker, CircuitBreakerConfig, CircuitState,
-    Counter, Gauge, Histogram, MetricsRegistry, RateLimitConfig, RateLimitResult, RateLimiter,
-    RetryConfig, TieredRateLimiter, Timer,
+    Counter, Gauge, Histogram, LabeledCounter, LabeledHistogram, MetricsRegistry, RateLimitConfig,
+    RateLimitResult, RateLimiter, RetryConfig, TieredRateLimiter, Timer,
 };
 
 // Re-export agents module types

@@ -49,12 +49,14 @@ base64 = "0.22"     # Encoding encrypted data
 sha2 = "0.10"       # Key derivation from master password
 dirs = "5.0"        # Platform-specific directories for storing encrypted file
 hostname = "0.4"    # Machine-specific key derivation fallback
+mdns-sd = { version = "0.11", optional = true }  # mDNS service discovery for LAN pairing
 
 [features]
 default = []
 redis-tests = []  # Enable Redis integration tests (requires running Redis)
 native-keyring = ["dep:keyring"]  # Enable native OS keyring (Linux Secret Service, Windows Credential Manager)
 embeddings = ["cratos-memory/embeddings"]  # Enable embedding-based Graph RAG search
+mdns = ["dep:mdns-sd"]  # Enable mDNS service discovery for LAN device pairing
 
 [dev-dependencies]
 mockall.workspace = true

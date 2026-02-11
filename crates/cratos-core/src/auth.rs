@@ -78,6 +78,10 @@ pub enum Scope {
     ConfigWrite,
     /// Register and manage nodes (Phase 5)
     NodeManage,
+    /// Read scheduler tasks
+    SchedulerRead,
+    /// Create, update, delete scheduler tasks
+    SchedulerWrite,
 }
 
 impl std::fmt::Display for Scope {
@@ -92,6 +96,8 @@ impl std::fmt::Display for Scope {
             Scope::ConfigRead => write!(f, "config_read"),
             Scope::ConfigWrite => write!(f, "config_write"),
             Scope::NodeManage => write!(f, "node_manage"),
+            Scope::SchedulerRead => write!(f, "scheduler_read"),
+            Scope::SchedulerWrite => write!(f, "scheduler_write"),
         }
     }
 }
@@ -390,6 +396,7 @@ pub fn default_user_scopes() -> Vec<Scope> {
         Scope::ExecutionWrite,
         Scope::ApprovalRespond,
         Scope::ConfigRead,
+        Scope::SchedulerRead,
     ]
 }
 
@@ -516,6 +523,40 @@ mod tests {
 
         let keys = store.list_keys().unwrap();
         assert_eq!(keys.len(), 2);
+    }
+
+    #[test]
+    fn test_scheduler_scopes() {
+        let ctx = AuthContext {
+            user_id: "user1".to_string(),
+            method: AuthMethod::ApiKey,
+            scopes: vec![Scope::SchedulerRead],
+            session_id: None,
+            device_id: None,
+        };
+
+        assert!(ctx.has_scope(&Scope::SchedulerRead));
+        assert!(!ctx.has_scope(&Scope::SchedulerWrite));
+        assert!(ctx.require_scope(&Scope::SchedulerRead).is_ok());
+        assert!(ctx.require_scope(&Scope::SchedulerWrite).is_err());
+
+        // Admin should have scheduler scopes
+        let admin_ctx = AuthContext {
+            user_id: "admin".to_string(),
+            method: AuthMethod::ApiKey,
+            scopes: vec![Scope::Admin],
+            session_id: None,
+            device_id: None,
+        };
+        assert!(admin_ctx.has_scope(&Scope::SchedulerRead));
+        assert!(admin_ctx.has_scope(&Scope::SchedulerWrite));
+    }
+
+    #[test]
+    fn test_default_user_scopes_include_scheduler_read() {
+        let scopes = default_user_scopes();
+        assert!(scopes.contains(&Scope::SchedulerRead));
+        assert!(!scopes.contains(&Scope::SchedulerWrite));
     }
 
     #[test]
