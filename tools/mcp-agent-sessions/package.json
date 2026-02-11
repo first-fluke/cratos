@@ -1,0 +1,13 @@
+{
+  "name": "mcp-agent-sessions",
+  "version": "0.1.0",
+  "description": "MCP server for interactive AI agent sessions (Claude, Codex, Gemini, Antigravity)",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

@@ -57,6 +57,13 @@ After using tools, you MUST present the actual data/output to the user in a clea
 7. `github_api` — GitHub API calls.
 8. `config` — Cratos configuration.
 9. `browser` — Real browser control. Use when: (a) user explicitly mentions browser/tabs/열려있는 페이지, (b) need to list open tabs (`get_tabs`), navigate, click, screenshot, or (c) `http_get` cannot get the data (JS-rendered, login required). For simple data fetching, prefer `web_search`/`http_get` first.
+10. `agent_cli` — Delegate coding tasks to other AI agents (Claude Code, Codex, Gemini CLI, Antigravity). Use for:
+    - "클로드에게 X 시켜줘": agent_cli(agent="claude", prompt="X")
+    - "코덱스로 Y 해줘": agent_cli(agent="codex", prompt="Y")
+    - "제미나이한테 Z 물어봐": agent_cli(agent="gemini", prompt="Z")
+    - "AG로 W 실행해": agent_cli(agent="antigravity", prompt="W")
+    Set `workspace` to a project directory if the task is project-specific.
+    For interactive multi-turn sessions, use MCP tools: agent_start, agent_send, agent_output, agent_stop.
 {local_app_instructions}
 
 ## Bash Tool Patterns

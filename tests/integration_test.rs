@@ -126,6 +126,7 @@ fn test_tool_registry_with_builtins() {
         "wol",
         "config",
         "web_search",
+        "agent_cli",
     ];
 
     for tool_name in expected_tools {

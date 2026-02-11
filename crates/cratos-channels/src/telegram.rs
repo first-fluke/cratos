@@ -521,6 +521,56 @@ impl TelegramAdapter {
                     format!("Approval for <code>{}</code> — use WebSocket gateway for full approval flow.", args)
                 }
             }
+            "/agent" => {
+                if args.is_empty() {
+                    "Usage: /agent &lt;claude|codex|gemini|antigravity&gt; &lt;prompt&gt;\n\
+                     Example: /agent claude Fix the bug in auth.rs"
+                        .to_string()
+                } else {
+                    // Parse: first word = agent name, rest = prompt
+                    let mut agent_parts = args.splitn(2, ' ');
+                    let agent_name = agent_parts.next().unwrap_or("");
+                    let agent_prompt = agent_parts.next().unwrap_or("").trim();
+
+                    if agent_prompt.is_empty() {
+                        format!(
+                            "Usage: /agent {} &lt;prompt&gt;\nPlease provide a task description.",
+                            agent_name
+                        )
+                    } else {
+                        // Delegate to orchestrator as a tool call request
+                        let request = format!(
+                            "agent_cli 도구를 사용해서 {}에게 다음 작업을 시켜줘: {}",
+                            agent_name, agent_prompt
+                        );
+
+                        // Return None to let the orchestrator handle this
+                        // by falling through to the normal message processing
+                        // We rewrite the text so the orchestrator picks it up
+                        let chat_id_str = chat_id.0.to_string();
+                        let input = OrchestratorInput::new(
+                            "telegram",
+                            &chat_id_str,
+                            &chat_id_str,
+                            &request,
+                        );
+
+                        match orchestrator.process(input).await {
+                            Ok(result) => {
+                                let text = if result.response.is_empty() {
+                                    format!("Agent '{}' task completed.", agent_name)
+                                } else {
+                                    result.response
+                                };
+                                crate::util::markdown_to_html(&text)
+                            }
+                            Err(e) => {
+                                format!("Agent error: {}", crate::util::sanitize_error_for_user(&e.to_string()))
+                            }
+                        }
+                    }
+                }
+            }
             _ => return None,
         };
 

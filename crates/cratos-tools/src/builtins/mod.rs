@@ -9,6 +9,7 @@
 //! - Wake-on-LAN tool: wol
 //! - Config tool: config (natural language configuration)
 
+mod agent_cli;
 mod bash;
 mod config;
 pub mod config_manager;
@@ -20,6 +21,7 @@ mod http;
 mod web_search;
 mod wol;
 
+pub use agent_cli::AgentCliTool;
 pub use bash::{BashConfig, BashSecurityMode, BashTool};
 pub use config::{ConfigAction, ConfigInput, ConfigTarget, ConfigTool};
 pub use exec::{ExecConfig, ExecMode, ExecTool};
@@ -91,6 +93,9 @@ pub fn register_builtins_with_config(registry: &mut ToolRegistry, config: &Built
     // Web search tool (DuckDuckGo, no API key required)
     registry.register(Arc::new(WebSearchTool::new()));
 
+    // Agent CLI tool (delegate tasks to external AI agents)
+    registry.register(Arc::new(AgentCliTool::new()));
+
     // Bash tool (PTY-based, full shell support)
     registry.register(Arc::new(BashTool::with_config(config.bash.clone())));
 }
@@ -123,6 +128,7 @@ mod tests {
         assert!(registry.has("bash"));
         assert!(registry.has("git_clone"));
         assert!(registry.has("git_log"));
-        assert_eq!(registry.len(), 19);
+        assert!(registry.has("agent_cli"));
+        assert_eq!(registry.len(), 20);
     }
 }
