@@ -57,31 +57,35 @@ fn sanitize_api_error(error: &str) -> String {
 
 /// Available Gemini models (2026)
 ///
-/// Pricing per 1M tokens:
+/// Pricing per 1M tokens (approximate):
 /// - gemini-2.5-flash-lite: ~$0.10 (cheapest)
-/// - gemini-2.5-flash: $0.075/$0.60 (free tier available!)
-/// - gemini-2.5-pro: $1.25/$15.00 (best for coding)
+/// - gemini-2.5-flash: $0.075/$0.60
+/// - gemini-3-flash-preview: preview pricing
+/// - gemini-2.5-pro: $1.25/$15.00
+/// - gemini-3-pro-preview: preview pricing
 pub const MODELS: &[&str] = &[
-    // Gemini 2.5 family (production)
+    // Gemini 3 family (preview)
+    "gemini-3-flash-preview",
+    "gemini-3-pro-preview",
+    // Gemini 2.5 family (stable)
     "gemini-2.5-pro",
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
     // Gemini 2.0 family (deprecated March 2026)
     "gemini-2.0-flash",
-    // Gemini 1.5 family (legacy)
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
 ];
 
-/// Default Gemini model (Gemini 2.5 Flash - best speed/cost)
-pub const DEFAULT_MODEL: &str = "gemini-2.5-flash";
+/// Default Gemini model
+pub const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 
 /// 429 시 한 단계 저렴한 모델로 다운그레이드
 fn downgrade_model(model: &str) -> Option<&'static str> {
     match model {
+        "gemini-3-pro-preview" => Some("gemini-3-flash-preview"),
+        "gemini-3-flash-preview" => Some("gemini-2.5-flash"),
         "gemini-2.5-pro" => Some("gemini-2.5-flash"),
         "gemini-2.5-flash" => Some("gemini-2.5-flash-lite"),
-        _ => None, // flash-lite, legacy 모델은 더 내릴 곳 없음
+        _ => None,
     }
 }
 
@@ -127,6 +131,13 @@ enum GeminiPart {
     FunctionCall {
         #[serde(rename = "functionCall")]
         function_call: FunctionCall,
+        /// Gemini 3+ thought signature — must be preserved for multi-turn conversations
+        #[serde(
+            rename = "thoughtSignature",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        thought_signature: Option<String>,
     },
     FunctionResponse {
         #[serde(rename = "functionResponse")]
@@ -500,7 +511,8 @@ pub struct GeminiProvider {
     client: Client,
     config: GeminiConfig,
     /// Lazily resolved Code Assist project ID (for OAuth auth).
-    code_assist_project: tokio::sync::OnceCell<String>,
+    /// Uses RwLock instead of OnceCell so it can be reset after token refresh.
+    code_assist_project: tokio::sync::RwLock<Option<String>>,
     /// Last retry-after delay reported by Gemini (seconds), used for smart backoff.
     last_retry_after: std::sync::atomic::AtomicU64,
     /// Dynamically refreshed auth token (overrides config.auth when set).
@@ -564,7 +576,7 @@ impl GeminiProvider {
         Ok(Self {
             client,
             config,
-            code_assist_project: tokio::sync::OnceCell::new(),
+            code_assist_project: tokio::sync::RwLock::new(None),
             last_retry_after: std::sync::atomic::AtomicU64::new(0),
             refreshed_auth: std::sync::Mutex::new(None),
         })
@@ -582,25 +594,46 @@ impl GeminiProvider {
     /// Try to refresh Gemini CLI OAuth token. Returns true if refreshed.
     ///
     /// Strategy (3-tier fallback):
-    /// 1. Re-read from disk (another process may have refreshed)
+    /// 1. Re-read from disk (another process may have refreshed) — skip if same token
     /// 2. Direct OAuth refresh using refresh_token + Gemini CLI's client_id/secret
-    /// 3. Invoke `gemini auth login --no-launch-browser` as last resort
+    /// 3. Invoke Gemini CLI with a minimal query to trigger internal token refresh
+    ///
+    /// On success, also invalidates the Code Assist project cache so the next
+    /// request calls `loadCodeAssist` with the new token.
     async fn try_refresh_cli_token(&self) -> bool {
         if self.config.auth_source != AuthSource::GeminiCli {
             return false;
         }
 
-        // 1. Re-read from disk — maybe another process already refreshed
+        let refreshed = self.try_refresh_cli_token_inner().await;
+        if refreshed {
+            // Invalidate Code Assist project cache → next request will
+            // call loadCodeAssist with the refreshed token.
+            *self.code_assist_project.write().await = None;
+            tracing::debug!("Code Assist project cache invalidated after token refresh");
+        }
+        refreshed
+    }
+
+    /// Inner implementation of CLI token refresh (3-tier).
+    async fn try_refresh_cli_token_inner(&self) -> bool {
+        // Tier 1: Re-read from disk — maybe another process already refreshed
         if let Some(creds) = cli_auth::read_gemini_oauth() {
             if !cli_auth::is_token_expired(creds.expiry_date) && !creds.access_token.is_empty() {
-                tracing::info!("Gemini CLI token re-read from disk (still valid)");
-                if let Ok(mut guard) = self.refreshed_auth.lock() {
-                    *guard = Some(GeminiAuth::OAuth(creds.access_token));
+                // Check if disk token is the same as the current one
+                let is_same = matches!(self.current_auth(), GeminiAuth::OAuth(ref t) if t == &creds.access_token);
+                if is_same {
+                    tracing::debug!("Disk token same as current, skipping to Tier 2");
+                } else {
+                    tracing::info!("Gemini CLI token re-read from disk (different, valid)");
+                    if let Ok(mut guard) = self.refreshed_auth.lock() {
+                        *guard = Some(GeminiAuth::OAuth(creds.access_token));
+                    }
+                    return true;
                 }
-                return true;
             }
 
-            // 2. Token expired — try direct OAuth refresh
+            // Tier 2: Token expired or same — try direct OAuth refresh
             if !creds.refresh_token.is_empty() {
                 match self.refresh_with_token(&creds.refresh_token).await {
                     Ok(new_access_token) => {
@@ -617,7 +650,7 @@ impl GeminiProvider {
             }
         }
 
-        // 3. Fallback: invoke Gemini CLI
+        // Tier 3: Fallback — invoke Gemini CLI
         match cli_auth::refresh_gemini_token().await {
             Ok(new_creds) => {
                 tracing::info!("Gemini CLI token refreshed via CLI invocation");
@@ -675,10 +708,14 @@ impl GeminiProvider {
         Self::new(config)
     }
 
-    /// Resolve Code Assist project ID (called once on first OAuth request).
+    /// Resolve Code Assist project ID.
+    ///
+    /// Uses `current_auth()` (which includes refreshed tokens) instead of
+    /// `config.auth` so that after token refresh the new token is used
+    /// for the `loadCodeAssist` call that activates the Code Assist session.
     async fn resolve_code_assist_project(&self) -> Result<String> {
-        let token = match &self.config.auth {
-            GeminiAuth::OAuth(t) => t.clone(),
+        let token = match self.current_auth() {
+            GeminiAuth::OAuth(t) => t,
             _ => return Ok(String::new()),
         };
 
@@ -802,11 +839,19 @@ impl GeminiProvider {
     }
 
     /// Get or lazily resolve the Code Assist project ID.
-    async fn get_code_assist_project(&self) -> Result<&str> {
-        self.code_assist_project
-            .get_or_try_init(|| self.resolve_code_assist_project())
-            .await
-            .map(|s| s.as_str())
+    ///
+    /// Returns a cached value if available; otherwise resolves and caches.
+    /// The cache is invalidated after token refresh so `loadCodeAssist`
+    /// is called again with the new token.
+    async fn get_code_assist_project(&self) -> Result<String> {
+        // Fast path: return cached value
+        if let Some(ref project) = *self.code_assist_project.read().await {
+            return Ok(project.clone());
+        }
+        // Slow path: resolve and cache
+        let project = self.resolve_code_assist_project().await?;
+        *self.code_assist_project.write().await = Some(project.clone());
+        Ok(project)
     }
 
     /// Convert messages to Gemini format, returning system instruction separately
@@ -848,6 +893,8 @@ impl GeminiProvider {
                                 name: tc.name.clone(),
                                 args,
                             },
+                            // Gemini 3+ thought signatures must be preserved exactly
+                            thought_signature: tc.thought_signature.clone(),
                         });
                     }
                     if !parts.is_empty() {
@@ -1003,6 +1050,15 @@ impl GeminiProvider {
                             tracing::info!("Retrying after token refresh");
                             continue;
                         }
+                        // Token refresh failed — provide actionable guidance for GeminiCli users
+                        if self.config.auth_source == AuthSource::GeminiCli {
+                            tracing::error!(
+                                "Gemini CLI token refresh failed. Consider: \
+                                 1) Set GEMINI_API_KEY for direct API access, \
+                                 2) Run `gemini` CLI to refresh token, \
+                                 3) Configure a fallback provider in config."
+                            );
+                        }
                         return Err(Error::Api(msg.clone()));
                     }
                     Err(e) => return Err(e),
@@ -1075,7 +1131,7 @@ impl GeminiProvider {
         // Code Assist wraps request: {model, project, request: {...}}
         let response = if is_code_assist {
             let project_id = self.get_code_assist_project().await?;
-            debug!("Code Assist: model={}, project_id={:?}", model, if project_id.is_empty() { "<EMPTY>" } else { &project_id });
+            debug!("Code Assist: model={}, project_id={:?}", model, if project_id.is_empty() { "<EMPTY>" } else { project_id.as_str() });
             let wrapped = serde_json::json!({
                 "model": model,
                 "project": project_id,
@@ -1334,12 +1390,16 @@ impl LlmProvider for GeminiProvider {
                 GeminiPart::Text { text } => {
                     content = Some(text.clone());
                 }
-                GeminiPart::FunctionCall { function_call } => {
+                GeminiPart::FunctionCall {
+                    function_call,
+                    thought_signature,
+                } => {
                     tool_calls.push(ToolCall {
                         id: uuid::Uuid::new_v4().to_string(), // Gemini doesn't provide IDs
                         name: function_call.name.clone(),
                         arguments: serde_json::to_string(&function_call.args)
                             .unwrap_or_else(|_| "{}".to_string()),
+                        thought_signature: thought_signature.clone(),
                     });
                 }
                 _ => {}
@@ -1392,8 +1452,8 @@ mod tests {
 
     #[test]
     fn test_available_models() {
-        assert!(MODELS.contains(&"gemini-1.5-pro"));
-        assert!(MODELS.contains(&"gemini-1.5-flash"));
+        assert!(MODELS.contains(&"gemini-3-flash-preview"));
+        assert!(MODELS.contains(&"gemini-2.5-flash"));
     }
 
     #[test]
@@ -1460,13 +1520,14 @@ mod tests {
 
     #[test]
     fn test_downgrade_chain() {
+        assert_eq!(downgrade_model("gemini-3-pro-preview"), Some("gemini-3-flash-preview"));
+        assert_eq!(downgrade_model("gemini-3-flash-preview"), Some("gemini-2.5-flash"));
         assert_eq!(downgrade_model("gemini-2.5-pro"), Some("gemini-2.5-flash"));
         assert_eq!(
             downgrade_model("gemini-2.5-flash"),
             Some("gemini-2.5-flash-lite")
         );
         assert_eq!(downgrade_model("gemini-2.5-flash-lite"), None);
-        assert_eq!(downgrade_model("gemini-1.5-pro"), None);
     }
 
     #[test]

@@ -178,6 +178,7 @@ mod tests {
             id: "tc1".into(),
             name: "web_search".into(),
             arguments: "{}".into(),
+            thought_signature: None,
         }];
         let tool_msg = Message {
             role: MessageRole::Tool,

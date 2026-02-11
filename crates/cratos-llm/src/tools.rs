@@ -41,6 +41,9 @@ pub struct ToolCall {
     pub name: String,
     /// Arguments as JSON string
     pub arguments: String,
+    /// Gemini 3+ thought signature (must be preserved for multi-turn function calling)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 impl ToolCall {
@@ -93,6 +96,7 @@ mod tests {
             id: "call_123".to_string(),
             name: "get_weather".to_string(),
             arguments: r#"{"location": "Seoul"}"#.to_string(),
+            thought_signature: None,
         };
 
         #[derive(Deserialize)]

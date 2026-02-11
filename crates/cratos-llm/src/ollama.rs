@@ -515,6 +515,7 @@ impl LlmProvider for OllamaProvider {
                         name: tc.function.name,
                         arguments: serde_json::to_string(&tc.function.arguments)
                             .unwrap_or_else(|_| "{}".to_string()),
+                        thought_signature: None,
                     })
                     .collect()
             })

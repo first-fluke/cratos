@@ -394,22 +394,30 @@ pub fn write_gemini_oauth(access_token: &str, refresh_token: &str, expiry_date: 
 
 /// Attempt to refresh Gemini CLI token by invoking the CLI.
 ///
-/// Google's policy prohibits reusing Gemini CLI's OAuth client_id for token refresh,
-/// so we delegate to the CLI itself.
+/// Gemini CLI 0.27.3+ does not have an `auth` sub-command.
+/// Instead we run a minimal non-interactive query (`-p "hi"`) which
+/// triggers the CLI's internal token refresh logic. After the CLI
+/// exits, the refreshed credentials are read from disk.
 ///
 /// Returns refreshed credentials, or an error if CLI is not available.
 pub async fn refresh_gemini_token() -> crate::Result<GeminiOAuthCreds> {
     use tokio::process::Command;
 
-    debug!("Attempting to refresh Gemini CLI token");
+    debug!("Attempting to refresh Gemini CLI token via minimal query");
 
+    let token_before = read_gemini_oauth().map(|c| c.access_token);
+
+    // Gemini CLI 0.27.3+: `auth` sub-command doesn't exist.
+    // A short non-interactive query forces internal token refresh.
     let output = Command::new("gemini")
-        .args(["auth", "login", "--no-launch-browser"])
+        .args(["-p", "hi", "-m", "gemini-2.0-flash-lite"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .output()
         .await
         .map_err(|e| {
             crate::Error::NotConfigured(format!(
-                "Gemini CLI not found. Install it and run `gemini auth login`. ({})",
+                "Gemini CLI not found. Install: npm i -g @google/gemini-cli ({})",
                 e
             ))
         })?;
@@ -417,17 +425,29 @@ pub async fn refresh_gemini_token() -> crate::Result<GeminiOAuthCreds> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(crate::Error::NotConfigured(format!(
-            "Gemini CLI token refresh failed. Run `gemini auth login` manually. ({})",
+            "Gemini CLI token refresh failed (exit {}). {}",
+            output.status.code().unwrap_or(-1),
             crate::util::truncate_safe(&stderr, 200)
         )));
     }
 
-    // Re-read the updated credentials file
-    read_gemini_oauth().ok_or_else(|| {
+    // CLI succeeded → it internally refreshed the token → re-read from disk
+    let new_creds = read_gemini_oauth().ok_or_else(|| {
         crate::Error::NotConfigured(
-            "Gemini CLI refresh succeeded but credentials file not readable".to_string(),
+            "Gemini CLI ran but credentials not readable".to_string(),
         )
-    })
+    })?;
+
+    // Verify the token actually changed
+    if let Some(ref old) = token_before {
+        if *old == new_creds.access_token {
+            debug!("Gemini CLI ran but token unchanged — may still be valid");
+        } else {
+            debug!("Gemini CLI refreshed token successfully (token changed)");
+        }
+    }
+
+    Ok(new_creds)
 }
 
 // ============================================================================

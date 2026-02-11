@@ -530,6 +530,7 @@ impl LlmProvider for AnthropicProvider {
                         name: name.clone(),
                         arguments: serde_json::to_string(input)
                             .unwrap_or_else(|_| "{}".to_string()),
+                        thought_signature: None,
                     });
                 }
             }

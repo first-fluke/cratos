@@ -480,6 +480,7 @@ impl LlmProvider for QwenProvider {
                         id: tc.id.clone(),
                         name: tc.function.name.clone(),
                         arguments: tc.function.arguments.clone(),
+                        thought_signature: None,
                     })
                     .collect()
             })

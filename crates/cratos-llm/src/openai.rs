@@ -434,6 +434,7 @@ impl LlmProvider for OpenAiProvider {
                             id: func_call.id.clone(),
                             name: func_call.function.name.clone(),
                             arguments: func_call.function.arguments.clone(),
+                            thought_signature: None,
                         }),
                         _ => None,
                     })

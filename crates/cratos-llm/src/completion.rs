@@ -179,6 +179,7 @@ mod tests {
                 id: "call_1".to_string(),
                 name: "test".to_string(),
                 arguments: "{}".to_string(),
+                thought_signature: None,
             }],
             usage: None,
             finish_reason: Some("tool_calls".to_string()),

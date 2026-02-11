@@ -62,9 +62,10 @@ pub use gemini_quota::start_gemini_quota_poller;
 pub use error::{Error, Result};
 pub use router::{
     count_message_tokens, count_tokens, CompletionRequest, CompletionResponse, LlmProvider,
-    LlmRouter, Message, MessageRole, ModelConfig, ModelRoutingConfig, ModelTier, ProviderConfig,
-    RouterConfig, RoutingRules, TaskType, TokenBudget, TokenCounter, TokenUsage, ToolCall,
-    ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition, TOKEN_COUNTER,
+    LlmRouter, Message, MessageRole, MockProvider, ModelConfig, ModelRoutingConfig, ModelTier,
+    ProviderConfig, RouterConfig, RoutingRules, TaskType, TokenBudget, TokenCounter, TokenUsage,
+    ToolCall, ToolChoice, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
+    TOKEN_COUNTER,
 };
 
 // Re-export provider types
