@@ -5,7 +5,7 @@
 use super::SkillCommands;
 use anyhow::{Context, Result};
 use chrono::Utc;
-use cratos_skills::{Skill, SkillStatus, SkillStore};
+use cratos_skills::{RemoteRegistry, Skill, SkillEcosystem, SkillStatus, SkillStore};
 
 /// Status indicator for active skill
 const ICON_ACTIVE: &str = "\u{1f7e2}"; // 🟢
@@ -21,6 +21,14 @@ pub async fn run(cmd: SkillCommands) -> Result<()> {
         SkillCommands::Show { name } => show(&store, &name).await,
         SkillCommands::Enable { name } => enable(&store, &name).await,
         SkillCommands::Disable { name } => disable(&store, &name).await,
+        SkillCommands::Export { name, output } => export_skill(&store, &name, output).await,
+        SkillCommands::Import { path } => import_skill(&store, &path).await,
+        SkillCommands::Bundle { name, output } => export_bundle(&store, &name, output).await,
+        SkillCommands::Search { query, registry } => search_remote(&query, registry).await,
+        SkillCommands::Install { name, registry } => install_remote(&store, &name, registry).await,
+        SkillCommands::Publish { name, token, registry } => {
+            publish_remote(&store, &name, token, registry).await
+        }
     }
 }
 
@@ -242,6 +250,180 @@ async fn disable(store: &SkillStore, name: &str) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Export a skill to a JSON file
+async fn export_skill(store: &SkillStore, name: &str, output: Option<String>) -> Result<()> {
+    let eco = SkillEcosystem::new(store.clone());
+    let portable = eco
+        .export_skill_by_name(name)
+        .await
+        .context("Failed to export skill")?;
+
+    let output_path = output.unwrap_or_else(|| format!("{}.skill.json", name));
+    let json = serde_json::to_string_pretty(&portable).context("Failed to serialize skill")?;
+    std::fs::write(&output_path, json).context("Failed to write file")?;
+
+    println!("Exported skill '{}' to {}", name, output_path);
+    Ok(())
+}
+
+/// Import a skill from a JSON file
+async fn import_skill(store: &SkillStore, path: &str) -> Result<()> {
+    let eco = SkillEcosystem::new(store.clone());
+    let file_path = std::path::Path::new(path);
+
+    if path.ends_with(".bundle.json") {
+        let results = eco
+            .import_bundle_from_file(file_path)
+            .await
+            .context("Failed to import bundle")?;
+        let new_count = results.iter().filter(|r| r.is_new).count();
+        let updated = results.len() - new_count;
+        println!(
+            "Bundle import: {} new, {} updated",
+            new_count, updated
+        );
+        for r in &results {
+            let status = if r.is_new { "new" } else { "updated" };
+            println!("  {} {}", status, r.skill.name);
+        }
+    } else {
+        let result = eco
+            .import_from_file(file_path)
+            .await
+            .context("Failed to import skill")?;
+        let status = if result.is_new { "Imported" } else { "Updated" };
+        println!("{} skill: {}", status, result.skill.name);
+        for warning in &result.warnings {
+            println!("  Warning: {}", warning);
+        }
+    }
+    Ok(())
+}
+
+/// Export all active skills as a bundle
+async fn export_bundle(store: &SkillStore, name: &str, output: Option<String>) -> Result<()> {
+    let eco = SkillEcosystem::new(store.clone());
+    let bundle = eco
+        .export_bundle(name, &format!("Cratos skill bundle: {}", name))
+        .await
+        .context("Failed to export bundle")?;
+
+    let output_path = output.unwrap_or_else(|| format!("{}.skill.bundle.json", name));
+    let json = serde_json::to_string_pretty(&bundle).context("Failed to serialize bundle")?;
+    std::fs::write(&output_path, json).context("Failed to write file")?;
+
+    println!(
+        "Exported {} skills to {}",
+        bundle.skills.len(),
+        output_path
+    );
+    Ok(())
+}
+
+// ─── Remote registry commands ────────────────────────────────
+
+/// Search remote skill registry
+async fn search_remote(query: &str, registry: Option<String>) -> Result<()> {
+    let reg = match registry {
+        Some(url) => RemoteRegistry::new(&url),
+        None => RemoteRegistry::default_registry(),
+    };
+
+    let results = reg
+        .search(query)
+        .await
+        .context("Failed to search remote registry")?;
+
+    if results.is_empty() {
+        println!("\nNo skills found matching '{query}'.");
+        return Ok(());
+    }
+
+    println!(
+        "\nRemote Skills matching '{}' ({} found)\n{}",
+        query,
+        results.len(),
+        "-".repeat(60)
+    );
+
+    for entry in &results {
+        println!(
+            "  {:<24} v{:<8} {:<10} by {}",
+            entry.name, entry.version, entry.category, entry.author
+        );
+        println!("    {}", entry.description);
+    }
+    println!();
+
+    Ok(())
+}
+
+/// Install a skill from remote registry
+async fn install_remote(store: &SkillStore, name: &str, registry: Option<String>) -> Result<()> {
+    let reg = match registry {
+        Some(url) => RemoteRegistry::new(&url),
+        None => RemoteRegistry::default_registry(),
+    };
+
+    println!("Fetching skill '{}' from registry...", name);
+
+    let portable = reg
+        .fetch_skill(name)
+        .await
+        .context("Failed to fetch skill from registry")?;
+
+    let eco = SkillEcosystem::new(store.clone());
+    let result = eco
+        .import_skill(&portable)
+        .await
+        .context("Failed to import skill")?;
+
+    let status = if result.is_new { "Installed" } else { "Updated" };
+    println!("{} skill: {}", status, result.skill.name);
+    for warning in &result.warnings {
+        println!("  Warning: {}", warning);
+    }
+
+    Ok(())
+}
+
+/// Publish a skill to remote registry
+async fn publish_remote(
+    store: &SkillStore,
+    name: &str,
+    token: Option<String>,
+    registry: Option<String>,
+) -> Result<()> {
+    let token = match token {
+        Some(t) => t,
+        None => {
+            return Err(anyhow::anyhow!(
+                "Registry token required. Use --token <TOKEN> or set CRATOS_REGISTRY_TOKEN."
+            ));
+        }
+    };
+
+    let eco = SkillEcosystem::new(store.clone());
+    let portable = eco
+        .export_skill_by_name(name)
+        .await
+        .context("Failed to export skill")?;
+
+    let reg = match registry {
+        Some(url) => RemoteRegistry::new(&url),
+        None => RemoteRegistry::default_registry(),
+    };
+
+    println!("Publishing skill '{}' to registry...", name);
+
+    reg.publish(&portable, &token)
+        .await
+        .context("Failed to publish skill")?;
+
+    println!("Skill '{}' published successfully.", name);
+    Ok(())
 }
 
 // ─── Helper functions ────────────────────────────────────────

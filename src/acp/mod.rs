@@ -7,3 +7,4 @@
 
 pub mod protocol;
 pub mod bridge;
+pub mod mcp_compat;

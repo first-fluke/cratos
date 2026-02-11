@@ -14,18 +14,24 @@ use axum::{
     Json, Router,
 };
 use cratos_core::session_manager::{SessionManager, SessionSummary};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::config::ApiResponse;
 use crate::middleware::auth::{require_scope, RequireAuth};
 use cratos_core::auth::Scope;
 
+use cratos_crypto::{generate_keypair, EncryptedData, SessionCipher};
+
 /// Shared session manager state.
 #[derive(Clone)]
 pub struct SessionState {
     manager: Arc<SessionManager>,
+    /// E2E session ciphers keyed by session_id
+    e2e_ciphers: Arc<RwLock<HashMap<Uuid, Arc<SessionCipher>>>>,
 }
 
 impl SessionState {
@@ -33,7 +39,13 @@ impl SessionState {
     pub fn new() -> Self {
         Self {
             manager: Arc::new(SessionManager::new()),
+            e2e_ciphers: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Get the shared E2E cipher map (for WebSocket integration).
+    pub fn e2e_ciphers(&self) -> Arc<RwLock<HashMap<Uuid, Arc<SessionCipher>>>> {
+        self.e2e_ciphers.clone()
     }
 }
 
@@ -48,6 +60,39 @@ impl Default for SessionState {
 pub struct CreateSessionRequest {
     /// Optional display name
     pub name: Option<String>,
+}
+
+/// Request to initialize E2E encrypted session.
+#[derive(Debug, Deserialize)]
+pub struct InitE2eRequest {
+    /// Client's X25519 public key (base64-encoded, 32 bytes)
+    pub client_public_key: String,
+}
+
+/// Response from E2E session initialization.
+#[derive(Debug, Serialize)]
+pub struct InitE2eResponse {
+    /// Session ID for this E2E session
+    pub session_id: Uuid,
+    /// Server's X25519 public key (base64-encoded, 32 bytes)
+    pub server_public_key: String,
+}
+
+/// Request to send an encrypted message.
+#[derive(Debug, Deserialize)]
+pub struct EncryptedMessageRequest {
+    /// E2E session ID
+    pub session_id: Uuid,
+    /// Encrypted data
+    pub encrypted: EncryptedData,
+}
+
+/// Response with encrypted data.
+#[derive(Debug, Serialize)]
+#[allow(dead_code)]
+pub struct EncryptedMessageResponse {
+    /// Encrypted response data
+    pub encrypted: EncryptedData,
 }
 
 /// Request to send a message.
@@ -166,8 +211,79 @@ async fn cancel_execution(
     }
 }
 
-/// Create sessions routes.
-pub fn sessions_routes() -> Router {
+/// Initialize an E2E encrypted session via X25519 key exchange.
+async fn init_e2e(
+    RequireAuth(_auth): RequireAuth,
+    State(state): State<SessionState>,
+    Json(request): Json<InitE2eRequest>,
+) -> Json<ApiResponse<InitE2eResponse>> {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+
+    // Decode client public key
+    let client_pub_bytes = match b64.decode(&request.client_public_key) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return Json(ApiResponse::error(format!(
+                "Invalid base64 public key: {}",
+                e
+            )));
+        }
+    };
+
+    if client_pub_bytes.len() != 32 {
+        return Json(ApiResponse::error(
+            "Public key must be exactly 32 bytes".to_string(),
+        ));
+    }
+
+    let mut client_pub_arr = [0u8; 32];
+    client_pub_arr.copy_from_slice(&client_pub_bytes);
+    let client_public = x25519_dalek::PublicKey::from(client_pub_arr);
+
+    // Generate server keypair
+    let (server_secret, server_public) = generate_keypair();
+
+    // Derive shared session cipher
+    let cipher = SessionCipher::from_key_exchange(&server_secret, &client_public);
+
+    // Store cipher
+    let session_id = Uuid::new_v4();
+    {
+        let mut ciphers = state.e2e_ciphers.write().await;
+        ciphers.insert(session_id, Arc::new(cipher));
+    }
+
+    let server_pub_b64 = b64.encode(server_public.as_bytes());
+
+    Json(ApiResponse::success(InitE2eResponse {
+        session_id,
+        server_public_key: server_pub_b64,
+    }))
+}
+
+/// Decrypt an incoming encrypted message using the E2E session cipher.
+async fn decrypt_message(
+    RequireAuth(_auth): RequireAuth,
+    State(state): State<SessionState>,
+    Json(request): Json<EncryptedMessageRequest>,
+) -> Json<ApiResponse<String>> {
+    let ciphers = state.e2e_ciphers.read().await;
+    let Some(cipher) = ciphers.get(&request.session_id) else {
+        return Json(ApiResponse::error("E2E session not found"));
+    };
+
+    match cipher.decrypt(&request.encrypted) {
+        Ok(plaintext) => match String::from_utf8(plaintext) {
+            Ok(text) => Json(ApiResponse::success(text)),
+            Err(_) => Json(ApiResponse::error("Decrypted data is not valid UTF-8")),
+        },
+        Err(e) => Json(ApiResponse::error(format!("Decryption failed: {}", e))),
+    }
+}
+
+/// Create sessions routes with a shared SessionState.
+pub fn sessions_routes_with_state(state: SessionState) -> Router {
     Router::new()
         .route(
             "/api/v1/sessions",
@@ -179,7 +295,15 @@ pub fn sessions_routes() -> Router {
         )
         .route("/api/v1/sessions/:id/messages", post(send_message))
         .route("/api/v1/sessions/:id/cancel", post(cancel_execution))
-        .with_state(SessionState::new())
+        .route("/api/v1/sessions/init-e2e", post(init_e2e))
+        .route("/api/v1/sessions/decrypt", post(decrypt_message))
+        .with_state(state)
+}
+
+/// Create sessions routes (default state).
+#[allow(dead_code)]
+pub fn sessions_routes() -> Router {
+    sessions_routes_with_state(SessionState::new())
 }
 
 #[cfg(test)]

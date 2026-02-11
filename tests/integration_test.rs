@@ -119,6 +119,8 @@ fn test_tool_registry_with_builtins() {
         "git_branch",
         "git_diff",
         "git_push",
+        "git_clone",
+        "git_log",
         "github_api",
         "browser",
         "wol",

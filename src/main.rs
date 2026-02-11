@@ -38,13 +38,42 @@ async fn main() -> Result<()> {
         (nb, Some(guard))
     };
 
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "cratos=info,tower_http=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer().with_writer(non_blocking))
-        .init();
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "cratos=info,tower_http=info".into());
+
+    let log_format = std::env::var("CRATOS_LOG_FORMAT")
+        .unwrap_or_else(|_| "text".to_string())
+        .to_lowercase();
+
+    match log_format.as_str() {
+        "json" => {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .json()
+                        .with_writer(non_blocking),
+                )
+                .init();
+        }
+        "pretty" => {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .pretty()
+                        .with_writer(non_blocking),
+                )
+                .init();
+        }
+        _ => {
+            // Default: compact text format
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(tracing_subscriber::fmt::layer().with_writer(non_blocking))
+                .init();
+        }
+    }
 
     let cli = cli::Cli::parse();
 

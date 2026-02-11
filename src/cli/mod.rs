@@ -16,12 +16,16 @@ pub mod browser_ext;
 pub mod chronicle;
 pub mod data;
 pub mod decrees;
+pub mod develop;
 pub mod doctor;
+pub mod pair;
 pub mod pantheon;
 pub mod quota;
+pub mod security;
 pub mod setup;
 pub mod skill;
 pub mod tui;
+pub mod voice;
 
 /// Cratos AI Assistant CLI
 #[derive(Parser, Debug)]
@@ -80,10 +84,46 @@ pub enum Commands {
         /// Auth token (optional, defaults to localhost trust if auth disabled)
         #[arg(long)]
         token: Option<String>,
+        /// Use MCP (Model Context Protocol) JSON-RPC 2.0 mode instead of ACP
+        #[arg(long)]
+        mcp: bool,
+    },
+    /// Security audit and diagnostics
+    #[command(subcommand)]
+    Security(SecurityCommands),
+    /// Start interactive voice assistant
+    Voice {
+        /// Language code (ko, en, ja, zh)
+        #[arg(short, long)]
+        lang: Option<String>,
     },
     /// Browser extension and browser control
     #[command(subcommand)]
     Browser(BrowserCommands),
+    /// Device pairing (PIN-based)
+    #[command(subcommand)]
+    Pair(PairCommands),
+    /// Remote development (Issue → PR automation)
+    Develop {
+        /// GitHub issue URL or number (e.g., "https://github.com/user/repo/issues/123" or "#123")
+        issue: String,
+        /// Repository URL to clone (if not in a git repo already)
+        #[arg(long)]
+        repo: Option<String>,
+        /// Dry-run mode: show plan without executing
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SecurityCommands {
+    /// Run security audit on current configuration
+    Audit {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -115,6 +155,20 @@ pub enum BrowserExtCommands {
     Install,
     /// Print extension install path
     Path,
+}
+
+/// Device pairing subcommands
+#[derive(Subcommand, Debug)]
+pub enum PairCommands {
+    /// Generate a PIN for device pairing
+    Start,
+    /// List paired devices
+    Devices,
+    /// Unpair a device
+    Unpair {
+        /// Device ID to unpair
+        device_id: String,
+    },
 }
 
 /// Data management subcommands
@@ -181,6 +235,55 @@ pub enum SkillCommands {
     Disable {
         /// Skill name to disable
         name: String,
+    },
+    /// Export a skill to a file
+    Export {
+        /// Skill name to export
+        name: String,
+        /// Output file path (default: <name>.skill.json)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Import a skill from a file
+    Import {
+        /// File path to import (.skill.json or .skill.bundle.json)
+        path: String,
+    },
+    /// Export all active skills as a bundle
+    Bundle {
+        /// Bundle name
+        #[arg(short, long, default_value = "cratos-skills")]
+        name: String,
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Search remote skill registry
+    Search {
+        /// Search query
+        query: String,
+        /// Custom registry URL
+        #[arg(long)]
+        registry: Option<String>,
+    },
+    /// Install a skill from remote registry
+    Install {
+        /// Skill name (e.g., "deploy-k8s")
+        name: String,
+        /// Custom registry URL
+        #[arg(long)]
+        registry: Option<String>,
+    },
+    /// Publish a skill to remote registry
+    Publish {
+        /// Skill name to publish
+        name: String,
+        /// Registry API token
+        #[arg(long)]
+        token: Option<String>,
+        /// Custom registry URL
+        #[arg(long)]
+        registry: Option<String>,
     },
 }
 
@@ -296,7 +399,23 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Some(Commands::Skill(cmd)) => skill::run(cmd).await,
         Some(Commands::Data(cmd)) => data::run(cmd).await,
         Some(Commands::Tui { persona }) => tui::run(persona).await,
-        Some(Commands::Acp { token }) => crate::acp::bridge::run_acp(token).await,
+        Some(Commands::Acp { token, mcp }) => {
+            if mcp {
+                crate::acp::mcp_compat::run_mcp().await
+            } else {
+                crate::acp::bridge::run_acp(token).await
+            }
+        }
+        Some(Commands::Security(cmd)) => match cmd {
+            SecurityCommands::Audit { json } => {
+                security::run_audit_cli(json).await
+            }
+        },
+        Some(Commands::Voice { lang }) => voice::run(lang).await,
+        Some(Commands::Pair(cmd)) => pair::run(cmd).await,
+        Some(Commands::Develop { issue, repo, dry_run }) => {
+            develop::run(&issue, repo.as_deref(), dry_run).await
+        }
         Some(Commands::Browser(cmd)) => match cmd {
             BrowserCommands::Extension(ext) => match ext {
                 BrowserExtCommands::Install => browser_ext::install().await,

@@ -3,11 +3,11 @@
 //! Contains the main server initialization and runtime logic.
 
 use anyhow::{Context, Result};
-use axum::{routing::get, Extension, Json, Router};
+use axum::{routing::get, Extension, Router};
 use config::{Config, Environment, File, FileFormat};
 use cratos_channels::{TelegramAdapter, TelegramConfig};
 use cratos_core::{
-    admin_scopes, metrics_global, shutdown_signal_with_controller,
+    admin_scopes, shutdown_signal_with_controller,
     ApprovalManager, AuthStore, EventBus, OlympusConfig, OlympusHooks, Orchestrator,
     OrchestratorConfig, PlannerConfig, RedisStore, SchedulerConfig, SchedulerEngine,
     SchedulerStore, SessionStore, ShutdownController,
@@ -25,7 +25,7 @@ use cratos_memory::{GraphMemory, VectorBridge};
 use cratos_search::{IndexConfig, VectorIndex};
 use cratos_skills::{SemanticSkillRouter, SkillEmbedder, SkillRegistry, SkillStore};
 use cratos_tools::{register_builtins_with_config, BuiltinsConfig, ExecConfig, ExecMode, RunnerConfig, ToolRegistry};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -107,7 +107,7 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             auto_generate_key: true,
             key_storage: "keychain".to_string(),
         }
@@ -326,106 +326,7 @@ impl SkillEmbedder for SkillEmbeddingAdapter {
     }
 }
 
-/// Health check response
-#[derive(Debug, Serialize)]
-struct HealthResponse {
-    status: &'static str,
-    version: &'static str,
-}
-
-/// Detailed health check response
-#[derive(Debug, Serialize)]
-struct DetailedHealthResponse {
-    status: &'static str,
-    version: &'static str,
-    checks: HealthChecks,
-}
-
-/// Individual health checks
-#[derive(Debug, Serialize)]
-struct HealthChecks {
-    database: ComponentHealth,
-    redis: ComponentHealth,
-}
-
-/// Component health status
-#[derive(Debug, Serialize)]
-struct ComponentHealth {
-    status: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    latency_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-impl ComponentHealth {
-    fn healthy(latency_ms: u64) -> Self {
-        Self {
-            status: "healthy",
-            latency_ms: Some(latency_ms),
-            error: None,
-        }
-    }
-
-    fn unhealthy(error: String) -> Self {
-        Self {
-            status: "unhealthy",
-            latency_ms: None,
-            error: Some(error),
-        }
-    }
-}
-
-/// Simple health check endpoint (for load balancers)
-async fn health_check() -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status: "healthy",
-        version: env!("CARGO_PKG_VERSION"),
-    })
-}
-
-/// Detailed health check with component status
-async fn detailed_health_check(
-    redis_url: axum::extract::Extension<String>,
-) -> Json<DetailedHealthResponse> {
-    let db_health = ComponentHealth::healthy(0);
-
-    let redis_health = {
-        let start = std::time::Instant::now();
-        match redis::Client::open(redis_url.as_str()) {
-            Ok(client) => match client.get_multiplexed_async_connection().await {
-                Ok(mut conn) => match redis::cmd("PING").query_async::<String>(&mut conn).await {
-                    Ok(_) => ComponentHealth::healthy(start.elapsed().as_millis() as u64),
-                    Err(e) => ComponentHealth::unhealthy(e.to_string()),
-                },
-                Err(e) => ComponentHealth::unhealthy(e.to_string()),
-            },
-            Err(e) => ComponentHealth::unhealthy(e.to_string()),
-        }
-    };
-
-    let overall_status = if db_health.status == "healthy" && redis_health.status == "healthy" {
-        "healthy"
-    } else if db_health.status == "healthy" || redis_health.status == "healthy" {
-        "degraded"
-    } else {
-        "unhealthy"
-    };
-
-    Json(DetailedHealthResponse {
-        status: overall_status,
-        version: env!("CARGO_PKG_VERSION"),
-        checks: HealthChecks {
-            database: db_health,
-            redis: redis_health,
-        },
-    })
-}
-
-/// Metrics endpoint (Prometheus format)
-async fn metrics_endpoint() -> String {
-    metrics_global::export_prometheus()
-}
+// Health check and metrics endpoints are now in api/health.rs
 
 /// Embedded default configuration (compiled into binary)
 const DEFAULT_CONFIG: &str = include_str!("../config/default.toml");
@@ -689,6 +590,98 @@ fn validate_production_config(config: &AppConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Build a minimal orchestrator for CLI commands (e.g., `cratos develop`).
+///
+/// Does NOT start the server, channels, scheduler, or background tasks.
+/// Initialises: config → LLM → tools → event store → orchestrator.
+pub async fn build_orchestrator_for_cli(
+    config: &AppConfig,
+) -> Result<Arc<Orchestrator>> {
+    let data_dir = config
+        .data_dir
+        .as_ref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(cratos_replay::default_data_dir);
+
+    let db_path = data_dir.join("cratos.db");
+    let event_store = Arc::new(
+        EventStore::from_path(&db_path)
+            .await
+            .context("Failed to initialize SQLite event store")?,
+    );
+
+    let llm_router = resolve_llm_provider(&config.llm)?;
+    let llm_provider: Arc<dyn LlmProvider> = llm_router.clone();
+
+    let mut tool_registry = ToolRegistry::new();
+    let exec_config = {
+        let sec = &config.security.exec;
+        let mode = match sec.mode.as_str() {
+            "strict" => ExecMode::Strict,
+            _ => ExecMode::Permissive,
+        };
+        ExecConfig {
+            mode,
+            max_timeout_secs: sec.max_timeout_secs,
+            extra_blocked_commands: sec.extra_blocked_commands.clone(),
+            allowed_commands: sec.allowed_commands.clone(),
+            blocked_paths: sec.blocked_paths.clone(),
+            allow_network_commands: false,
+            ..ExecConfig::default()
+        }
+    };
+    let builtins_config = BuiltinsConfig {
+        exec: exec_config,
+        ..BuiltinsConfig::default()
+    };
+    register_builtins_with_config(&mut tool_registry, &builtins_config);
+    let tool_registry = Arc::new(tool_registry);
+
+    let exec_timeout = std::time::Duration::from_secs(config.security.exec.max_timeout_secs);
+    let allow_high_risk = config.approval.default_mode == "never";
+    let runner_config = RunnerConfig::new(exec_timeout).with_high_risk(allow_high_risk);
+
+    let orchestrator_config = OrchestratorConfig::new()
+        .with_max_iterations(15)
+        .with_logging(true)
+        .with_planner_config({
+            let (prov_name, model_name) = if llm_provider.name() == "router" {
+                let model = llm_provider.default_model();
+                let name = if config.llm.default_provider.is_empty() || config.llm.default_provider == "auto" {
+                    "auto-selected"
+                } else {
+                    config.llm.default_provider.as_str()
+                };
+                (name.to_string(), model.to_string())
+            } else {
+                (llm_provider.name().to_string(), llm_provider.default_model().to_string())
+            };
+            PlannerConfig::default()
+                .with_machine_info()
+                .with_provider_info(&prov_name, &model_name)
+        })
+        .with_runner_config(runner_config);
+
+    let mut orchestrator =
+        Orchestrator::new(llm_provider, tool_registry, orchestrator_config)
+            .with_event_store(event_store)
+            .with_persona_mapping(cratos_core::PersonaMapping::default_mapping());
+
+    // Auto-detect fallback provider
+    {
+        let primary = config.llm.default_provider.clone();
+        let fallback_candidates = ["groq", "novita", "deepseek", "openrouter", "ollama"];
+        if let Some(fb) = fallback_candidates.iter()
+            .filter(|n| **n != primary.as_str())
+            .find_map(|n| llm_router.get(n))
+        {
+            orchestrator = orchestrator.with_fallback_provider(fb);
+        }
+    }
+
+    Ok(Arc::new(orchestrator))
 }
 
 /// Run the server
@@ -1084,6 +1077,7 @@ pub async fn run() -> Result<()> {
     }
 
     // Phase 6: ProactiveScheduler with real executor
+    let mut scheduler_engine_ext: Option<Arc<SchedulerEngine>> = None;
     if config.scheduler.enabled {
         let scheduler_db_path = data_dir.join("scheduler.db");
         match SchedulerStore::from_path(&scheduler_db_path).await {
@@ -1127,21 +1121,45 @@ pub async fn run() -> Result<()> {
                                             e.to_string(),
                                         ))
                                 }
+                                TaskAction::Shell { command, cwd } => {
+                                    // Route shell commands through exec tool to apply
+                                    // security filters (blocked_commands, blocked_paths, injection defense)
+                                    let mut args = serde_json::json!({ "command": command });
+                                    if let Some(dir) = cwd {
+                                        args["cwd"] = serde_json::Value::String(dir);
+                                    }
+                                    orch.runner()
+                                        .execute("exec", args)
+                                        .await
+                                        .map(|r| {
+                                            serde_json::to_string(&r.result.output)
+                                                .unwrap_or_default()
+                                        })
+                                        .map_err(|e| cratos_core::scheduler::SchedulerError::Execution(
+                                            e.to_string(),
+                                        ))
+                                }
                                 _ => Ok("Action type not yet supported".to_string()),
                             }
                         })
                     });
 
-                let scheduler_engine =
+                let scheduler_engine = Arc::new(
                     SchedulerEngine::new(Arc::new(scheduler_store), scheduler_config)
-                        .with_executor(task_executor);
+                        .with_executor(task_executor),
+                );
                 let scheduler_shutdown = shutdown_controller.token();
 
+                // Clone for the background run loop
+                let engine_for_run = scheduler_engine.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = scheduler_engine.run(scheduler_shutdown).await {
+                    if let Err(e) = engine_for_run.run(scheduler_shutdown).await {
                         error!("Scheduler error: {}", e);
                     }
                 });
+
+                // Register as Extension for API handlers
+                scheduler_engine_ext = Some(scheduler_engine);
 
                 info!(
                     "ProactiveScheduler started (check interval: {}s, max concurrent: {})",
@@ -1258,7 +1276,7 @@ pub async fn run() -> Result<()> {
     if auth_enabled {
         info!("Authentication ENABLED - API key required for all endpoints");
     } else {
-        info!("Authentication DISABLED - all endpoints open (development mode)");
+        warn!("SECURITY: Authentication disabled — all API endpoints open (development only). Enable [server.auth] enabled = true for production.");
     }
 
     // ================================================================
@@ -1295,16 +1313,38 @@ pub async fn run() -> Result<()> {
         Arc::new(crate::websocket::gateway::BrowserRelay::new());
     info!("Browser relay initialized");
 
+    // PairingManager (PIN-based device pairing) — try SQLite, fall back to in-memory
+    let pairing_manager = match cratos_core::pairing::PairingManager::new_with_db(
+        event_store.pool().clone(),
+    )
+    .await
+    {
+        Ok(mgr) => {
+            info!("PairingManager initialized with SQLite persistence");
+            Arc::new(mgr)
+        }
+        Err(e) => {
+            warn!("PairingManager SQLite init failed ({}), using in-memory", e);
+            Arc::new(cratos_core::pairing::PairingManager::new())
+        }
+    };
+
+    // ChallengeStore for device challenge-response auth
+    let challenge_store = Arc::new(cratos_core::device_auth::ChallengeStore::new());
+    info!("ChallengeStore initialized (TTL: 60s)");
+
+    // E2E Session State (shared between REST sessions API and WS chat)
+    let session_state = crate::api::SessionState::new();
+    let e2e_ciphers = session_state.e2e_ciphers();
+
     // Build the main router with all endpoints
     let app = Router::new()
-        // Health and metrics endpoints (no auth required for load balancers)
-        .route("/health", get(health_check))
-        .route("/health/detailed", get(detailed_health_check))
-        .route("/metrics", get(metrics_endpoint))
+        // Health endpoints (/health public for LB, /health/detailed and /metrics require auth)
+        .merge(crate::api::health_routes())
         // Root endpoint (no auth)
         .route("/", get(|| async { "Cratos AI Assistant" }))
         // API routes (auth applied per-handler via RequireAuth extractor)
-        .merge(crate::api::api_router())
+        .merge(crate::api::api_router_with_session_state(session_state))
         // WebSocket routes
         .merge(crate::websocket::websocket_router())
         // Layers (applied to all routes)
@@ -1317,13 +1357,30 @@ pub async fn run() -> Result<()> {
         .layer(Extension(orchestrator.clone()))
         .layer(Extension(tool_registry.clone()))
         .layer(Extension(dev_monitor.clone()))
+        .layer(Extension(event_store.clone()))
+        .layer(Extension(e2e_ciphers))
+        .layer(Extension(pairing_manager))
+        .layer(Extension(challenge_store))
         .layer(rate_limit_layer);
+
+    // Conditionally add scheduler engine Extension
+    let app = if let Some(sched_engine) = scheduler_engine_ext {
+        app.layer(Extension(sched_engine))
+    } else {
+        app
+    };
 
     let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)
         .parse()
         .context("Invalid server address")?;
 
     info!("HTTP server listening on http://{}", addr);
+
+    // mDNS service discovery (advertise on LAN)
+    let discovery = cratos_core::DiscoveryService::new(cratos_core::DiscoveryConfig::default());
+    if let Err(e) = discovery.start(config.server.port) {
+        warn!("mDNS discovery failed to start: {}", e);
+    }
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -1334,6 +1391,8 @@ pub async fn run() -> Result<()> {
         .with_graceful_shutdown(shutdown_signal_with_controller(server_shutdown))
         .await
         .context("HTTP server error")?;
+
+    discovery.stop();
 
     info!("Waiting for channel adapters to finish...");
     let adapter_timeout = tokio::time::Duration::from_secs(5);
