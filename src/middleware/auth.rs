@@ -155,6 +155,39 @@ fn extract_token(parts: &Parts) -> std::result::Result<String, AuthError> {
 }
 
 // ============================================================================
+// RequireAuthStrict Extractor
+// ============================================================================
+
+/// Axum extractor that **always** requires a valid token, even when global
+/// authentication is disabled. Use this for sensitive endpoints such as
+/// WebSocket chat/events and `/health/detailed` which expose infrastructure
+/// information that must never be publicly accessible.
+pub struct RequireAuthStrict(pub AuthContext);
+
+#[async_trait::async_trait]
+impl<S> FromRequestParts<S> for RequireAuthStrict
+where
+    S: Send + Sync,
+{
+    type Rejection = AuthRejection;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> std::result::Result<Self, Self::Rejection> {
+        let auth_store = parts
+            .extensions
+            .get::<Arc<AuthStore>>()
+            .ok_or_else(|| AuthError::Internal("AuthStore not configured".to_string()))?;
+
+        // NEVER bypass — always require a valid token regardless of is_enabled()
+        let token = extract_token(parts)?;
+        let ctx = auth_store.validate_token(&token)?;
+        Ok(RequireAuthStrict(ctx))
+    }
+}
+
+// ============================================================================
 // RequireScope helper
 // ============================================================================
 
@@ -171,6 +204,21 @@ mod tests {
     fn test_auth_error_response_unauthorized() {
         let rejection = AuthRejection::from(AuthError::MissingCredentials);
         assert_eq!(rejection.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_require_auth_strict_type_exists() {
+        // Verify RequireAuthStrict struct exists and wraps AuthContext
+        let ctx = AuthContext {
+            user_id: "test".to_string(),
+            method: cratos_core::auth::AuthMethod::ApiKey,
+            scopes: vec![Scope::Admin],
+            session_id: None,
+            device_id: None,
+        };
+        let strict = RequireAuthStrict(ctx);
+        assert_eq!(strict.0.user_id, "test");
+        assert!(strict.0.has_scope(&Scope::Admin));
     }
 
     #[test]

@@ -52,6 +52,7 @@ pub(crate) async fn dispatch_method(
 }
 
 /// Public entry point for dispatching methods (used by ACP bridge).
+#[allow(clippy::too_many_arguments)]
 pub async fn dispatch_method_public(
     id: &str,
     method: &str,

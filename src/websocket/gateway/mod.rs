@@ -53,6 +53,7 @@ const BROWSER_KEEPALIVE_SECS: u64 = 20;
 const MAX_MESSAGE_BYTES: usize = 1_048_576;
 
 /// WebSocket upgrade handler for `/ws/gateway`.
+#[allow(clippy::too_many_arguments)]
 pub async fn gateway_handler(
     ws: WebSocketUpgrade,
     Extension(auth_store): Extension<Arc<AuthStore>>,
@@ -71,6 +72,7 @@ pub async fn gateway_handler(
 }
 
 /// Main gateway connection handler.
+#[allow(clippy::too_many_arguments)]
 async fn handle_gateway(
     socket: WebSocket,
     auth_store: Arc<AuthStore>,
@@ -352,6 +354,7 @@ async fn wait_for_connect(
 }
 
 /// Handle an authenticated message. Returns a response frame if applicable.
+#[allow(clippy::too_many_arguments)]
 async fn handle_message(
     text: &str,
     auth: &AuthContext,
