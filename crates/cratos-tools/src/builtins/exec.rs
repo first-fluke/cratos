@@ -63,6 +63,14 @@ const DEFAULT_BLOCKED_COMMANDS: &[&str] = &[
     // Interpreters (can bypass all checks)
     "python", "python3", "perl", "ruby", "node",
     "php", "lua", "tclsh", "wish",
+    // H1: Command wrappers that can invoke blocked commands indirectly
+    "env", "xargs", "nice", "timeout", "watch", "strace", "ltrace",
+    "nohup", "setsid", "osascript",
+];
+
+/// Command prefixes blocked to prevent versioned interpreter bypass (e.g. `python3.11`, `perl5.34`).
+const BLOCKED_COMMAND_PREFIXES: &[&str] = &[
+    "python", "perl", "ruby", "node", "php", "lua", "tclsh", "wish",
 ];
 
 /// Network exfiltration commands blocked by default.
@@ -197,7 +205,10 @@ impl ExecTool {
                 let is_network_blocked = !self.config.allow_network_commands
                     && NETWORK_EXFIL_COMMANDS.contains(&base_command);
                 let is_extra_blocked = self.config.extra_blocked_commands.iter().any(|b| b == base_command);
-                is_builtin_blocked || is_network_blocked || is_extra_blocked
+                // C2: Block versioned interpreters (e.g. python3.11, perl5.34)
+                let is_prefix_blocked =
+                    BLOCKED_COMMAND_PREFIXES.iter().any(|p| base_command.starts_with(p));
+                is_builtin_blocked || is_network_blocked || is_extra_blocked || is_prefix_blocked
             }
         }
     }
@@ -427,7 +438,8 @@ mod tests {
         assert!(!tool.is_command_blocked("npm"));
         assert!(!tool.is_command_blocked("pip"));
         assert!(!tool.is_command_blocked("brew"));
-        assert!(!tool.is_command_blocked("osascript"));
+        // osascript is now blocked (H1: command wrapper)
+        assert!(tool.is_command_blocked("osascript"));
 
         // Network exfil commands are blocked by default
         assert!(tool.is_command_blocked("curl"));
@@ -622,5 +634,40 @@ mod tests {
             ..ExecConfig::default()
         });
         assert_eq!(tool.config.max_timeout_secs, 120);
+    }
+
+    // ── C2: Versioned interpreter bypass ───────────────────────────────
+
+    #[test]
+    fn test_versioned_interpreter_bypass() {
+        let tool = ExecTool::new();
+        // Versioned interpreters should be blocked by prefix matching
+        assert!(tool.is_command_blocked("python3.11"));
+        assert!(tool.is_command_blocked("perl5.34"));
+        assert!(tool.is_command_blocked("ruby3.2"));
+        assert!(tool.is_command_blocked("node18"));
+        assert!(tool.is_command_blocked("php8.1"));
+        // Non-interpreter commands still pass
+        assert!(!tool.is_command_blocked("ls"));
+        assert!(!tool.is_command_blocked("cat"));
+        assert!(!tool.is_command_blocked("git"));
+    }
+
+    // ── H1: Command wrapper blocks ────────────────────────────────────
+
+    #[test]
+    fn test_command_wrapper_blocks() {
+        let tool = ExecTool::new();
+        // Wrappers that can invoke blocked commands indirectly
+        assert!(tool.is_command_blocked("env"));
+        assert!(tool.is_command_blocked("xargs"));
+        assert!(tool.is_command_blocked("nice"));
+        assert!(tool.is_command_blocked("timeout"));
+        assert!(tool.is_command_blocked("watch"));
+        assert!(tool.is_command_blocked("strace"));
+        assert!(tool.is_command_blocked("ltrace"));
+        assert!(tool.is_command_blocked("nohup"));
+        assert!(tool.is_command_blocked("setsid"));
+        assert!(tool.is_command_blocked("osascript"));
     }
 }
