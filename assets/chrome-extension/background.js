@@ -26,7 +26,7 @@ async function getSettings() {
   const result = await chrome.storage.local.get(["serverUrl", "apiKey"]);
   return {
     serverUrl: result.serverUrl || DEFAULT_SERVER_URL,
-    apiKey: result.apiKey || "",
+    apiKey: result.apiKey || "cratos_111b7a2a36e44726a4008db063440107",
   };
 }
 
@@ -217,7 +217,198 @@ function sendRequest(method, params) {
   });
 }
 
+// ── CDP (Chrome DevTools Protocol) ──────────────────────────────────
+// All mutation actions (click, type, fill, hover) use CDP Input domain
+// so that events are indistinguishable from real user input.
+// This bypasses React/Vue synthetic-event systems that ignore dispatchEvent.
+
+const debuggerAttachedTabs = new Set();
+
+async function ensureDebuggerAttached(tabId) {
+  if (!debuggerAttachedTabs.has(tabId)) {
+    await chrome.debugger.attach({ tabId }, "1.3");
+    debuggerAttachedTabs.add(tabId);
+  }
+}
+
+function detachDebugger(tabId) {
+  if (debuggerAttachedTabs.has(tabId)) {
+    chrome.debugger.detach({ tabId }).catch(() => {});
+    debuggerAttachedTabs.delete(tabId);
+  }
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => detachDebugger(tabId));
+
+chrome.debugger.onDetach.addListener((source) => {
+  debuggerAttachedTabs.delete(source.tabId);
+});
+
+/** Evaluate JS via CDP Runtime.evaluate, bypassing page CSP entirely. */
+async function evaluateViaCDP(tabId, script) {
+  await ensureDebuggerAttached(tabId);
+  const trimmed = script.trim();
+  const isCallable = trimmed.startsWith("(") || trimmed.startsWith("function") || trimmed.startsWith("async");
+  const expression = isCallable ? `(${trimmed})()` : trimmed;
+
+  const result = await chrome.debugger.sendCommand(
+    { tabId },
+    "Runtime.evaluate",
+    {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+      allowUnsafeEvalBlockedByCSP: true,
+    },
+  );
+
+  if (result.exceptionDetails) {
+    const desc =
+      result.exceptionDetails.exception?.description || "CDP evaluation failed";
+    throw new Error(desc);
+  }
+
+  return { result: result.result?.value ?? null };
+}
+
+/** Simulate a real mouse click at viewport coordinates (x, y). */
+async function clickViaCDP(tabId, x, y) {
+  await ensureDebuggerAttached(tabId);
+  const base = { x, y, button: "left", clickCount: 1 };
+  await chrome.debugger.sendCommand(
+    { tabId },
+    "Input.dispatchMouseEvent",
+    { type: "mousePressed", ...base },
+  );
+  await chrome.debugger.sendCommand(
+    { tabId },
+    "Input.dispatchMouseEvent",
+    { type: "mouseReleased", ...base },
+  );
+  return { ok: true };
+}
+
+/** Small delay to let the page process the previous event. */
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Insert text into the focused element via CDP.
+ * Uses document.execCommand for contenteditable editors (X/Twitter Lexical,
+ * Draft.js, ProseMirror) and falls back to Input.insertText for <input>/<textarea>.
+ */
+async function insertTextViaCDP(tabId, text) {
+  await ensureDebuggerAttached(tabId);
+  const escaped = text.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\n/g, "\\n");
+  const result = await chrome.debugger.sendCommand(
+    { tabId },
+    "Runtime.evaluate",
+    {
+      expression: `document.execCommand('insertText', false, '${escaped}')`,
+      returnByValue: true,
+    },
+  );
+  const succeeded = result.result?.value === true;
+  if (!succeeded) {
+    await chrome.debugger.sendCommand(
+      { tabId },
+      "Input.insertText",
+      { text },
+    );
+  }
+}
+
+/** Click to focus, wait for editor init, then insert text. */
+async function typeViaCDP(tabId, x, y, text) {
+  await clickViaCDP(tabId, x, y);
+  await delay(150);
+  await insertTextViaCDP(tabId, text);
+  return { ok: true };
+}
+
+/** Triple-click to select all existing text, then replace with new value. */
+async function fillViaCDP(tabId, x, y, value) {
+  await ensureDebuggerAttached(tabId);
+  const base = { x, y, button: "left", clickCount: 3 };
+  await chrome.debugger.sendCommand(
+    { tabId },
+    "Input.dispatchMouseEvent",
+    { type: "mousePressed", ...base },
+  );
+  await chrome.debugger.sendCommand(
+    { tabId },
+    "Input.dispatchMouseEvent",
+    { type: "mouseReleased", ...base },
+  );
+  await delay(100);
+  await insertTextViaCDP(tabId, value);
+  return { ok: true };
+}
+
+/** Move cursor to coordinates, triggering hover/mouseover events. */
+async function hoverViaCDP(tabId, x, y) {
+  await ensureDebuggerAttached(tabId);
+  await chrome.debugger.sendCommand(
+    { tabId },
+    "Input.dispatchMouseEvent",
+    { type: "mouseMoved", x, y },
+  );
+  return { ok: true };
+}
+
+/** Route content-script CDP signals to the appropriate CDP function. */
+async function dispatchCdpInput(tabId, payload) {
+  const { use_cdp, x, y, text, value } = payload;
+  switch (use_cdp) {
+    case "click":
+      return clickViaCDP(tabId, x, y);
+    case "type":
+      return typeViaCDP(tabId, x, y, text);
+    case "fill":
+      return fillViaCDP(tabId, x, y, value);
+    case "hover":
+      return hoverViaCDP(tabId, x, y);
+    default:
+      throw new Error(`Unknown CDP action: ${use_cdp}`);
+  }
+}
+
 // ── Browser actions ──────────────────────────────────────────────────
+
+/**
+ * Send a message to the content script, injecting it first if needed.
+ * Returns the raw response from content.js (may include csp_blocked flag).
+ */
+function sendToContentScript(tabId, params) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, { type: "exec_action", params }, (response) => {
+      if (!chrome.runtime.lastError) {
+        resolve(response);
+        return;
+      }
+      // Content script not injected — inject and retry once
+      chrome.scripting.executeScript(
+        { target: { tabId }, files: ["content.js"] },
+        () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          setTimeout(() => {
+            chrome.tabs.sendMessage(tabId, { type: "exec_action", params }, (resp2) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+              } else {
+                resolve(resp2);
+              }
+            });
+          }, 100);
+        },
+      );
+    });
+  });
+}
 
 async function execAction(params) {
   const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -225,46 +416,29 @@ async function execAction(params) {
   const tabId = tabs[0].id;
   const tabUrl = tabs[0].url || "";
 
-  // Can't execute on restricted pages
   if (tabUrl.startsWith("chrome://") || tabUrl.startsWith("chrome-extension://")) {
     throw new Error(`Cannot execute action on restricted page: ${tabUrl}`);
   }
 
-  // Send message to content script (runs in extension's isolated world with DOM access)
-  return new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tabId, { type: "exec_action", params }, (response) => {
-      if (chrome.runtime.lastError) {
-        // Content script not injected yet — inject it and retry once
-        chrome.scripting.executeScript(
-          { target: { tabId }, files: ["content.js"] },
-          () => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
-              return;
-            }
-            // Retry after injection
-            setTimeout(() => {
-              chrome.tabs.sendMessage(tabId, { type: "exec_action", params }, (resp2) => {
-                if (chrome.runtime.lastError) {
-                  reject(new Error(chrome.runtime.lastError.message));
-                } else if (resp2 && !resp2.ok) {
-                  reject(new Error(resp2.error || "Action failed"));
-                } else {
-                  resolve(resp2?.result ?? null);
-                }
-              });
-            }, 100);
-          }
-        );
-        return;
-      }
-      if (response && !response.ok) {
-        reject(new Error(response.error || "Action failed"));
-      } else {
-        resolve(response?.result ?? null);
-      }
-    });
-  });
+  // evaluate: always use CDP directly — content script is subject to page CSP
+  if (params.action === "evaluate") {
+    return evaluateViaCDP(tabId, params.script);
+  }
+
+  const response = await sendToContentScript(tabId, params);
+
+  if (response && !response.ok) {
+    throw new Error(response.error || "Action failed");
+  }
+
+  const result = response?.result;
+
+  // Content script resolved element coordinates → dispatch via CDP Input
+  if (result?.use_cdp) {
+    return dispatchCdpInput(tabId, result);
+  }
+
+  return result ?? null;
 }
 
 async function getTabs() {

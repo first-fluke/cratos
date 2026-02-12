@@ -18,33 +18,37 @@
     return el;
   }
 
+  /** Scroll element into view and return its viewport-center coordinates. */
+  function elementCenter(el) {
+    el.scrollIntoView({ block: "center", inline: "center" });
+    const rect = el.getBoundingClientRect();
+    return {
+      x: Math.round(rect.x + rect.width / 2),
+      y: Math.round(rect.y + rect.height / 2),
+    };
+  }
+
   const actions = {
+    // click/type/fill/hover resolve element coordinates and return a CDP signal.
+    // background.js dispatches real input via chrome.debugger (Input domain),
+    // which is indistinguishable from user input and works with React/Vue/Angular.
+
     click(params) {
       const el = querySelector(params.selector);
-      el.click();
-      return { ok: true };
+      const { x, y } = elementCenter(el);
+      return { use_cdp: "click", x, y };
     },
 
     type(params) {
       const el = querySelector(params.selector);
-      el.focus();
-      const text = params.text || "";
-      for (const ch of text) {
-        el.value += ch;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      return { ok: true };
+      const { x, y } = elementCenter(el);
+      return { use_cdp: "type", x, y, text: params.text || "" };
     },
 
     fill(params) {
       const el = querySelector(params.selector);
-      el.focus();
-      el.value = params.value || "";
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      el.blur();
-      return { ok: true };
+      const { x, y } = elementCenter(el);
+      return { use_cdp: "fill", x, y, value: params.value || "" };
     },
 
     get_text(params) {
@@ -80,9 +84,8 @@
 
     hover(params) {
       const el = querySelector(params.selector);
-      el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-      el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-      return { ok: true };
+      const { x, y } = elementCenter(el);
+      return { use_cdp: "hover", x, y };
     },
 
     select(params) {
@@ -132,8 +135,13 @@
         const fn = Function("return (" + params.script + ")()"); // NOSONAR
         return { result: fn() };
       } catch (e) {
-        if (e.message && (e.message.includes("unsafe-eval") || e.message.includes("Content Security Policy"))) {
-          return { result: null, error: "CSP blocks eval on this page. Use get_text/get_html/get_attribute actions instead." };
+        if (
+          e.message &&
+          (e.message.includes("unsafe-eval") ||
+            e.message.includes("Content Security Policy"))
+        ) {
+          // Signal background.js to retry via CDP (chrome.debugger)
+          return { ok: false, csp_blocked: true, error: "CSP blocks eval" };
         }
         throw e;
       }
