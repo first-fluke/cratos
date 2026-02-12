@@ -172,7 +172,7 @@ auto_promotion = true
 # Enable authentication for HTTP/WS endpoints
 # false = all endpoints open (development only)
 # true = require Bearer token or X-API-Key
-enabled = true
+enabled = false
 
 # Auto-generate an admin API key on first run (printed to stdout)
 auto_generate_key = true

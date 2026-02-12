@@ -46,3 +46,24 @@ pre_prd.md
 # Serena
 .serena/
 .mcp.json
+
+# AppleScript scratch files
+*.scpt
+
+# Scratch/temp files
+check_todo.md
+list_tools*.js
+INSTALL_SUMMARY.md
+
+# Web app build artifacts
+apps/web/dist/
+apps/web/node_modules/
+apps/web/style/output.css
+
+# MCP tools
+tools/*/node_modules/
+tools/*/package-lock.json
+
+# Node
+node_modules/
+package-lock.json
