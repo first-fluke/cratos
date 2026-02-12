@@ -29,6 +29,7 @@ regex = { workspace = true }
 aes-gcm = "0.10"
 rand = "0.8"
 hostname = "0.4"
+backoff = "0.4"
 
 # Optional: Embeddings (tract = pure Rust ONNX runtime)
 tract-onnx = { workspace = true, optional = true }

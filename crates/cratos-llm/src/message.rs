@@ -3,6 +3,7 @@
 //! This module defines the core message types used in LLM conversations.
 
 use crate::ToolCall;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 /// Role in a conversation message
@@ -32,6 +33,64 @@ impl MessageRole {
     }
 }
 
+/// Inline image content attached to a message
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ImageContent {
+    /// MIME type (e.g., "image/jpeg", "image/png")
+    pub mime_type: String,
+    /// Raw image bytes
+    #[serde(with = "base64_bytes")]
+    pub data: Vec<u8>,
+}
+
+impl std::fmt::Debug for ImageContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImageContent")
+            .field("mime_type", &self.mime_type)
+            .field("data_len", &self.data.len())
+            .finish()
+    }
+}
+
+impl ImageContent {
+    /// Create a new image content
+    #[must_use]
+    pub fn new(mime_type: impl Into<String>, data: Vec<u8>) -> Self {
+        Self {
+            mime_type: mime_type.into(),
+            data,
+        }
+    }
+
+    /// Return base64-encoded data
+    #[must_use]
+    pub fn base64_data(&self) -> String {
+        base64::engine::general_purpose::STANDARD.encode(&self.data)
+    }
+
+    /// Return a data URI (data:image/jpeg;base64,...)
+    #[must_use]
+    pub fn data_uri(&self) -> String {
+        format!("data:{};base64,{}", self.mime_type, self.base64_data())
+    }
+}
+
+mod base64_bytes {
+    use base64::Engine;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(data: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&base64::engine::general_purpose::STANDARD.encode(data))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let s = String::deserialize(d)?;
+        base64::engine::general_purpose::STANDARD
+            .decode(s)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 /// A message in a conversation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -48,6 +107,9 @@ pub struct Message {
     /// Tool calls (for assistant messages requesting tool use)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_calls: Vec<ToolCall>,
+    /// Inline images (for multimodal user messages)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ImageContent>,
 }
 
 impl Message {
@@ -60,6 +122,7 @@ impl Message {
             tool_call_id: None,
             name: None,
             tool_calls: Vec::new(),
+            images: Vec::new(),
         }
     }
 
@@ -72,6 +135,20 @@ impl Message {
             tool_call_id: None,
             name: None,
             tool_calls: Vec::new(),
+            images: Vec::new(),
+        }
+    }
+
+    /// Create a user message with images
+    #[must_use]
+    pub fn user_with_images(content: impl Into<String>, images: Vec<ImageContent>) -> Self {
+        Self {
+            role: MessageRole::User,
+            content: content.into(),
+            tool_call_id: None,
+            name: None,
+            tool_calls: Vec::new(),
+            images,
         }
     }
 
@@ -84,6 +161,7 @@ impl Message {
             tool_call_id: None,
             name: None,
             tool_calls: Vec::new(),
+            images: Vec::new(),
         }
     }
 
@@ -99,6 +177,7 @@ impl Message {
             tool_call_id: None,
             name: None,
             tool_calls,
+            images: Vec::new(),
         }
     }
 
@@ -111,6 +190,7 @@ impl Message {
             tool_call_id: Some(tool_call_id.into()),
             name: None,
             tool_calls: Vec::new(),
+            images: Vec::new(),
         }
     }
 
@@ -127,7 +207,14 @@ impl Message {
             tool_call_id: Some(tool_call_id.into()),
             name: Some(name.into()),
             tool_calls: Vec::new(),
+            images: Vec::new(),
         }
+    }
+
+    /// Check if this message has images
+    #[must_use]
+    pub fn has_images(&self) -> bool {
+        !self.images.is_empty()
     }
 }
 

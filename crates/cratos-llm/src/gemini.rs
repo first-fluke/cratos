@@ -82,7 +82,11 @@ pub const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 fn downgrade_model(model: &str) -> Option<&'static str> {
     match model {
         "gemini-3-pro-preview" => Some("gemini-3-flash-preview"),
-        "gemini-3-flash-preview" => Some("gemini-2.5-flash"),
+        // NOTE: Do NOT downgrade gemini-3-flash-preview to gemini-2.5-flash.
+        // Gemini 3 thinking models return `thoughtSignature` on function calls.
+        // Non-thinking models don't. Mixing them in the same conversation causes
+        // "missing thought_signature" 400 errors on subsequent turns.
+        "gemini-3-flash-preview" => None,
         "gemini-2.5-pro" => Some("gemini-2.5-flash"),
         "gemini-2.5-flash" => Some("gemini-2.5-flash-lite"),
         _ => None,
@@ -143,6 +147,17 @@ enum GeminiPart {
         #[serde(rename = "functionResponse")]
         function_response: FunctionResponse,
     },
+    InlineData {
+        #[serde(rename = "inlineData")]
+        inline_data: InlineData,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct InlineData {
+    #[serde(rename = "mimeType")]
+    mime_type: String,
+    data: String, // base64-encoded
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -242,7 +257,7 @@ struct GeminiErrorDetail {
 
 /// Fields not supported by Gemini's OpenAPI Schema subset.
 /// See: https://ai.google.dev/api/caching#Schema
-const UNSUPPORTED_SCHEMA_FIELDS: &[&str] = &["default", "additionalProperties"];
+const UNSUPPORTED_SCHEMA_FIELDS: &[&str] = &["default", "additionalProperties", "$schema"];
 
 /// Recursively strip JSON Schema fields that Gemini API does not support.
 ///
@@ -870,12 +885,26 @@ impl GeminiProvider {
                     });
                 }
                 MessageRole::User => {
-                    gemini_contents.push(GeminiContent {
-                        role: Some("user".to_string()),
-                        parts: vec![GeminiPart::Text {
+                    let mut parts = Vec::new();
+                    if !msg.content.is_empty() {
+                        parts.push(GeminiPart::Text {
                             text: msg.content.clone(),
-                        }],
-                    });
+                        });
+                    }
+                    for img in &msg.images {
+                        parts.push(GeminiPart::InlineData {
+                            inline_data: InlineData {
+                                mime_type: img.mime_type.clone(),
+                                data: img.base64_data(),
+                            },
+                        });
+                    }
+                    if !parts.is_empty() {
+                        gemini_contents.push(GeminiContent {
+                            role: Some("user".to_string()),
+                            parts,
+                        });
+                    }
                 }
                 MessageRole::Assistant => {
                     let mut parts: Vec<GeminiPart> = Vec::new();
@@ -939,6 +968,35 @@ impl GeminiProvider {
                         }
                     }
                 }
+            }
+        }
+
+        // Gemini 3 thinking models require ALL function calls to carry
+        // `thoughtSignature`.  If the conversation history mixes calls from
+        // different providers (e.g. after a fallback), drop the function call
+        // turns that lack signatures so only consistent turns remain.
+        let has_some = gemini_contents.iter().any(|c| {
+            c.parts.iter().any(|p| matches!(p, GeminiPart::FunctionCall { thought_signature: Some(_), .. }))
+        });
+        if has_some {
+            let before = gemini_contents.len();
+            // Remove FunctionCall parts without thought_signature from model turns
+            for content in &mut gemini_contents {
+                if content.role.as_deref() == Some("model") {
+                    content.parts.retain(|p| {
+                        !matches!(p, GeminiPart::FunctionCall { thought_signature: None, .. })
+                    });
+                }
+            }
+            // Remove empty model turns and orphaned FunctionResponse-only user turns
+            // that no longer have a matching FunctionCall
+            gemini_contents.retain(|c| !c.parts.is_empty());
+            let after = gemini_contents.len();
+            if before != after {
+                tracing::warn!(
+                    removed = before - after,
+                    "Dropped content blocks with missing thought_signature to maintain Gemini 3 consistency"
+                );
             }
         }
 
@@ -1521,7 +1579,9 @@ mod tests {
     #[test]
     fn test_downgrade_chain() {
         assert_eq!(downgrade_model("gemini-3-pro-preview"), Some("gemini-3-flash-preview"));
-        assert_eq!(downgrade_model("gemini-3-flash-preview"), Some("gemini-2.5-flash"));
+        // gemini-3-flash-preview must NOT downgrade to non-thinking model
+        // (would cause thought_signature mismatch in conversation history)
+        assert_eq!(downgrade_model("gemini-3-flash-preview"), None);
         assert_eq!(downgrade_model("gemini-2.5-pro"), Some("gemini-2.5-flash"));
         assert_eq!(
             downgrade_model("gemini-2.5-flash"),

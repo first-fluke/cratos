@@ -21,7 +21,7 @@ pub use crate::completion::{
     CompletionRequest, CompletionResponse, TokenUsage, ToolCompletionRequest,
     ToolCompletionResponse,
 };
-pub use crate::message::{Message, MessageRole};
+pub use crate::message::{ImageContent, Message, MessageRole};
 pub use crate::token::{
     count_message_tokens, count_tokens, TokenBudget, TokenCounter, TOKEN_COUNTER,
 };

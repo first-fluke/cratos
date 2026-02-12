@@ -14,11 +14,14 @@ use async_openai::{
     types::chat::{
         ChatCompletionMessageToolCalls, ChatCompletionRequestAssistantMessage,
         ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
+        ChatCompletionRequestMessageContentPartImage,
+        ChatCompletionRequestMessageContentPartText,
         ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
         ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
         ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+        ChatCompletionRequestUserMessageContentPart,
         ChatCompletionTool, ChatCompletionToolChoiceOption, ChatCompletionTools,
-        CreateChatCompletionRequest, FunctionObject, StopConfiguration, ToolChoiceOptions,
+        CreateChatCompletionRequest, FunctionObject, ImageUrl, StopConfiguration, ToolChoiceOptions,
     },
     Client,
 };
@@ -226,7 +229,19 @@ impl OpenAiProvider {
             openai_config = openai_config.with_org_id(org_id);
         }
 
-        let client = Client::with_config(openai_config);
+        // Build reqwest client with explicit timeout to prevent indefinite hangs.
+        // The default async-openai client uses reqwest::Client::new() which has NO timeout.
+        let http_client = reqwest::Client::builder()
+            .timeout(config.timeout)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        // Limit backoff to 60s (default is 15 minutes).
+        // Our orchestrator handles retries/fallback at a higher level.
+        let mut backoff = backoff::ExponentialBackoff::default();
+        backoff.max_elapsed_time = Some(config.timeout);
+
+        let client = Client::build(http_client, openai_config, backoff);
 
         Self {
             client,
@@ -250,11 +265,40 @@ impl OpenAiProvider {
                 name: None,
             }
             .into(),
-            MessageRole::User => ChatCompletionRequestUserMessage {
-                content: ChatCompletionRequestUserMessageContent::Text(msg.content.clone()),
-                name: None,
+            MessageRole::User => {
+                if msg.images.is_empty() {
+                    ChatCompletionRequestUserMessage {
+                        content: ChatCompletionRequestUserMessageContent::Text(msg.content.clone()),
+                        name: None,
+                    }
+                    .into()
+                } else {
+                    // Multimodal: text + images as content parts array
+                    let mut parts: Vec<ChatCompletionRequestUserMessageContentPart> = Vec::new();
+                    if !msg.content.is_empty() {
+                        parts.push(ChatCompletionRequestUserMessageContentPart::Text(
+                            ChatCompletionRequestMessageContentPartText {
+                                text: msg.content.clone(),
+                            },
+                        ));
+                    }
+                    for img in &msg.images {
+                        parts.push(ChatCompletionRequestUserMessageContentPart::ImageUrl(
+                            ChatCompletionRequestMessageContentPartImage {
+                                image_url: ImageUrl {
+                                    url: img.data_uri(),
+                                    detail: None,
+                                },
+                            },
+                        ));
+                    }
+                    ChatCompletionRequestUserMessage {
+                        content: ChatCompletionRequestUserMessageContent::Array(parts),
+                        name: None,
+                    }
+                    .into()
+                }
             }
-            .into(),
             MessageRole::Assistant =>
             {
                 #[allow(deprecated)]
