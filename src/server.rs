@@ -217,7 +217,7 @@ fn default_exec_mode() -> String {
 }
 
 fn default_exec_timeout() -> u64 {
-    60
+    120
 }
 
 fn default_blocked_paths() -> Vec<String> {
@@ -672,7 +672,7 @@ pub async fn build_orchestrator_for_cli(
     // Auto-detect fallback provider
     {
         let primary = config.llm.default_provider.clone();
-        let fallback_candidates = ["groq", "novita", "deepseek", "openrouter", "ollama"];
+        let fallback_candidates = ["groq", "openai", "novita", "deepseek", "anthropic", "openrouter", "ollama"];
         if let Some(fb) = fallback_candidates.iter()
             .filter(|n| **n != primary.as_str())
             .find_map(|n| llm_router.get(n))
@@ -973,7 +973,7 @@ pub async fn run() -> Result<()> {
     // Phase 4: Auto-detect fallback provider
     {
         let primary = config.llm.default_provider.clone();
-        let fallback_candidates = ["groq", "novita", "deepseek", "openrouter", "ollama"];
+        let fallback_candidates = ["groq", "openai", "novita", "deepseek", "anthropic", "openrouter", "ollama"];
         if let Some(fb) = fallback_candidates.iter()
             .filter(|n| **n != primary.as_str())
             .find_map(|n| llm_router.get(n))

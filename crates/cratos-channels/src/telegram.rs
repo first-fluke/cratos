@@ -10,12 +10,14 @@ use crate::message::{
 use crate::util::{markdown_to_html, mask_for_logging, sanitize_error_for_user};
 use cratos_core::dev_sessions::DevSessionMonitor;
 use cratos_core::{Orchestrator, OrchestratorInput};
+use cratos_llm::ImageContent;
 use std::sync::Arc;
 use teloxide::{
+    net::Download,
     payloads::SendMessageSetters,
     prelude::*,
     types::{
-        ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, Message as TelegramMessage,
+        ChatAction, FileId, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, Message as TelegramMessage,
         MessageId, ParseMode, ReplyParameters,
     },
 };
@@ -201,10 +203,16 @@ impl TelegramAdapter {
         msg: &TelegramMessage,
         bot_username: &str,
     ) -> Option<NormalizedMessage> {
-        let text = msg.text().unwrap_or("").to_string();
+        // For photo/document messages, text() is None — use caption() instead
+        let text = msg
+            .text()
+            .or_else(|| msg.caption())
+            .unwrap_or("")
+            .to_string();
 
-        // Skip empty messages
-        if text.is_empty() {
+        // Skip messages with no text AND no photo (pure empty)
+        let has_photo = msg.photo().is_some();
+        if text.is_empty() && !has_photo {
             return None;
         }
 
@@ -689,13 +697,53 @@ impl TelegramAdapter {
             None
         };
 
+        // Download images from attachments (multimodal support)
+        let mut images = Vec::new();
+        for att in &normalized.attachments {
+            if att.attachment_type == crate::message::AttachmentType::Image {
+                if let Some(file_id) = &att.file_id {
+                    match bot.get_file(FileId(file_id.clone())).await {
+                        Ok(file) => {
+                            let mut buf = Vec::new();
+                            match bot.download_file(&file.path, &mut buf).await {
+                                Ok(()) => {
+                                    let mime = att
+                                        .mime_type
+                                        .clone()
+                                        .unwrap_or_else(|| "image/jpeg".to_string());
+                                    images.push(ImageContent::new(mime, buf));
+                                    tracing::info!(file_id = %file_id, "Downloaded Telegram photo for multimodal");
+                                }
+                                Err(e) => {
+                                    tracing::warn!(error = %e, file_id = %file_id, "Failed to download photo");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, file_id = %file_id, "Failed to get file info");
+                        }
+                    }
+                }
+            }
+        }
+
+        // If photo-only (no caption), use a default prompt
+        let text = if normalized.text.is_empty() && !images.is_empty() {
+            "이 이미지를 분석해주세요.".to_string()
+        } else {
+            normalized.text.clone()
+        };
+
         // Process with orchestrator
-        let input = OrchestratorInput::new(
+        let mut input = OrchestratorInput::new(
             "telegram",
             &normalized.channel_id,
             &normalized.user_id,
-            &normalized.text,
+            &text,
         );
+        if !images.is_empty() {
+            input = input.with_images(images);
+        }
 
         // Record channel message metric
         cratos_core::metrics_global::labeled_counter("cratos_channel_messages_total")

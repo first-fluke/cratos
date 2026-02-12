@@ -9,6 +9,7 @@ authors.workspace = true
 
 [dependencies]
 cratos-core.workspace = true
+cratos-llm.workspace = true
 
 tokio.workspace = true
 teloxide.workspace = true

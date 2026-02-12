@@ -126,6 +126,8 @@ pub struct OrchestratorInput {
     pub text: String,
     /// Override the system prompt entirely (e.g., for /develop workflow)
     pub system_prompt_override: Option<String>,
+    /// Inline images from the channel (e.g., Telegram photo messages)
+    pub images: Vec<cratos_llm::ImageContent>,
 }
 
 impl OrchestratorInput {
@@ -144,6 +146,7 @@ impl OrchestratorInput {
             thread_id: None,
             text: text.into(),
             system_prompt_override: None,
+            images: Vec::new(),
         }
     }
 
@@ -151,6 +154,13 @@ impl OrchestratorInput {
     #[must_use]
     pub fn with_thread(mut self, thread_id: impl Into<String>) -> Self {
         self.thread_id = Some(thread_id.into());
+        self
+    }
+
+    /// Add inline images
+    #[must_use]
+    pub fn with_images(mut self, images: Vec<cratos_llm::ImageContent>) -> Self {
+        self.images = images;
         self
     }
 
@@ -533,7 +543,21 @@ impl Orchestrator {
                 Ok(()) => debug!(session_key = %session_key, messages = session.get_messages().len(), "Session saved (pre-execution)"),
                 Err(e) => warn!(session_key = %session_key, error = %e, "Failed to save session (pre-execution)"),
             }
-            session.get_messages().to_vec()
+            let mut msgs = session.get_messages().to_vec();
+
+            // Attach inline images to the last user message (multimodal support)
+            if !input.images.is_empty() {
+                if let Some(last_user) = msgs.iter_mut().rev().find(|m| m.role == cratos_llm::MessageRole::User) {
+                    last_user.images = input.images.clone();
+                    info!(
+                        image_count = input.images.len(),
+                        "Attached {} image(s) to user message",
+                        input.images.len()
+                    );
+                }
+            }
+
+            msgs
         };
 
         // ── Persona Routing (Phase 1) ──────────────────────────────────
@@ -599,6 +623,7 @@ impl Orchestrator {
         let mut consecutive_all_fail = 0_usize;
         let mut total_failure_count = 0_usize;
         let mut hallucination_nudged = false;
+        let mut fallback_sticky = false; // Once fallback is used, stick with it
 
         // Messages accumulate tool call history across iterations
         let mut messages = messages;
@@ -616,7 +641,7 @@ impl Orchestrator {
                     "Max iterations reached, attempting final summary"
                 );
                 let summary = self
-                    .try_final_summary(&messages, effective_system_prompt.as_deref())
+                    .try_final_summary(&messages, effective_system_prompt.as_deref(), fallback_sticky)
                     .await;
                 if !summary.is_empty() {
                     final_response = summary;
@@ -658,7 +683,7 @@ impl Orchestrator {
                     );
                     if final_response.is_empty() {
                         let summary = self
-                            .try_final_summary(&messages, effective_system_prompt.as_deref())
+                            .try_final_summary(&messages, effective_system_prompt.as_deref(), fallback_sticky)
                             .await;
                         final_response = if summary.is_empty() {
                             "처리 시간이 초과되었습니다. 요청을 단순화하거나 다시 시도해주세요.".to_string()
@@ -703,7 +728,7 @@ impl Orchestrator {
             });
 
             // Plan the next step (with fallback and optional system prompt override)
-            let plan_response = match self.plan_with_fallback(&messages, &tools, effective_system_prompt.as_deref()).await {
+            let plan_response = match self.plan_with_fallback(&messages, &tools, effective_system_prompt.as_deref(), &mut fallback_sticky).await {
                 Ok(response) => response,
                 Err(e) => {
                     error!(execution_id = %execution_id, error = %e, "Planning failed");
@@ -1409,30 +1434,57 @@ impl Orchestrator {
     }
 
     /// Dispatch a plan step to the given planner with an optional system prompt override.
+    ///
+    /// Wraps the LLM call in a 120-second timeout to prevent indefinite hangs
+    /// when a provider fails to respond (e.g. network stall, missing HTTP timeout).
     async fn dispatch_plan(
         planner: &Planner,
         messages: &[Message],
         tools: &[ToolDefinition],
         system_prompt_override: Option<&str>,
     ) -> crate::error::Result<crate::planner::PlanResponse> {
-        match system_prompt_override {
-            Some(p) => planner.plan_step_with_system_prompt(messages, tools, p).await,
-            None => planner.plan_step(messages, tools).await,
+        let fut = async move {
+            match system_prompt_override {
+                Some(p) => planner.plan_step_with_system_prompt(messages, tools, p).await,
+                None => planner.plan_step(messages, tools).await,
+            }
+        };
+        match tokio::time::timeout(std::time::Duration::from_secs(120), fut).await {
+            Ok(result) => result.map_err(crate::error::Error::from),
+            Err(_) => {
+                warn!("LLM dispatch timed out after 120s");
+                Err(crate::error::Error::from(cratos_llm::Error::Timeout(120_000)))
+            }
         }
     }
 
     /// Plan a step with automatic fallback on transient errors.
+    ///
+    /// When `fallback_sticky` is `true`, the fallback planner is used directly
+    /// (skipping the primary).  This prevents mixing tool calls from different
+    /// providers within the same execution — critical for Gemini 3 thinking
+    /// models that require `thought_signature` on every function call.
     async fn plan_with_fallback(
         &self,
         messages: &[Message],
         tools: &[ToolDefinition],
         system_prompt_override: Option<&str>,
+        fallback_sticky: &mut bool,
     ) -> crate::error::Result<crate::planner::PlanResponse> {
+        // If a previous iteration already fell back, keep using the fallback
+        // to avoid mixing thought_signature-bearing and bare function calls.
+        if *fallback_sticky {
+            if let Some(fb) = self.fallback_planner.as_ref() {
+                return Self::dispatch_plan(fb, messages, tools, system_prompt_override).await;
+            }
+        }
+
         let result = Self::dispatch_plan(&self.planner, messages, tools, system_prompt_override).await;
         match result {
             Ok(resp) => Ok(resp),
             Err(ref e) if self.fallback_planner.is_some() && is_fallback_eligible(e) => {
-                warn!(error = %e, "Primary provider failed, trying fallback");
+                warn!(error = %e, "Primary provider failed, trying fallback (sticky)");
+                *fallback_sticky = true;
                 let fb = self.fallback_planner.as_ref().unwrap();
                 Self::dispatch_plan(fb, messages, tools, system_prompt_override).await
             }
@@ -1448,6 +1500,7 @@ impl Orchestrator {
         &self,
         messages: &[Message],
         system_prompt_override: Option<&str>,
+        fallback_sticky: bool,
     ) -> String {
         // Nothing useful to summarize if conversation is trivially short
         if messages.len() <= 2 {
@@ -1461,8 +1514,14 @@ impl Orchestrator {
              도움이 되는 답변을 해주세요.",
         ));
 
+        let planner = if fallback_sticky {
+            self.fallback_planner.as_ref().unwrap_or(&self.planner)
+        } else {
+            &self.planner
+        };
+
         let result = Self::dispatch_plan(
-            &self.planner,
+            planner,
             &summary_messages,
             &[], // empty tools → forces text-only response
             system_prompt_override,

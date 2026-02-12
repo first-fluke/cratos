@@ -300,6 +300,7 @@ fn test_message_role_conversion() {
             name: None,
             tool_call_id: None,
             tool_calls: Vec::new(),
+            images: Vec::new(),
         };
         assert!(!message.content.is_empty());
     }
@@ -313,6 +314,7 @@ fn test_completion_request_builder() {
         name: None,
         tool_call_id: None,
         tool_calls: Vec::new(),
+        images: Vec::new(),
     }];
 
     let request = CompletionRequest::new("gpt-4o")
