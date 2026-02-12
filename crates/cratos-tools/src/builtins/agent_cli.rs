@@ -53,7 +53,7 @@ impl AgentCliTool {
             "codex".to_string(),
             AgentConfig {
                 command: "codex".to_string(),
-                args_template: vec!["-q".to_string(), "{prompt}".to_string()],
+                args_template: vec!["exec".to_string(), "{prompt}".to_string()],
                 timeout_secs: DEFAULT_TIMEOUT_SECS,
             },
         );

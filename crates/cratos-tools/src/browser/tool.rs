@@ -175,14 +175,22 @@ impl BrowserTool {
                             Ok(result)
                         }
                         Ok(result) => {
-                            warn!(error = ?result.error, "Extension execution returned failure, falling back to MCP");
-                            // Fall back to MCP on failure
-                            match self.execute_via_mcp(action).await {
-                                Ok(mcp_result) => Ok(mcp_result),
-                                Err(_) => Ok(result), // Return extension error if MCP also fails
+                            let error_msg = result.error.as_deref().unwrap_or("");
+                            if is_dom_level_error(error_msg) {
+                                // DOM/page error: MCP would fail identically, return directly
+                                warn!(error = ?result.error, "Extension DOM error, no fallback");
+                                Ok(result)
+                            } else {
+                                // Infrastructure error: try MCP fallback
+                                warn!(error = ?result.error, "Extension infra error, falling back to MCP");
+                                match self.execute_via_mcp(action).await {
+                                    Ok(mcp_result) => Ok(mcp_result),
+                                    Err(_) => Ok(result),
+                                }
                             }
                         }
                         Err(e) => {
+                            // Transport error (HTTP request failed): fall back to MCP
                             warn!(error = %e, "Extension relay error, falling back to MCP");
                             self.execute_via_mcp(action).await
                         }
@@ -615,6 +623,27 @@ impl BrowserTool {
     }
 }
 
+/// Returns true if the error is a DOM/page-level issue that would fail
+/// identically on any browser backend (extension or MCP).
+/// These errors should NOT trigger a fallback to MCP.
+///
+/// Note: CSP errors are NOT included here because MCP Playwright uses CDP
+/// which can bypass CSP, while the extension's content script cannot.
+fn is_dom_level_error(error: &str) -> bool {
+    let lower = error.to_lowercase();
+    lower.contains("element not found")
+        || lower.contains("not found:")
+        || lower.contains("cannot find")
+        || lower.contains("no element")
+        || lower.contains("restricted page")
+        || lower.contains("action not supported")
+        || lower.contains("cannot read properties")
+        || lower.contains("is not defined")
+        || lower.contains("syntax error")
+        || lower.contains("evaluation failed")
+        || lower.contains("not a valid selector")
+}
+
 impl Default for BrowserTool {
     fn default() -> Self {
         Self::new()
@@ -743,6 +772,25 @@ mod tests {
         });
         let result = tool.parse_action(&input);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_dom_level_error() {
+        // DOM errors → should NOT fallback
+        assert!(is_dom_level_error("Element not found: div[aria-label=\"Follow\"]"));
+        assert!(is_dom_level_error("Element not found: #submit-button"));
+        assert!(is_dom_level_error("Cannot execute action on restricted page: chrome://extensions"));
+        assert!(is_dom_level_error("Action not supported: unknown_action"));
+        assert!(is_dom_level_error("Cannot read properties of null"));
+        assert!(is_dom_level_error("myVar is not defined"));
+        assert!(is_dom_level_error("Evaluation failed: SyntaxError"));
+
+        // Infrastructure errors → should fallback
+        assert!(!is_dom_level_error("No browser extension connected"));
+        assert!(!is_dom_level_error("Request timed out"));
+        assert!(!is_dom_level_error("Connection refused"));
+        assert!(!is_dom_level_error("WebSocket closed"));
+        assert!(!is_dom_level_error(""));
     }
 
     #[test]
