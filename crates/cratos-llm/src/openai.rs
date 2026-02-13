@@ -14,14 +14,13 @@ use async_openai::{
     types::chat::{
         ChatCompletionMessageToolCalls, ChatCompletionRequestAssistantMessage,
         ChatCompletionRequestAssistantMessageContent, ChatCompletionRequestMessage,
-        ChatCompletionRequestMessageContentPartImage,
-        ChatCompletionRequestMessageContentPartText,
+        ChatCompletionRequestMessageContentPartImage, ChatCompletionRequestMessageContentPartText,
         ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
         ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
         ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-        ChatCompletionRequestUserMessageContentPart,
-        ChatCompletionTool, ChatCompletionToolChoiceOption, ChatCompletionTools,
-        CreateChatCompletionRequest, FunctionObject, ImageUrl, StopConfiguration, ToolChoiceOptions,
+        ChatCompletionRequestUserMessageContentPart, ChatCompletionTool,
+        ChatCompletionToolChoiceOption, ChatCompletionTools, CreateChatCompletionRequest,
+        FunctionObject, ImageUrl, StopConfiguration, ToolChoiceOptions,
     },
     Client,
 };
@@ -238,8 +237,10 @@ impl OpenAiProvider {
 
         // Limit backoff to 60s (default is 15 minutes).
         // Our orchestrator handles retries/fallback at a higher level.
-        let mut backoff = backoff::ExponentialBackoff::default();
-        backoff.max_elapsed_time = Some(config.timeout);
+        let backoff = backoff::ExponentialBackoff {
+            max_elapsed_time: Some(config.timeout),
+            ..Default::default()
+        };
 
         let client = Client::build(http_client, openai_config, backoff);
 
