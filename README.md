@@ -578,25 +578,24 @@ cargo test -p cratos-core
 
 ## Documentation
 
-- [Setup Guide (한국어)](./docs/SETUP_GUIDE.md) | [Setup Guide (English)](./docs/en/SETUP_GUIDE.md)
-- [User Guide (한국어)](./docs/USER_GUIDE.md) | [User Guide (English)](./docs/en/USER_GUIDE.md)
-- [Developer Test Guide](./docs/TEST_GUIDE_DEV.md) - Build & test verification
-- [User Test Guide](./docs/TEST_GUIDE_USER.md) - End-user testing scenarios
-- [PRD](./PRD.md) - Detailed requirements
+- [Setup Guide](./docs/en/SETUP_GUIDE.md) | [한국어](./docs/SETUP_GUIDE.md)
+- [User Guide](./docs/en/USER_GUIDE.md) | [한국어](./docs/USER_GUIDE.md)
+- [Developer Test Guide](./docs/en/TEST_GUIDE_DEV.md) | [한국어](./docs/TEST_GUIDE_DEV.md)
+- [User Test Guide](./docs/en/TEST_GUIDE_USER.md) | [한국어](./docs/TEST_GUIDE_USER.md)
 
 ### Detailed Guides
 
 | Guide | Description |
 |-------|-------------|
-| [Telegram](./docs/guides/TELEGRAM.md) | Telegram bot integration (teloxide) |
-| [Slack](./docs/guides/SLACK.md) | Slack app integration (Socket Mode / Events API) |
-| [Discord](./docs/guides/DISCORD.md) | Discord bot integration (serenity) |
-| [WhatsApp](./docs/guides/WHATSAPP.md) | WhatsApp integration (Baileys / Business API) |
-| [Browser Automation](./docs/guides/BROWSER_AUTOMATION.md) | MCP-based browser control + Chrome extension |
-| [Skill Auto-Generation](./docs/guides/SKILL_AUTO_GENERATION.md) | Pattern learning and skill creation |
-| [Graceful Shutdown](./docs/guides/GRACEFUL_SHUTDOWN.md) | 5-phase safe shutdown mechanism |
-| [Live Canvas](./docs/guides/LIVE_CANVAS.md) | Real-time visual workspace |
-| [Native Apps](./docs/guides/NATIVE_APPS.md) | Tauri desktop application |
+| [Telegram](./docs/en/guides/TELEGRAM.md) | Telegram bot integration (teloxide) |
+| [Slack](./docs/en/guides/SLACK.md) | Slack app integration (Socket Mode / Events API) |
+| [Discord](./docs/en/guides/DISCORD.md) | Discord bot integration (serenity) |
+| [WhatsApp](./docs/en/guides/WHATSAPP.md) | WhatsApp integration (Baileys / Business API) |
+| [Browser Automation](./docs/en/guides/BROWSER_AUTOMATION.md) | MCP-based browser control + Chrome extension |
+| [Skill Auto-Generation](./docs/en/guides/SKILL_AUTO_GENERATION.md) | Pattern learning and skill creation |
+| [Graceful Shutdown](./docs/en/guides/GRACEFUL_SHUTDOWN.md) | 5-phase safe shutdown mechanism |
+| [Live Canvas](./docs/en/guides/LIVE_CANVAS.md) | Real-time visual workspace |
+| [Native Apps](./docs/en/guides/NATIVE_APPS.md) | Tauri desktop application |
 
 ## License
 

@@ -384,9 +384,30 @@ cargo test -p cratos-core
 
 ## 문서
 
-- [설치 가이드](./docs/SETUP_GUIDE.md) - 처음 설치하는 분
-- [사용 가이드](./docs/USER_GUIDE.md) - 기능 사용법
-- [PRD](./PRD.md) - 상세 요구사항
+### 기본 가이드
+- [설치 가이드](./docs/SETUP_GUIDE.md) | [English](./docs/en/SETUP_GUIDE.md)
+- [사용 가이드](./docs/USER_GUIDE.md) | [English](./docs/en/USER_GUIDE.md)
+- [개발자 테스트 가이드](./docs/TEST_GUIDE_DEV.md) | [English](./docs/en/TEST_GUIDE_DEV.md)
+- [사용자 테스트 가이드](./docs/TEST_GUIDE_USER.md) | [English](./docs/en/TEST_GUIDE_USER.md)
+
+### 채널 연동 가이드
+
+| 가이드 | 설명 |
+|--------|------|
+| [Telegram](./docs/guides/TELEGRAM.md) \| [EN](./docs/en/guides/TELEGRAM.md) | 텔레그램 봇 (슬래시 명령어, DM 정책) |
+| [Slack](./docs/guides/SLACK.md) \| [EN](./docs/en/guides/SLACK.md) | Slack 앱 (Socket Mode) |
+| [Discord](./docs/guides/DISCORD.md) \| [EN](./docs/en/guides/DISCORD.md) | Discord 봇 (serenity) |
+| [WhatsApp](./docs/guides/WHATSAPP.md) \| [EN](./docs/en/guides/WHATSAPP.md) | WhatsApp (Baileys / Business API) |
+
+### 기능 가이드
+
+| 가이드 | 설명 |
+|--------|------|
+| [브라우저 자동화](./docs/guides/BROWSER_AUTOMATION.md) \| [EN](./docs/en/guides/BROWSER_AUTOMATION.md) | MCP 기반 브라우저 제어 |
+| [스킬 자동 생성](./docs/guides/SKILL_AUTO_GENERATION.md) \| [EN](./docs/en/guides/SKILL_AUTO_GENERATION.md) | 패턴 학습 → 스킬 변환 |
+| [Graceful Shutdown](./docs/guides/GRACEFUL_SHUTDOWN.md) \| [EN](./docs/en/guides/GRACEFUL_SHUTDOWN.md) | 5-Phase 안전 종료 |
+| [Live Canvas](./docs/guides/LIVE_CANVAS.md) \| [EN](./docs/en/guides/LIVE_CANVAS.md) | 실시간 시각적 워크스페이스 |
+| [Native Apps](./docs/guides/NATIVE_APPS.md) \| [EN](./docs/en/guides/NATIVE_APPS.md) | Tauri 데스크톱 앱 |
 
 ## 라이선스
 
