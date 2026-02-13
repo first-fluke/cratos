@@ -42,4 +42,7 @@ pub use orchestrator::{
     AgentOrchestrator, AgentResponse, ExecutionContext, OrchestratorConfig, OrchestratorError,
     OrchestratorResult, ParsedAgentTask, TaskStatus,
 };
-pub use persona_routing::{domain_to_agent_id, extract_persona_mention, PersonaMapping};
+pub use persona_routing::{
+    domain_to_agent_id, extract_all_persona_mentions, extract_persona_mention, ExecutionMode,
+    MultiPersonaExtraction, PersonaMapping, PersonaMention,
+};

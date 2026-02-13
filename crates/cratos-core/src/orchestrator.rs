@@ -3,14 +3,17 @@
 //! This module provides the main orchestration logic that ties together
 //! the planner, tools, memory, and replay systems.
 
-use crate::agents::{extract_persona_mention, PersonaMapping};
+use crate::agents::{
+    extract_all_persona_mentions, ExecutionMode, MultiPersonaExtraction, PersonaMapping,
+    PersonaMention,
+};
 use crate::approval::SharedApprovalManager;
 use crate::error::Result;
 use crate::event_bus::{EventBus, OrchestratorEvent};
-use crate::tool_policy::{PolicyAction, PolicyContext, ToolSecurityPolicy};
 use crate::memory::{MemoryStore, SessionContext, SessionStore, WorkingMemory};
 use crate::olympus_hooks::OlympusHooks;
 use crate::planner::{Planner, PlannerConfig};
+use crate::tool_policy::{PolicyAction, PolicyContext, ToolSecurityPolicy};
 use cratos_llm::{LlmProvider, Message, ToolCall, ToolDefinition};
 use cratos_memory::GraphMemory;
 use cratos_replay::{Event, EventStoreTrait, EventType, Execution};
@@ -27,16 +30,23 @@ const PERSONA_CLASSIFICATION_PROMPT: &str = r#"Classify the user message into th
 
 Personas:
 - sindri: software development, coding, API, database, architecture, debugging, implementation
+- brok: software development (secondary dev persona, use sindri by default)
 - athena: project management, planning, requirements, roadmap, sprint, schedule
 - heimdall: QA, testing, security, code review, bug analysis, vulnerability
 - mimir: research, investigation, analysis, comparison, documentation, study
 - thor: DevOps, deployment, CI/CD, Docker, Kubernetes, infrastructure, server ops
 - apollo: UX/UI design, user experience, prototyping, accessibility, wireframe
 - odin: product ownership, vision, prioritization, OKR, stakeholder management
+- nike: marketing, SNS, social media, growth hacking, SEO, content, campaign, automation, bot, like, comment, tweet
+- freya: customer support, CS, help desk, user complaints, FAQ
+- hestia: HR, hiring, team management, organization, onboarding
+- norns: business analysis, data analysis, metrics, KPI, reporting, forecasting
+- tyr: legal, compliance, regulation, privacy, GDPR, terms of service
 - cratos: general tasks, greetings, unclear domain, multi-domain, status, weather, casual
 
 Rules:
 - Output ONLY the persona name, nothing else
+- If the user explicitly names a persona (e.g. "니케", "nike", "아폴로"), use that persona
 - If uncertain or multi-domain, output "cratos"
 - Understand intent regardless of language (Korean, English, Japanese, etc.)"#;
 
@@ -58,6 +68,8 @@ pub enum ExecutionStatus {
     Running,
     /// Execution completed successfully
     Completed,
+    /// Execution partially succeeded (some personas failed in multi-persona mode)
+    PartialSuccess,
     /// Execution failed
     Failed,
     /// Execution was cancelled
@@ -403,7 +415,12 @@ impl Orchestrator {
     /// List all registered tool names
     #[must_use]
     pub fn list_tool_names(&self) -> Vec<String> {
-        self.runner.registry().list_names().iter().map(|s| s.to_string()).collect()
+        self.runner
+            .registry()
+            .list_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     }
 
     /// Cancel an active execution by ID
@@ -430,7 +447,8 @@ impl Orchestrator {
 
         // Register cancellation token for this execution
         let cancel_token = CancellationToken::new();
-        self.active_executions.insert(execution_id, cancel_token.clone());
+        self.active_executions
+            .insert(execution_id, cancel_token.clone());
 
         info!(
             execution_id = %execution_id,
@@ -550,7 +568,7 @@ impl Orchestrator {
                             .collect::<Vec<_>>()
                             .join("\n");
                         session.insert_supplementary_context(vec![Message::system(
-                            &format!(
+                            format!(
                                 "Relevant saved memories (use these to help the user):\n{memory_context}"
                             ),
                         )]);
@@ -569,14 +587,22 @@ impl Orchestrator {
 
             // Save updated session
             match self.memory.save(&session).await {
-                Ok(()) => debug!(session_key = %session_key, messages = session.get_messages().len(), "Session saved (pre-execution)"),
-                Err(e) => warn!(session_key = %session_key, error = %e, "Failed to save session (pre-execution)"),
+                Ok(()) => {
+                    debug!(session_key = %session_key, messages = session.get_messages().len(), "Session saved (pre-execution)")
+                }
+                Err(e) => {
+                    warn!(session_key = %session_key, error = %e, "Failed to save session (pre-execution)")
+                }
             }
             let mut msgs = session.get_messages().to_vec();
 
             // Attach inline images to the last user message (multimodal support)
             if !input.images.is_empty() {
-                if let Some(last_user) = msgs.iter_mut().rev().find(|m| m.role == cratos_llm::MessageRole::User) {
+                if let Some(last_user) = msgs
+                    .iter_mut()
+                    .rev()
+                    .find(|m| m.role == cratos_llm::MessageRole::User)
+                {
                     last_user.images = input.images.clone();
                     info!(
                         image_count = input.images.len(),
@@ -589,30 +615,61 @@ impl Orchestrator {
             msgs
         };
 
-        // ── Persona Routing (Phase 1) ──────────────────────────────────
+        // ── Persona Routing (Phase 1 + Multi-Persona) ─────────────────
         let (persona_system_prompt, effective_persona): (Option<String>, String) =
             if let Some(mapping) = &self.persona_mapping {
-                let explicit = extract_persona_mention(&input.text, mapping);
-                if let Some((_agent_id, _rest)) = explicit {
-                    // @mention → highest priority
-                    let mention = input.text.split_whitespace().next()
-                        .unwrap_or("").trim_start_matches('@').to_lowercase();
-                    info!(persona = %mention, "Explicit persona mention");
-                    let prompt = mapping.get_system_prompt(&mention, &input.user_id)
-                        .map(|p| format!("{}\n\n---\n## Active Persona\n{}",
-                            self.planner.config().system_prompt, p));
-                    (prompt, mention)
-                } else {
-                    // LLM semantic classification
-                    let name = self.route_by_llm(&input.text).await;
-                    info!(persona = %name, "LLM-routed persona");
-                    let prompt = mapping.get_system_prompt(&name, &input.user_id)
-                        .map(|p| format!("{}\n\n---\n## Active Persona\n{}",
-                            self.planner.config().system_prompt, p));
-                    (prompt, name)
+                let multi_extraction = extract_all_persona_mentions(&input.text, mapping);
+
+                match &multi_extraction {
+                    // Multi-persona: delegate to execute_multi_persona
+                    Some(e) if e.personas.len() > 1 => {
+                        info!(
+                            personas = ?e.personas.iter().map(|p| &p.name).collect::<Vec<_>>(),
+                            mode = ?e.mode,
+                            "Multi-persona routing"
+                        );
+                        // Early return with multi-persona execution
+                        return self
+                            .execute_multi_persona(
+                                execution_id,
+                                e.clone(),
+                                &input,
+                                &messages,
+                                &cancel_token,
+                            )
+                            .await;
+                    }
+                    // Single persona: use existing logic
+                    Some(e) if e.personas.len() == 1 => {
+                        let mention = &e.personas[0].name;
+                        info!(persona = %mention, "Explicit persona mention");
+                        let prompt = mapping.get_system_prompt(mention, &input.user_id).map(|p| {
+                            format!(
+                                "{}\n\n---\n## Active Persona\n{}",
+                                self.planner.config().system_prompt,
+                                p
+                            )
+                        });
+                        (prompt, mention.clone())
+                    }
+                    // No explicit persona: LLM semantic classification
+                    _ => {
+                        let name = self.route_by_llm(&input.text).await;
+                        info!(persona = %name, "LLM-routed persona");
+                        let prompt = mapping.get_system_prompt(&name, &input.user_id).map(|p| {
+                            format!(
+                                "{}\n\n---\n## Active Persona\n{}",
+                                self.planner.config().system_prompt,
+                                p
+                            )
+                        });
+                        (prompt, name)
+                    }
                 }
             } else {
-                let fb = self.olympus_hooks.as_ref()
+                let fb = self
+                    .olympus_hooks
+                    .as_ref()
                     .and_then(|h| h.active_persona())
                     .unwrap_or_else(|| "cratos".to_string());
                 (None, fb)
@@ -620,7 +677,9 @@ impl Orchestrator {
 
         // ── Skill Router (Phase 5) ──────────────────────────────────────
         let skill_hint: Option<String> = if let Some(router) = &self.skill_router {
-            router.route_best(&input.text).await
+            router
+                .route_best(&input.text)
+                .await
                 .filter(|(_, _, score)| *score > 0.7)
                 .map(|(name, desc, score)| {
                     info!(skill = %name, score = %score, "Skill match found");
@@ -632,7 +691,9 @@ impl Orchestrator {
 
         // Combine system prompt overrides
         // input.system_prompt_override takes highest priority (e.g., /develop workflow)
-        let effective_system_prompt: Option<String> = if let Some(ref override_prompt) = input.system_prompt_override {
+        let effective_system_prompt: Option<String> = if let Some(ref override_prompt) =
+            input.system_prompt_override
+        {
             Some(override_prompt.clone())
         } else {
             match (persona_system_prompt, skill_hint) {
@@ -670,7 +731,11 @@ impl Orchestrator {
                     "Max iterations reached, attempting final summary"
                 );
                 let summary = self
-                    .try_final_summary(&messages, effective_system_prompt.as_deref(), fallback_sticky)
+                    .try_final_summary(
+                        &messages,
+                        effective_system_prompt.as_deref(),
+                        fallback_sticky,
+                    )
                     .await;
                 if !summary.is_empty() {
                     final_response = summary;
@@ -683,7 +748,9 @@ impl Orchestrator {
                 info!(execution_id = %execution_id, "Execution cancelled by user");
                 self.active_executions.remove(&execution_id);
                 if let Some(store) = &self.event_store {
-                    let _ = store.update_execution_status(execution_id, "cancelled", None).await;
+                    let _ = store
+                        .update_execution_status(execution_id, "cancelled", None)
+                        .await;
                 }
                 crate::utils::metrics_global::labeled_counter("cratos_executions_total")
                     .inc(&[("status", "cancelled")]);
@@ -712,10 +779,15 @@ impl Orchestrator {
                     );
                     if final_response.is_empty() {
                         let summary = self
-                            .try_final_summary(&messages, effective_system_prompt.as_deref(), fallback_sticky)
+                            .try_final_summary(
+                                &messages,
+                                effective_system_prompt.as_deref(),
+                                fallback_sticky,
+                            )
                             .await;
                         final_response = if summary.is_empty() {
-                            "처리 시간이 초과되었습니다. 요청을 단순화하거나 다시 시도해주세요.".to_string()
+                            "처리 시간이 초과되었습니다. 요청을 단순화하거나 다시 시도해주세요."
+                                .to_string()
                         } else {
                             summary
                         };
@@ -757,7 +829,15 @@ impl Orchestrator {
             });
 
             // Plan the next step (with fallback and optional system prompt override)
-            let plan_response = match self.plan_with_fallback(&messages, &tools, effective_system_prompt.as_deref(), &mut fallback_sticky).await {
+            let plan_response = match self
+                .plan_with_fallback(
+                    &messages,
+                    &tools,
+                    effective_system_prompt.as_deref(),
+                    &mut fallback_sticky,
+                )
+                .await
+            {
                 Ok(response) => response,
                 Err(e) => {
                     error!(execution_id = %execution_id, error = %e, "Planning failed");
@@ -787,12 +867,15 @@ impl Orchestrator {
                             "API 인증 오류가 발생했습니다. 관리자에게 문의해주세요.".to_string()
                         }
                         crate::error::Error::Llm(cratos_llm::Error::ServerError(_)) => {
-                            "AI 서버에 일시적 장애가 발생했습니다. 잠시 후 다시 시도해주세요.".to_string()
+                            "AI 서버에 일시적 장애가 발생했습니다. 잠시 후 다시 시도해주세요."
+                                .to_string()
                         }
                         _ => {
                             let raw: String = e.to_string().chars().take(80).collect();
-                            format!("오류가 발생했습니다. 다시 시도해주세요. ({})",
-                                sanitize_error_for_user(&raw))
+                            format!(
+                                "오류가 발생했습니다. 다시 시도해주세요. ({})",
+                                sanitize_error_for_user(&raw)
+                            )
                         }
                     };
                     let error_detail = format!("Error: {}", e);
@@ -851,7 +934,7 @@ impl Orchestrator {
                     messages.push(Message::assistant(content_text));
                     messages.push(Message::user(
                         "위 작업을 위해 exec, http_get 등 도구를 사용해주세요. \
-                         이 기기에서 직접 실행됩니다. 도구 없이 답하지 마세요."
+                         이 기기에서 직접 실행됩니다. 도구 없이 답하지 마세요.",
                     ));
                     continue;
                 }
@@ -892,7 +975,10 @@ impl Orchestrator {
                 }
 
                 // If LLM returns empty/very short final after tool use, nudge it to complete
-                if content_text.trim().is_empty() && !tool_call_records.is_empty() && iteration < self.config.max_iterations - 1 {
+                if content_text.trim().is_empty()
+                    && !tool_call_records.is_empty()
+                    && iteration < self.config.max_iterations - 1
+                {
                     warn!(
                         execution_id = %execution_id,
                         iteration = iteration,
@@ -901,7 +987,7 @@ impl Orchestrator {
                     messages.push(Message::user(
                         "도구 실행 결과를 바탕으로 원래 요청을 계속 수행해주세요. \
                          작업이 완료되지 않았다면 필요한 도구를 추가로 사용하고, \
-                         완료했다면 결과를 사용자에게 설명해주세요."
+                         완료했다면 결과를 사용자에게 설명해주세요.",
                     ));
                     continue;
                 }
@@ -922,7 +1008,9 @@ impl Orchestrator {
             // Execute tool calls
             if !plan_response.tool_calls.is_empty() {
                 // Gate: block browser if http_get already succeeded in this execution
-                let http_get_succeeded = tool_call_records.iter().any(|r| r.tool_name == "http_get" && r.success);
+                let http_get_succeeded = tool_call_records
+                    .iter()
+                    .any(|r| r.tool_name == "http_get" && r.success);
                 let filtered_calls: Vec<ToolCall> = plan_response.tool_calls.iter().filter(|call| {
                     if call.name == "browser" && http_get_succeeded {
                         warn!(
@@ -988,8 +1076,7 @@ impl Orchestrator {
                 }
 
                 // Build tool result messages
-                let tool_messages =
-                    Planner::build_tool_result_messages(&filtered_calls, &results);
+                let tool_messages = Planner::build_tool_result_messages(&filtered_calls, &results);
 
                 // Add tool result messages to conversation history for next iteration
                 // NOTE: Only added to the local `messages` vec (for the current execution loop).
@@ -1021,18 +1108,24 @@ impl Orchestrator {
         let final_response = sanitize_response(&final_response);
 
         // Generate fallback when LLM returns empty/sentinel after tool execution
-        let final_response = if (final_response.is_empty() || final_response == "(empty response)") && !tool_call_records.is_empty() {
-            let failed: Vec<&str> = tool_call_records.iter()
+        let final_response = if (final_response.is_empty() || final_response == "(empty response)")
+            && !tool_call_records.is_empty()
+        {
+            let failed: Vec<&str> = tool_call_records
+                .iter()
                 .filter(|r| !r.success)
                 .map(|r| r.tool_name.as_str())
                 .collect();
             if failed.is_empty() {
                 "요청을 처리하는 중 응답 생성에 실패했습니다. 다시 시도해주세요.".to_string()
             } else {
-                let errors: Vec<String> = tool_call_records.iter()
+                let errors: Vec<String> = tool_call_records
+                    .iter()
                     .filter(|r| !r.success)
                     .map(|r| {
-                        r.output.get("stderr").and_then(|v| v.as_str())
+                        r.output
+                            .get("stderr")
+                            .and_then(|v| v.as_str())
                             .filter(|s| !s.is_empty())
                             .or_else(|| r.output.get("error").and_then(|v| v.as_str()))
                             .unwrap_or("unknown error")
@@ -1057,7 +1150,8 @@ impl Orchestrator {
                         || lower.contains("unauthorized")
                 });
                 if all_security {
-                    let reasons: String = unique_errors.iter()
+                    let reasons: String = unique_errors
+                        .iter()
                         .map(|e| {
                             let short: String = e.chars().take(120).collect();
                             format!("- {}", short)
@@ -1066,7 +1160,8 @@ impl Orchestrator {
                         .join("\n");
                     format!("보안 정책에 의해 해당 명령어가 차단되었습니다.\n{}\n\n안전한 대체 도구(http_get, http_post 등)를 사용해주세요.", reasons)
                 } else {
-                    let detail: String = unique_errors.iter()
+                    let detail: String = unique_errors
+                        .iter()
                         .map(|e| {
                             let short: String = e.chars().take(100).collect();
                             format!("- {}", sanitize_error_for_user(&short))
@@ -1091,12 +1186,18 @@ impl Orchestrator {
                         if r.success {
                             format!("{}:OK", r.tool_name)
                         } else {
-                            let err_hint = r.output.get("stderr")
+                            let err_hint = r
+                                .output
+                                .get("stderr")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("failed");
                             let err_short: String = err_hint.chars().take(60).collect();
                             // M2: Sanitize to prevent prompt injection via session memory
-                            format!("{}:FAIL({})", r.tool_name, sanitize_for_session_memory(&err_short))
+                            format!(
+                                "{}:FAIL({})",
+                                r.tool_name,
+                                sanitize_for_session_memory(&err_short)
+                            )
                         }
                     })
                     .collect();
@@ -1111,15 +1212,20 @@ impl Orchestrator {
                 session.add_assistant_message(&final_response);
             }
             match self.memory.save(&session).await {
-                Ok(()) => debug!(session_key = %session_key, messages = session.get_messages().len(), "Session saved (post-execution)"),
-                Err(e) => warn!(session_key = %session_key, error = %e, "Failed to save session (post-execution)"),
+                Ok(()) => {
+                    debug!(session_key = %session_key, messages = session.get_messages().len(), "Session saved (post-execution)")
+                }
+                Err(e) => {
+                    warn!(session_key = %session_key, error = %e, "Failed to save session (post-execution)")
+                }
             }
         }
 
         // Run Olympus OS post-execution hooks (fire-and-forget)
         if let Some(hooks) = &self.olympus_hooks {
             let task_completed = !final_response.is_empty();
-            if let Err(e) = hooks.post_execute(&effective_persona, &final_response, task_completed) {
+            if let Err(e) = hooks.post_execute(&effective_persona, &final_response, task_completed)
+            {
                 warn!(error = %e, "Olympus post-execute hook failed");
             }
         }
@@ -1166,11 +1272,7 @@ impl Orchestrator {
         // Update execution status in DB
         if let Some(store) = &self.event_store {
             if let Err(e) = store
-                .update_execution_status(
-                    execution_id,
-                    "completed",
-                    Some(&final_response),
-                )
+                .update_execution_status(execution_id, "completed", Some(&final_response))
                 .await
             {
                 warn!(error = %e, "Failed to update execution status");
@@ -1188,10 +1290,10 @@ impl Orchestrator {
                     data: screenshot.to_string(),
                 });
             }
-            
+
             // Check for generic image output
             if let Some(image) = record.output.get("image").and_then(|s| s.as_str()) {
-                 artifacts.push(ExecutionArtifact {
+                artifacts.push(ExecutionArtifact {
                     name: format!("{}_image", record.tool_name),
                     mime_type: "image/png".to_string(),
                     data: image.to_string(),
@@ -1370,7 +1472,9 @@ impl Orchestrator {
                         error_str,
                         diagnosis.category.display_name(),
                         diagnosis.confidence * 100.0,
-                        diagnosis.checklist.first()
+                        diagnosis
+                            .checklist
+                            .first()
                             .map(|c| c.instruction.as_str())
                             .unwrap_or("Check logs for details"),
                     );
@@ -1384,7 +1488,8 @@ impl Orchestrator {
                             "error": error_str,
                             "diagnosis": hint,
                         }),
-                    ).await;
+                    )
+                    .await;
 
                     (
                         serde_json::json!({"error": enriched_error}),
@@ -1428,14 +1533,10 @@ impl Orchestrator {
             // Record labeled metrics
             {
                 let status_label = if success { "ok" } else { "error" };
-                crate::utils::metrics_global::labeled_counter(
-                    "cratos_tool_executions_total",
-                )
-                .inc(&[("tool_name", &call.name), ("status", status_label)]);
-                crate::utils::metrics_global::labeled_histogram(
-                    "cratos_tool_duration_seconds",
-                )
-                .observe(&[("tool_name", &call.name)], duration_secs);
+                crate::utils::metrics_global::labeled_counter("cratos_tool_executions_total")
+                    .inc(&[("tool_name", &call.name), ("status", status_label)]);
+                crate::utils::metrics_global::labeled_histogram("cratos_tool_duration_seconds")
+                    .observe(&[("tool_name", &call.name)], duration_secs);
             }
 
             // Record in working memory
@@ -1474,15 +1575,21 @@ impl Orchestrator {
     ) -> crate::error::Result<crate::planner::PlanResponse> {
         let fut = async move {
             match system_prompt_override {
-                Some(p) => planner.plan_step_with_system_prompt(messages, tools, p).await,
+                Some(p) => {
+                    planner
+                        .plan_step_with_system_prompt(messages, tools, p)
+                        .await
+                }
                 None => planner.plan_step(messages, tools).await,
             }
         };
         match tokio::time::timeout(std::time::Duration::from_secs(120), fut).await {
-            Ok(result) => result.map_err(crate::error::Error::from),
+            Ok(result) => result,
             Err(_) => {
                 warn!("LLM dispatch timed out after 120s");
-                Err(crate::error::Error::from(cratos_llm::Error::Timeout(120_000)))
+                Err(crate::error::Error::from(cratos_llm::Error::Timeout(
+                    120_000,
+                )))
             }
         }
     }
@@ -1508,7 +1615,8 @@ impl Orchestrator {
             }
         }
 
-        let result = Self::dispatch_plan(&self.planner, messages, tools, system_prompt_override).await;
+        let result =
+            Self::dispatch_plan(&self.planner, messages, tools, system_prompt_override).await;
         match result {
             Ok(resp) => Ok(resp),
             Err(ref e) if self.fallback_planner.is_some() && is_fallback_eligible(e) => {
@@ -1576,7 +1684,11 @@ impl Orchestrator {
         }
 
         let start = std::time::Instant::now();
-        match self.planner.classify(PERSONA_CLASSIFICATION_PROMPT, input).await {
+        match self
+            .planner
+            .classify(PERSONA_CLASSIFICATION_PROMPT, input)
+            .await
+        {
             Ok(raw) => {
                 let persona = raw.trim().trim_matches('"').to_lowercase();
                 let ms = start.elapsed().as_millis();
@@ -1642,6 +1754,631 @@ impl Orchestrator {
             .map(|s| s.message_count())
             .unwrap_or(0)
     }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Multi-Persona Execution
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    /// Execute multiple personas based on extraction mode
+    async fn execute_multi_persona(
+        &self,
+        execution_id: Uuid,
+        extraction: MultiPersonaExtraction,
+        input: &OrchestratorInput,
+        messages: &[Message],
+        cancel_token: &CancellationToken,
+    ) -> Result<ExecutionResult> {
+        let start = std::time::Instant::now();
+
+        let result = match extraction.mode {
+            ExecutionMode::Parallel => {
+                self.execute_parallel_personas(
+                    execution_id,
+                    extraction,
+                    input,
+                    messages,
+                    cancel_token,
+                )
+                .await
+            }
+            ExecutionMode::Pipeline => {
+                self.execute_pipeline_personas(
+                    execution_id,
+                    extraction,
+                    input,
+                    messages,
+                    cancel_token,
+                )
+                .await
+            }
+            ExecutionMode::Collaborative => {
+                self.execute_collaborative_personas(
+                    execution_id,
+                    extraction,
+                    input,
+                    messages,
+                    cancel_token,
+                )
+                .await
+            }
+        };
+
+        // Log duration for monitoring
+        info!(
+            execution_id = %execution_id,
+            duration_ms = start.elapsed().as_millis() as u64,
+            "Multi-persona execution completed"
+        );
+
+        result
+    }
+
+    /// Execute personas in parallel and aggregate results
+    async fn execute_parallel_personas(
+        &self,
+        execution_id: Uuid,
+        extraction: MultiPersonaExtraction,
+        input: &OrchestratorInput,
+        messages: &[Message],
+        cancel_token: &CancellationToken,
+    ) -> Result<ExecutionResult> {
+        use futures::future::join_all;
+
+        let start = std::time::Instant::now();
+        let persona_names: Vec<String> =
+            extraction.personas.iter().map(|p| p.name.clone()).collect();
+
+        info!(
+            execution_id = %execution_id,
+            personas = ?persona_names,
+            task = %extraction.rest,
+            "Starting parallel persona execution"
+        );
+
+        // Build futures for each persona
+        let futures: Vec<_> = extraction
+            .personas
+            .iter()
+            .map(|persona| {
+                let persona = persona.clone();
+                let task = extraction.rest.clone();
+                let input = input.clone();
+                let messages = messages.to_vec();
+                let cancel = cancel_token.clone();
+
+                async move {
+                    self.run_single_persona(
+                        execution_id,
+                        &persona,
+                        &task,
+                        &input,
+                        &messages,
+                        &cancel,
+                    )
+                    .await
+                }
+            })
+            .collect();
+
+        // Execute with cancellation support
+        let results = tokio::select! {
+            r = join_all(futures) => r,
+            _ = cancel_token.cancelled() => {
+                return Ok(ExecutionResult {
+                    execution_id,
+                    status: ExecutionStatus::Cancelled,
+                    response: "Multi-persona execution cancelled".to_string(),
+                    tool_calls: vec![],
+                    artifacts: vec![],
+                    iterations: 0,
+                    duration_ms: start.elapsed().as_millis() as u64,
+                    model: None,
+                });
+            }
+        };
+
+        // Aggregate results
+        self.aggregate_persona_results(execution_id, &persona_names, results, start)
+    }
+
+    /// Run a single persona with its own system prompt
+    async fn run_single_persona(
+        &self,
+        _execution_id: Uuid,
+        persona: &PersonaMention,
+        task: &str,
+        input: &OrchestratorInput,
+        base_messages: &[Message],
+        cancel_token: &CancellationToken,
+    ) -> PersonaExecutionResult {
+        let persona_start = std::time::Instant::now();
+        let persona_name = persona.name.clone();
+
+        info!(persona = %persona_name, task = %task, "Running persona");
+
+        // Build persona-specific system prompt
+        let system_prompt = self
+            .persona_mapping
+            .as_ref()
+            .and_then(|m| m.get_system_prompt(&persona.name, &input.user_id))
+            .map(|p| {
+                format!(
+                    "{}\n\n---\n## Active Persona\n{}",
+                    self.planner.config().system_prompt,
+                    p
+                )
+            });
+
+        // Build messages with task
+        let mut messages = base_messages.to_vec();
+        // Replace or append the user message with the extracted task
+        if let Some(last) = messages.last_mut() {
+            if last.role == cratos_llm::MessageRole::User {
+                last.content = task.to_string();
+            }
+        }
+
+        // Get available tools
+        let tools = self.runner.registry().to_llm_tools();
+
+        // Single LLM call (simplified - no tool loop for now)
+        let plan_result = match &system_prompt {
+            Some(sp) => {
+                self.planner
+                    .plan_step_with_system_prompt(&messages, &tools, sp)
+                    .await
+            }
+            None => self.planner.plan_step(&messages, &tools).await,
+        };
+
+        match plan_result {
+            Ok(plan) => {
+                let response = plan.content.clone().unwrap_or_default();
+                let mut tool_calls = Vec::new();
+
+                // Execute tool calls if any
+                for tc in &plan.tool_calls {
+                    if cancel_token.is_cancelled() {
+                        break;
+                    }
+
+                    // Parse arguments from JSON string to Value
+                    let args: serde_json::Value =
+                        serde_json::from_str(&tc.arguments).unwrap_or(serde_json::Value::Null);
+
+                    let tool_start = std::time::Instant::now();
+                    let result = self.runner.execute(&tc.name, args.clone()).await;
+
+                    let (output, success) = match result {
+                        Ok(exec_result) => (exec_result.result.output, exec_result.result.success),
+                        Err(e) => (serde_json::Value::String(e.to_string()), false),
+                    };
+
+                    tool_calls.push(ToolCallRecord {
+                        tool_name: tc.name.clone(),
+                        input: args,
+                        output,
+                        success,
+                        duration_ms: tool_start.elapsed().as_millis() as u64,
+                    });
+                }
+
+                PersonaExecutionResult {
+                    persona_name,
+                    response,
+                    tool_calls,
+                    success: true,
+                    duration_ms: persona_start.elapsed().as_millis() as u64,
+                    model: Some(plan.model),
+                }
+            }
+            Err(e) => {
+                error!(persona = %persona_name, error = %e, "Persona execution failed");
+                PersonaExecutionResult {
+                    persona_name,
+                    response: format!("Error: {}", e),
+                    tool_calls: vec![],
+                    success: false,
+                    duration_ms: persona_start.elapsed().as_millis() as u64,
+                    model: None,
+                }
+            }
+        }
+    }
+
+    /// Aggregate results from multiple persona executions
+    fn aggregate_persona_results(
+        &self,
+        execution_id: Uuid,
+        persona_names: &[String],
+        results: Vec<PersonaExecutionResult>,
+        start: std::time::Instant,
+    ) -> Result<ExecutionResult> {
+        let all_success = results.iter().all(|r| r.success);
+        let any_success = results.iter().any(|r| r.success);
+
+        // Build combined response with persona sections
+        let response = results
+            .iter()
+            .map(|r| {
+                let status_emoji = if r.success { "✓" } else { "✗" };
+                format!("## {} {}\n{}", r.persona_name, status_emoji, r.response)
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+
+        // Combine all tool calls
+        let tool_calls: Vec<ToolCallRecord> =
+            results.iter().flat_map(|r| r.tool_calls.clone()).collect();
+
+        // Determine status
+        let status = if all_success {
+            ExecutionStatus::Completed
+        } else if any_success {
+            ExecutionStatus::PartialSuccess
+        } else {
+            ExecutionStatus::Failed
+        };
+
+        // Use the first successful model or None
+        let model = results.iter().find_map(|r| r.model.clone());
+
+        info!(
+            execution_id = %execution_id,
+            personas = ?persona_names,
+            status = ?status,
+            total_tool_calls = tool_calls.len(),
+            "Multi-persona aggregation complete"
+        );
+
+        Ok(ExecutionResult {
+            execution_id,
+            status,
+            response,
+            tool_calls,
+            artifacts: vec![],
+            iterations: results.len(),
+            duration_ms: start.elapsed().as_millis() as u64,
+            model,
+        })
+    }
+
+    /// Execute personas in sequence (Pipeline mode)
+    ///
+    /// Each persona's output becomes context for the next persona.
+    /// Example: `@athena 계획 -> @sindri 구현` runs Athena first, then passes
+    /// Athena's output to Sindri as context.
+    async fn execute_pipeline_personas(
+        &self,
+        execution_id: Uuid,
+        extraction: MultiPersonaExtraction,
+        input: &OrchestratorInput,
+        messages: &[Message],
+        cancel_token: &CancellationToken,
+    ) -> Result<ExecutionResult> {
+        let start = std::time::Instant::now();
+        let persona_names: Vec<String> =
+            extraction.personas.iter().map(|p| p.name.clone()).collect();
+
+        info!(
+            execution_id = %execution_id,
+            personas = ?persona_names,
+            "Starting pipeline persona execution"
+        );
+
+        let mut results: Vec<PersonaExecutionResult> = Vec::new();
+        let mut accumulated_context = String::new();
+
+        for (idx, persona) in extraction.personas.iter().enumerate() {
+            if cancel_token.is_cancelled() {
+                warn!("Pipeline cancelled at stage {}", idx);
+                break;
+            }
+
+            // Build task: persona's instruction + accumulated context from previous stages
+            let stage_task = if let Some(ref instruction) = persona.instruction {
+                if accumulated_context.is_empty() {
+                    instruction.clone()
+                } else {
+                    format!(
+                        "{}\n\n---\n## Previous Stage Results\n{}",
+                        instruction, accumulated_context
+                    )
+                }
+            } else if accumulated_context.is_empty() {
+                extraction.rest.clone()
+            } else {
+                format!(
+                    "{}\n\n---\n## Previous Stage Results\n{}",
+                    extraction.rest, accumulated_context
+                )
+            };
+
+            info!(
+                stage = idx + 1,
+                persona = %persona.name,
+                "Executing pipeline stage"
+            );
+
+            let result = self
+                .run_single_persona(
+                    execution_id,
+                    persona,
+                    &stage_task,
+                    input,
+                    messages,
+                    cancel_token,
+                )
+                .await;
+
+            // Accumulate successful output for next stage
+            if result.success {
+                if !accumulated_context.is_empty() {
+                    accumulated_context.push_str("\n\n");
+                }
+                accumulated_context.push_str(&format!(
+                    "### {} output:\n{}",
+                    persona.name, result.response
+                ));
+            }
+
+            results.push(result);
+        }
+
+        // Aggregate with pipeline-specific formatting
+        self.aggregate_pipeline_results(execution_id, &persona_names, results, start)
+    }
+
+    /// Aggregate results from pipeline execution
+    fn aggregate_pipeline_results(
+        &self,
+        execution_id: Uuid,
+        persona_names: &[String],
+        results: Vec<PersonaExecutionResult>,
+        start: std::time::Instant,
+    ) -> Result<ExecutionResult> {
+        let all_success = results.iter().all(|r| r.success);
+        let any_success = results.iter().any(|r| r.success);
+
+        // Build response showing pipeline flow
+        let response = results
+            .iter()
+            .enumerate()
+            .map(|(idx, r)| {
+                let status_emoji = if r.success { "✓" } else { "✗" };
+                format!(
+                    "## Stage {} - {} {}\n{}",
+                    idx + 1,
+                    r.persona_name,
+                    status_emoji,
+                    r.response
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n→\n\n");
+
+        let tool_calls: Vec<ToolCallRecord> =
+            results.iter().flat_map(|r| r.tool_calls.clone()).collect();
+
+        let status = if all_success {
+            ExecutionStatus::Completed
+        } else if any_success {
+            ExecutionStatus::PartialSuccess
+        } else {
+            ExecutionStatus::Failed
+        };
+
+        let model = results.iter().find_map(|r| r.model.clone());
+
+        info!(
+            execution_id = %execution_id,
+            personas = ?persona_names,
+            status = ?status,
+            stages = results.len(),
+            "Pipeline execution complete"
+        );
+
+        Ok(ExecutionResult {
+            execution_id,
+            status,
+            response,
+            tool_calls,
+            artifacts: vec![],
+            iterations: results.len(),
+            duration_ms: start.elapsed().as_millis() as u64,
+            model,
+        })
+    }
+
+    /// Execute personas collaboratively (Collaborative mode)
+    ///
+    /// Personas work on the same task and can see each other's responses.
+    /// Multiple rounds of collaboration until consensus or max rounds.
+    async fn execute_collaborative_personas(
+        &self,
+        execution_id: Uuid,
+        extraction: MultiPersonaExtraction,
+        input: &OrchestratorInput,
+        messages: &[Message],
+        cancel_token: &CancellationToken,
+    ) -> Result<ExecutionResult> {
+        use futures::future::join_all;
+
+        let start = std::time::Instant::now();
+        let persona_names: Vec<String> =
+            extraction.personas.iter().map(|p| p.name.clone()).collect();
+        const MAX_ROUNDS: usize = 2; // Limit collaboration rounds
+
+        info!(
+            execution_id = %execution_id,
+            personas = ?persona_names,
+            task = %extraction.rest,
+            "Starting collaborative persona execution"
+        );
+
+        let mut all_results: Vec<PersonaExecutionResult> = Vec::new();
+        let mut collaboration_context = String::new();
+
+        for round in 0..MAX_ROUNDS {
+            if cancel_token.is_cancelled() {
+                warn!("Collaboration cancelled at round {}", round + 1);
+                break;
+            }
+
+            info!(round = round + 1, "Collaboration round");
+
+            // Build task with collaboration context
+            let round_task = if collaboration_context.is_empty() {
+                extraction.rest.clone()
+            } else {
+                format!(
+                    "{}\n\n---\n## Collaborators' Previous Responses\n{}\n\n**Build on or refine the above responses.**",
+                    extraction.rest, collaboration_context
+                )
+            };
+
+            // Execute all personas in parallel for this round
+            let futures: Vec<_> = extraction
+                .personas
+                .iter()
+                .map(|persona| {
+                    let persona = persona.clone();
+                    let task = round_task.clone();
+                    let input = input.clone();
+                    let messages = messages.to_vec();
+                    let cancel = cancel_token.clone();
+
+                    async move {
+                        self.run_single_persona(
+                            execution_id,
+                            &persona,
+                            &task,
+                            &input,
+                            &messages,
+                            &cancel,
+                        )
+                        .await
+                    }
+                })
+                .collect();
+
+            let round_results = tokio::select! {
+                r = join_all(futures) => r,
+                _ = cancel_token.cancelled() => {
+                    break;
+                }
+            };
+
+            // Update collaboration context with this round's responses
+            collaboration_context = round_results
+                .iter()
+                .filter(|r| r.success)
+                .map(|r| format!("### {} says:\n{}", r.persona_name, r.response))
+                .collect::<Vec<_>>()
+                .join("\n\n");
+
+            all_results.extend(round_results);
+
+            // Check for early termination: if responses are converging (similar), stop
+            // For now, always run MAX_ROUNDS for simplicity
+        }
+
+        // Aggregate collaborative results
+        self.aggregate_collaborative_results(
+            execution_id,
+            &persona_names,
+            all_results,
+            MAX_ROUNDS,
+            start,
+        )
+    }
+
+    /// Aggregate results from collaborative execution
+    fn aggregate_collaborative_results(
+        &self,
+        execution_id: Uuid,
+        persona_names: &[String],
+        results: Vec<PersonaExecutionResult>,
+        rounds: usize,
+        start: std::time::Instant,
+    ) -> Result<ExecutionResult> {
+        let all_success = results.iter().all(|r| r.success);
+        let any_success = results.iter().any(|r| r.success);
+
+        // Group results by round
+        let personas_per_round = persona_names.len();
+        let mut response_parts: Vec<String> = Vec::new();
+
+        for round in 0..rounds {
+            let round_start = round * personas_per_round;
+            let round_end = (round_start + personas_per_round).min(results.len());
+
+            if round_start >= results.len() {
+                break;
+            }
+
+            let round_responses: Vec<String> = results[round_start..round_end]
+                .iter()
+                .map(|r| {
+                    let status_emoji = if r.success { "✓" } else { "✗" };
+                    format!("### {} {}\n{}", r.persona_name, status_emoji, r.response)
+                })
+                .collect();
+
+            response_parts.push(format!(
+                "## Collaboration Round {}\n{}",
+                round + 1,
+                round_responses.join("\n\n")
+            ));
+        }
+
+        let response = response_parts.join("\n\n---\n\n");
+
+        let tool_calls: Vec<ToolCallRecord> =
+            results.iter().flat_map(|r| r.tool_calls.clone()).collect();
+
+        let status = if all_success {
+            ExecutionStatus::Completed
+        } else if any_success {
+            ExecutionStatus::PartialSuccess
+        } else {
+            ExecutionStatus::Failed
+        };
+
+        let model = results.iter().find_map(|r| r.model.clone());
+
+        info!(
+            execution_id = %execution_id,
+            personas = ?persona_names,
+            status = ?status,
+            rounds = rounds,
+            total_responses = results.len(),
+            "Collaborative execution complete"
+        );
+
+        Ok(ExecutionResult {
+            execution_id,
+            status,
+            response,
+            tool_calls,
+            artifacts: vec![],
+            iterations: results.len(),
+            duration_ms: start.elapsed().as_millis() as u64,
+            model,
+        })
+    }
+}
+
+/// Result from a single persona execution (internal)
+#[derive(Debug)]
+struct PersonaExecutionResult {
+    persona_name: String,
+    response: String,
+    tool_calls: Vec<ToolCallRecord>,
+    success: bool,
+    #[allow(dead_code)] // Reserved for future metrics/logging
+    duration_ms: u64,
+    model: Option<String>,
 }
 
 /// H6: Strip absolute paths from error messages shown to users.
@@ -1650,9 +2387,7 @@ fn sanitize_error_for_user(error: &str) -> String {
     use regex::Regex;
 
     static PATH_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-    let re = PATH_RE.get_or_init(|| {
-        Regex::new(r"(/[a-zA-Z0-9_./-]+)").unwrap()
-    });
+    let re = PATH_RE.get_or_init(|| Regex::new(r"(/[a-zA-Z0-9_./-]+)").unwrap());
 
     re.replace_all(error, "[PATH]").to_string()
 }
@@ -1783,7 +2518,11 @@ mod tests {
     fn test_sanitize_error_for_user() {
         let err = "Failed at /home/user/.config/cratos/secret.toml: permission denied";
         let sanitized = sanitize_error_for_user(err);
-        assert!(!sanitized.contains("/home/user"), "path leaked: {}", sanitized);
+        assert!(
+            !sanitized.contains("/home/user"),
+            "path leaked: {}",
+            sanitized
+        );
         assert!(sanitized.contains("[PATH]"));
         assert!(sanitized.contains("permission denied"));
     }
@@ -1882,9 +2621,13 @@ mod tests {
     #[test]
     fn test_tool_refusal_allows_short_knowledge_answer() {
         // Short but contains code backtick → legitimate answer
-        assert!(!is_tool_refusal("`gcloud config set project ID`를 실행하세요."));
+        assert!(!is_tool_refusal(
+            "`gcloud config set project ID`를 실행하세요."
+        ));
         // Contains URL → legitimate answer
-        assert!(!is_tool_refusal("https://cloud.google.com/docs 참고하세요."));
+        assert!(!is_tool_refusal(
+            "https://cloud.google.com/docs 참고하세요."
+        ));
         // Contains list marker → legitimate answer
         assert!(!is_tool_refusal("1. 환경변수 설정\n2. 재시작"));
     }

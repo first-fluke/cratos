@@ -9,10 +9,56 @@
 //! @athena create a plan       -> calls pm agent
 //! @cratos summarize status    -> handled by orchestrator
 //! ```
+//!
+//! # Multi-Persona Routing
+//!
+//! Supports multiple personas in a single message:
+//!
+//! ```text
+//! @nike @apollo 작업해줘           -> Parallel execution
+//! @athena 계획 -> @sindri 구현      -> Pipeline execution (Phase 2)
+//! @sindri @heimdall collaborate:    -> Collaborative execution (Phase 3)
+//! ```
 
 use crate::pantheon::{Domain, PersonaLoader, PersonaPreset};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::debug;
+
+/// Execution mode for multi-persona routing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ExecutionMode {
+    /// Execute all personas in parallel, merge results
+    #[default]
+    Parallel,
+    /// Execute personas in sequence, pass output to next input (Phase 2)
+    Pipeline,
+    /// Personas collaborate via A2A communication (Phase 3)
+    Collaborative,
+}
+
+/// A single persona mention extracted from user input
+#[derive(Debug, Clone)]
+pub struct PersonaMention {
+    /// Persona name (lowercase)
+    pub name: String,
+    /// Mapped agent ID
+    pub agent_id: String,
+    /// Instruction specific to this persona (for Pipeline mode)
+    pub instruction: Option<String>,
+}
+
+/// Result of extracting multiple persona mentions from a message
+#[derive(Debug, Clone)]
+pub struct MultiPersonaExtraction {
+    /// Extracted personas in order
+    pub personas: Vec<PersonaMention>,
+    /// Remaining text after removing persona mentions
+    pub rest: String,
+    /// Detected execution mode
+    pub mode: ExecutionMode,
+}
 
 /// Persona to Agent mapping
 #[derive(Debug, Clone)]
@@ -75,6 +121,7 @@ impl PersonaMapping {
                     .name_to_agent
                     .insert(persona_name.clone(), agent_id.clone());
                 mapping.agent_to_name.insert(agent_id, persona_name.clone());
+
                 mapping.presets.insert(persona_name, preset);
             }
         }
@@ -152,11 +199,196 @@ impl Default for PersonaMapping {
     }
 }
 
-/// Extract persona @mention from message
+/// Extract all persona mentions from a message.
+///
+/// Supports multiple execution modes:
+/// - **Parallel**: `@nike @apollo 작업해줘` - all personas execute simultaneously
+/// - **Pipeline**: `@athena 계획 -> @sindri 구현` - sequential, output chains to next (Phase 2)
+/// - **Collaborative**: `@sindri @heimdall collaborate: API` - A2A communication (Phase 3)
 ///
 /// # Arguments
 /// * `message` - User message
 /// * `mapping` - Persona mapping
+///
+/// # Returns
+/// `MultiPersonaExtraction` with personas, rest text, and detected mode. None if no persona found.
+pub fn extract_all_persona_mentions(
+    message: &str,
+    mapping: &PersonaMapping,
+) -> Option<MultiPersonaExtraction> {
+    // Detect execution mode
+    let mode = detect_execution_mode(message);
+
+    match mode {
+        ExecutionMode::Pipeline => extract_pipeline_personas(message, mapping),
+        ExecutionMode::Collaborative => extract_collaborative_personas(message, mapping),
+        ExecutionMode::Parallel => extract_parallel_personas(message, mapping),
+    }
+}
+
+/// Detect execution mode from message syntax
+fn detect_execution_mode(message: &str) -> ExecutionMode {
+    // Pipeline: contains "->" separator
+    if message.contains("->") {
+        return ExecutionMode::Pipeline;
+    }
+
+    // Collaborative: contains "collaborate:" prefix (case-insensitive)
+    let lower = message.to_lowercase();
+    if lower.contains("collaborate:") || lower.contains("협업:") {
+        return ExecutionMode::Collaborative;
+    }
+
+    // Default: Parallel
+    ExecutionMode::Parallel
+}
+
+/// Extract personas for Parallel mode
+fn extract_parallel_personas(
+    message: &str,
+    mapping: &PersonaMapping,
+) -> Option<MultiPersonaExtraction> {
+    let mut personas = Vec::new();
+    let mut rest_parts = Vec::new();
+    let mut in_persona_prefix = true;
+
+    for token in message.split_whitespace() {
+        let cleaned = token
+            .trim_start_matches('@')
+            .trim_end_matches(&[',', '.', '!', '?', ':', ';'] as &[char]);
+        let lower = cleaned.to_lowercase();
+
+        if in_persona_prefix {
+            if let Some(agent_id) = mapping.to_agent_id(&lower) {
+                personas.push(PersonaMention {
+                    name: lower.clone(),
+                    agent_id: agent_id.to_string(),
+                    instruction: None,
+                });
+                debug!(persona = %lower, agent_id = agent_id, "Parallel persona detected");
+                continue;
+            }
+            // Once we hit a non-persona token, stop looking for more
+            in_persona_prefix = false;
+        }
+        rest_parts.push(token);
+    }
+
+    if personas.is_empty() {
+        return None;
+    }
+
+    Some(MultiPersonaExtraction {
+        personas,
+        rest: rest_parts.join(" "),
+        mode: ExecutionMode::Parallel,
+    })
+}
+
+/// Extract personas for Pipeline mode (Phase 2 - basic parsing only)
+fn extract_pipeline_personas(
+    message: &str,
+    mapping: &PersonaMapping,
+) -> Option<MultiPersonaExtraction> {
+    let mut personas = Vec::new();
+
+    // Split by "->" to get pipeline stages
+    let stages: Vec<&str> = message.split("->").map(|s| s.trim()).collect();
+
+    for stage in &stages {
+        // Extract first token as persona
+        let first_token = stage.split_whitespace().next().map(|t| {
+            t.trim_start_matches('@')
+                .trim_end_matches(&[',', '.'] as &[char])
+        });
+
+        if let Some(token) = first_token {
+            let lower = token.to_lowercase();
+            if let Some(agent_id) = mapping.to_agent_id(&lower) {
+                let instruction = stage
+                    .split_once(char::is_whitespace)
+                    .map(|(_, rest)| rest.trim().to_string());
+
+                personas.push(PersonaMention {
+                    name: lower.clone(),
+                    agent_id: agent_id.to_string(),
+                    instruction,
+                });
+                debug!(persona = %lower, agent_id = agent_id, "Pipeline persona detected");
+            }
+        }
+    }
+
+    if personas.is_empty() {
+        return None;
+    }
+
+    // For pipeline, rest is the entire message (instructions are per-stage)
+    Some(MultiPersonaExtraction {
+        personas,
+        rest: message.to_string(),
+        mode: ExecutionMode::Pipeline,
+    })
+}
+
+/// Extract personas for Collaborative mode (Phase 3 - basic parsing only)
+fn extract_collaborative_personas(
+    message: &str,
+    mapping: &PersonaMapping,
+) -> Option<MultiPersonaExtraction> {
+    let mut personas = Vec::new();
+
+    // Find "collaborate:" or "협업:" and extract text after it
+    let lower = message.to_lowercase();
+    let collaborate_idx = lower.find("collaborate:").or_else(|| lower.find("협업:"));
+
+    let (prefix, task) = if let Some(idx) = collaborate_idx {
+        let collab_len = if lower[idx..].starts_with("collaborate:") {
+            "collaborate:".len()
+        } else {
+            "협업:".len()
+        };
+        (&message[..idx], message[idx + collab_len..].trim())
+    } else {
+        (message, "")
+    };
+
+    // Extract personas from prefix
+    for token in prefix.split_whitespace() {
+        let cleaned = token
+            .trim_start_matches('@')
+            .trim_end_matches(&[',', '.', '!', '?', ':', ';'] as &[char]);
+        let lower = cleaned.to_lowercase();
+
+        if let Some(agent_id) = mapping.to_agent_id(&lower) {
+            personas.push(PersonaMention {
+                name: lower.clone(),
+                agent_id: agent_id.to_string(),
+                instruction: None,
+            });
+            debug!(persona = %lower, agent_id = agent_id, "Collaborative persona detected");
+        }
+    }
+
+    if personas.is_empty() {
+        return None;
+    }
+
+    Some(MultiPersonaExtraction {
+        personas,
+        rest: task.to_string(),
+        mode: ExecutionMode::Collaborative,
+    })
+}
+
+/// Extract persona mention from message (supports @mention, bare name, and aliases from TOML)
+///
+/// **Backward-compatible wrapper** around `extract_all_persona_mentions()`.
+/// Returns only the first persona found.
+///
+/// # Arguments
+/// * `message` - User message
+/// * `mapping` - Persona mapping (includes aliases loaded from TOML)
 ///
 /// # Returns
 /// `(agent_id, rest_of_message)` tuple. None if no persona found.
@@ -164,31 +396,9 @@ pub fn extract_persona_mention(
     message: &str,
     mapping: &PersonaMapping,
 ) -> Option<(String, String)> {
-    // Find @name pattern
-    if !message.starts_with('@') {
-        return None;
-    }
-
-    // Mention is until first whitespace
-    let parts: Vec<&str> = message.splitn(2, char::is_whitespace).collect();
-    if parts.is_empty() {
-        return None;
-    }
-
-    let mention = parts[0].trim_start_matches('@').to_lowercase();
-    let rest = parts.get(1).map(|s| s.trim()).unwrap_or("").to_string();
-
-    // Check persona mapping
-    if let Some(agent_id) = mapping.to_agent_id(&mention) {
-        debug!(
-            persona = mention,
-            agent_id = agent_id,
-            "Persona mention detected"
-        );
-        return Some((agent_id.to_string(), rest));
-    }
-
-    None
+    extract_all_persona_mentions(message, mapping)
+        .filter(|e| !e.personas.is_empty())
+        .map(|e| (e.personas[0].agent_id.clone(), e.rest))
 }
 
 /// Get agent ID by domain
@@ -271,9 +481,28 @@ mod tests {
         let result = extract_persona_mention("@unknown do something", &mapping);
         assert!(result.is_none());
 
-        // Does not start with @
-        let result = extract_persona_mention("sindri do something", &mapping);
+        // Non-persona word
+        let result = extract_persona_mention("hello world", &mapping);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_persona_bare_english() {
+        let mapping = PersonaMapping::default_mapping();
+
+        // Without @, bare English name
+        let result = extract_persona_mention("sindri do something", &mapping);
+        assert!(result.is_some());
+        let (agent_id, rest) = result.unwrap();
+        assert_eq!(agent_id, "backend");
+        assert_eq!(rest, "do something");
+
+        // With trailing comma
+        let result = extract_persona_mention("nike, do the SNS automation", &mapping);
+        assert!(result.is_some());
+        let (agent_id, rest) = result.unwrap();
+        assert_eq!(agent_id, "marketing");
+        assert_eq!(rest, "do the SNS automation");
     }
 
     #[test]
@@ -292,5 +521,169 @@ mod tests {
         assert_eq!(domain_to_agent_id(Domain::Qa), "qa");
         assert_eq!(domain_to_agent_id(Domain::Researcher), "researcher");
         assert_eq!(domain_to_agent_id(Domain::Orchestrator), "orchestrator");
+    }
+
+    // ── Multi-Persona Extraction Tests ──────────────────────────────────
+
+    #[test]
+    fn test_extract_all_parallel_single() {
+        let mapping = PersonaMapping::default_mapping();
+
+        let result = extract_all_persona_mentions("@sindri implement the API", &mapping);
+        assert!(result.is_some());
+        let extraction = result.unwrap();
+        assert_eq!(extraction.mode, ExecutionMode::Parallel);
+        assert_eq!(extraction.personas.len(), 1);
+        assert_eq!(extraction.personas[0].name, "sindri");
+        assert_eq!(extraction.personas[0].agent_id, "backend");
+        assert_eq!(extraction.rest, "implement the API");
+    }
+
+    #[test]
+    fn test_extract_all_parallel_multiple() {
+        let mapping = PersonaMapping::default_mapping();
+
+        // Multiple personas: @nike @apollo
+        let result =
+            extract_all_persona_mentions("@nike @apollo SNS 마케팅 전략 수립해줘", &mapping);
+        assert!(result.is_some());
+        let extraction = result.unwrap();
+        assert_eq!(extraction.mode, ExecutionMode::Parallel);
+        assert_eq!(extraction.personas.len(), 2);
+        assert_eq!(extraction.personas[0].name, "nike");
+        assert_eq!(extraction.personas[0].agent_id, "marketing");
+        assert_eq!(extraction.personas[1].name, "apollo");
+        assert_eq!(extraction.personas[1].agent_id, "ux");
+        assert_eq!(extraction.rest, "SNS 마케팅 전략 수립해줘");
+    }
+
+    #[test]
+    fn test_extract_all_parallel_bare_names() {
+        let mapping = PersonaMapping::default_mapping();
+
+        // Without @ prefix
+        let result = extract_all_persona_mentions("nike apollo 작업해줘", &mapping);
+        assert!(result.is_some());
+        let extraction = result.unwrap();
+        assert_eq!(extraction.personas.len(), 2);
+        assert_eq!(extraction.personas[0].name, "nike");
+        assert_eq!(extraction.personas[1].name, "apollo");
+        assert_eq!(extraction.rest, "작업해줘");
+    }
+
+    #[test]
+    fn test_extract_all_parallel_with_comma() {
+        let mapping = PersonaMapping::default_mapping();
+
+        // With comma separator
+        let result = extract_all_persona_mentions("nike, apollo, 마케팅 해줘", &mapping);
+        assert!(result.is_some());
+        let extraction = result.unwrap();
+        assert_eq!(extraction.personas.len(), 2);
+        assert_eq!(extraction.rest, "마케팅 해줘");
+    }
+
+    #[test]
+    fn test_extract_all_pipeline() {
+        let mapping = PersonaMapping::default_mapping();
+
+        let result =
+            extract_all_persona_mentions("@athena 요구사항 분석 -> @sindri 구현", &mapping);
+        assert!(result.is_some());
+        let extraction = result.unwrap();
+        assert_eq!(extraction.mode, ExecutionMode::Pipeline);
+        assert_eq!(extraction.personas.len(), 2);
+        assert_eq!(extraction.personas[0].name, "athena");
+        assert_eq!(
+            extraction.personas[0].instruction,
+            Some("요구사항 분석".to_string())
+        );
+        assert_eq!(extraction.personas[1].name, "sindri");
+        assert_eq!(extraction.personas[1].instruction, Some("구현".to_string()));
+    }
+
+    #[test]
+    fn test_extract_all_pipeline_three_stages() {
+        let mapping = PersonaMapping::default_mapping();
+
+        let result = extract_all_persona_mentions(
+            "@athena 계획 -> @sindri 구현 -> @heimdall 검증",
+            &mapping,
+        );
+        assert!(result.is_some());
+        let extraction = result.unwrap();
+        assert_eq!(extraction.mode, ExecutionMode::Pipeline);
+        assert_eq!(extraction.personas.len(), 3);
+        assert_eq!(extraction.personas[0].name, "athena");
+        assert_eq!(extraction.personas[1].name, "sindri");
+        assert_eq!(extraction.personas[2].name, "heimdall");
+    }
+
+    #[test]
+    fn test_extract_all_collaborative() {
+        let mapping = PersonaMapping::default_mapping();
+
+        let result = extract_all_persona_mentions(
+            "@sindri @heimdall collaborate: API 개발하고 테스트",
+            &mapping,
+        );
+        assert!(result.is_some());
+        let extraction = result.unwrap();
+        assert_eq!(extraction.mode, ExecutionMode::Collaborative);
+        assert_eq!(extraction.personas.len(), 2);
+        assert_eq!(extraction.personas[0].name, "sindri");
+        assert_eq!(extraction.personas[1].name, "heimdall");
+        assert_eq!(extraction.rest, "API 개발하고 테스트");
+    }
+
+    #[test]
+    fn test_extract_all_collaborative_korean() {
+        let mapping = PersonaMapping::default_mapping();
+
+        let result =
+            extract_all_persona_mentions("@sindri @heimdall 협업: 코드 작성하고 리뷰", &mapping);
+        assert!(result.is_some());
+        let extraction = result.unwrap();
+        assert_eq!(extraction.mode, ExecutionMode::Collaborative);
+        assert_eq!(extraction.personas.len(), 2);
+        assert_eq!(extraction.rest, "코드 작성하고 리뷰");
+    }
+
+    #[test]
+    fn test_extract_all_no_match() {
+        let mapping = PersonaMapping::default_mapping();
+
+        // No valid personas
+        let result = extract_all_persona_mentions("hello world", &mapping);
+        assert!(result.is_none());
+
+        // Unknown persona
+        let result = extract_all_persona_mentions("@unknown do something", &mapping);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_backward_compat_single_persona() {
+        let mapping = PersonaMapping::default_mapping();
+
+        // Old function should still work with new implementation
+        let result = extract_persona_mention("@sindri implement", &mapping);
+        assert!(result.is_some());
+        let (agent_id, rest) = result.unwrap();
+        assert_eq!(agent_id, "backend");
+        assert_eq!(rest, "implement");
+    }
+
+    #[test]
+    fn test_backward_compat_multi_returns_first() {
+        let mapping = PersonaMapping::default_mapping();
+
+        // Old function returns first persona's agent_id
+        // New implementation: extract_all parses ALL personas, rest is after all of them
+        let result = extract_persona_mention("@nike @apollo 작업", &mapping);
+        assert!(result.is_some());
+        let (agent_id, rest) = result.unwrap();
+        assert_eq!(agent_id, "marketing"); // First persona (nike -> marketing)
+        assert_eq!(rest, "작업"); // Rest is after all extracted personas (new behavior)
     }
 }
