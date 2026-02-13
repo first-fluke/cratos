@@ -761,6 +761,69 @@ pub async fn run() -> Result<()> {
         skill_count
     );
 
+    // Initialize persona-skill store (same DB as skill_store)
+    let persona_skill_store = Arc::new(
+        cratos_skills::PersonaSkillStore::from_path(&skill_db_path)
+            .await
+            .context("Failed to initialize persona skill store")?,
+    );
+    info!("Persona skill store initialized");
+
+    // Initialize default skills from persona TOML files
+    {
+        let persona_loader = cratos_core::pantheon::PersonaLoader::new();
+        let persona_mapping = cratos_core::PersonaMapping::from_loader(&persona_loader);
+        let mut default_skills_registered = 0usize;
+
+        for persona_name in persona_mapping.persona_names() {
+            if let Some(preset) = persona_mapping.get_preset(persona_name) {
+                for skill_name in &preset.skills.default {
+                    // Skip if already bound
+                    match persona_skill_store
+                        .has_skill_by_name(persona_name, skill_name)
+                        .await
+                    {
+                        Ok(true) => continue,
+                        Ok(false) => {}
+                        Err(e) => {
+                            warn!(
+                                persona = %persona_name,
+                                skill = %skill_name,
+                                error = %e,
+                                "Failed to check skill binding"
+                            );
+                            continue;
+                        }
+                    }
+
+                    // Find skill by name and create default binding
+                    if let Ok(Some(skill)) = skill_store.get_skill_by_name(skill_name).await {
+                        if let Err(e) = persona_skill_store
+                            .create_default_binding(persona_name, skill.id, skill_name)
+                            .await
+                        {
+                            warn!(
+                                persona = %persona_name,
+                                skill = %skill_name,
+                                error = %e,
+                                "Failed to create default skill binding"
+                            );
+                        } else {
+                            default_skills_registered += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        if default_skills_registered > 0 {
+            info!(
+                "Registered {} default persona-skill bindings from TOML",
+                default_skills_registered
+            );
+        }
+    }
+
     let embedding_provider: Option<SharedEmbeddingProvider> = if config.vector_search.enabled {
         match TractEmbeddingProvider::new() {
             Ok(provider) => {
@@ -1048,23 +1111,29 @@ pub async fn run() -> Result<()> {
         }
     }
 
-    // Phase 5: Connect semantic skill router
+    // Phase 5: Connect semantic skill router (Phase 8: returns SkillMatch with skill_id)
     if let Some(ref sr) = _semantic_skill_router {
         struct SkillRouterAdapter(Arc<SemanticSkillRouter<SkillEmbeddingAdapter>>);
 
         #[async_trait::async_trait]
         impl cratos_core::SkillRouting for SkillRouterAdapter {
-            async fn route_best(&self, input: &str) -> Option<(String, String, f32)> {
-                self.0
-                    .route_best(input)
-                    .await
-                    .map(|m| (m.skill.name, m.skill.description, m.score))
+            async fn route_best(&self, input: &str) -> Option<cratos_core::SkillMatch> {
+                self.0.route_best(input).await.map(|m| cratos_core::SkillMatch {
+                    skill_id: m.skill.id,
+                    skill_name: m.skill.name,
+                    description: m.skill.description,
+                    score: m.score,
+                })
             }
         }
 
         orchestrator = orchestrator.with_skill_router(Arc::new(SkillRouterAdapter(sr.clone())));
         info!("Skill router connected to orchestrator");
     }
+
+    // Connect persona-skill store to orchestrator
+    orchestrator = orchestrator.with_persona_skill_store(persona_skill_store.clone());
+    info!("Persona skill store connected to orchestrator");
 
     let orchestrator = Arc::new(orchestrator);
     info!("Orchestrator initialized");
