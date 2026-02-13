@@ -304,6 +304,64 @@ pub enum PantheonCommands {
     },
     /// Dismiss (deactivate) the active persona
     Dismiss,
+    /// Manage persona-skill bindings
+    #[command(subcommand)]
+    Skill(PersonaSkillCommands),
+}
+
+/// Persona skill management subcommands
+#[derive(Subcommand, Debug)]
+pub enum PersonaSkillCommands {
+    /// List skills bound to a persona
+    List {
+        /// Persona name
+        persona: String,
+        /// Show only auto-assigned skills
+        #[arg(long)]
+        auto_assigned: bool,
+        /// Show only mastered skills (success_rate >= 0.8)
+        #[arg(long)]
+        mastered: bool,
+    },
+    /// Show persona-skill binding details
+    Show {
+        /// Persona name
+        persona: String,
+        /// Skill name
+        skill: String,
+    },
+    /// Claim (manually assign) a skill to a persona
+    Claim {
+        /// Persona name
+        persona: String,
+        /// Skill name to claim
+        skill: String,
+    },
+    /// Release a skill from a persona
+    Release {
+        /// Persona name
+        persona: String,
+        /// Skill name to release
+        skill: String,
+    },
+    /// Show skill leaderboard (which personas are best at a skill)
+    Leaderboard {
+        /// Skill name
+        skill: String,
+        /// Number of results
+        #[arg(short, long, default_value = "5")]
+        limit: usize,
+    },
+    /// Show persona's skill summary (proficiency stats)
+    Summary {
+        /// Persona name
+        persona: String,
+    },
+    /// Sync skill proficiency to persona's chronicle
+    Sync {
+        /// Persona name
+        persona: String,
+    },
 }
 
 /// Decrees subcommands
