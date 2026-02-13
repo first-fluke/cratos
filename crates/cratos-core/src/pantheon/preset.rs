@@ -153,6 +153,9 @@ pub struct PersonaPreset {
     /// Level (divine rank)
     #[serde(default)]
     pub level: PersonaLevel,
+    /// Domain-specific instructions / knowledge (appended to system prompt)
+    #[serde(default)]
+    pub instructions: Option<String>,
 }
 
 impl PersonaPreset {
@@ -184,6 +187,12 @@ impl PersonaPreset {
                 .join("\n")
         };
 
+        let instructions_section = self
+            .instructions
+            .as_deref()
+            .map(|i| format!("\n\n## Domain Knowledge\n{i}"))
+            .unwrap_or_default();
+
         format!(
             r#"You are {name}. {title}.
 
@@ -196,7 +205,7 @@ impl PersonaPreset {
 {style}
 
 ## Principles (Laws-based)
-{principles}
+{principles}{instructions}
 
 ## Response Format
 Start all responses in the following format:
@@ -210,6 +219,7 @@ Start all responses in the following format:
             philosophy = self.traits.philosophy,
             style = style_list,
             principles = principles_list,
+            instructions = instructions_section,
             level = self.level.level_display(),
             user_name = user_name,
         )
@@ -299,6 +309,7 @@ mod tests {
                 level: 3,
                 title: "Demigod".to_string(),
             },
+            instructions: None,
         }
     }
 
