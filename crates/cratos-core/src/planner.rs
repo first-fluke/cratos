@@ -65,6 +65,11 @@ After using tools, you MUST present the actual data/output to the user in a clea
     - "AG로 W 실행해": agent_cli(agent="antigravity", prompt="W")
     Set `workspace` to a project directory if the task is project-specific.
     For interactive multi-turn sessions, use MCP tools: agent_start, agent_send, agent_output, agent_stop.
+11. `memory` — Save and recall explicit knowledge across sessions. Use when:
+    - User says "기억해", "저장해", "기록해", "remember this": memory(action="save", name="descriptive-name", content="...", tags=[...])
+    - User asks "그때 그거 뭐였지?", "recall", "저장한 거": memory(action="recall", query="...")
+    - User asks to list/delete saved memories: memory(action="list") / memory(action="delete", name="...")
+    IMPORTANT: When saving, extract the key information and give it a descriptive name. Include relevant tags for discoverability.
 {local_app_instructions}
 
 ## Bash Tool Patterns

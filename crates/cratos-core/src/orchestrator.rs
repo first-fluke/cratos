@@ -200,7 +200,7 @@ pub struct OrchestratorConfig {
 impl Default for OrchestratorConfig {
     fn default() -> Self {
         Self {
-            max_iterations: 10,
+            max_iterations: 20,
             enable_logging: true,
             planner_config: PlannerConfig::default(),
             runner_config: RunnerConfig::default(),
@@ -535,6 +535,35 @@ impl Orchestrator {
                         Ok(_) => {}
                         Err(e) => warn!(error = %e, "Graph RAG supplementary retrieval failed"),
                     }
+                }
+            }
+
+            // Explicit memory: auto-inject relevant saved memories
+            if let Some(gm) = &self.graph_memory {
+                match gm.recall_memories(&input.text, 3).await {
+                    Ok(memories) if !memories.is_empty() => {
+                        let memory_names: Vec<&str> =
+                            memories.iter().map(|m| m.name.as_str()).collect();
+                        let memory_context = memories
+                            .iter()
+                            .map(|m| format!("[Memory: {}] {}", m.name, m.content))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        session.insert_supplementary_context(vec![Message::system(
+                            &format!(
+                                "Relevant saved memories (use these to help the user):\n{memory_context}"
+                            ),
+                        )]);
+                        info!(
+                            count = memories.len(),
+                            names = ?memory_names,
+                            "Injected explicit memories into context"
+                        );
+                    }
+                    Ok(_) => {
+                        debug!(query = %input.text, "No explicit memories matched");
+                    }
+                    Err(e) => warn!(error = %e, "Explicit memory recall failed"),
                 }
             }
 

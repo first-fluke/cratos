@@ -863,6 +863,7 @@ pub async fn run() -> Result<()> {
         skill_store.clone(),
     )));
 
+
     // MCP tool auto-registration from .mcp.json
     let mcp_json_path = std::path::Path::new(".mcp.json");
     if mcp_json_path.exists() {
@@ -871,6 +872,70 @@ pub async fn run() -> Result<()> {
                 info!("MCP tools registered from .mcp.json");
             }
             Err(e) => warn!("Failed to register MCP tools: {}", e),
+        }
+    }
+
+    // ── Graph RAG Memory ──────────────────────────────────────────────
+    // Initialize before tool_registry is wrapped in Arc, so MemoryTool can be registered.
+    let graph_memory: Option<Arc<GraphMemory>> = {
+        let memory_db_path = data_dir.join("memory.db");
+        match GraphMemory::from_path(&memory_db_path).await {
+            Ok(gm) => {
+                let gm = if let Some(ref embedder) = embedding_provider {
+                    let dimensions = embedder.dimensions();
+                    // Turn embedding index
+                    let memory_index_path = vectors_dir.join("memory");
+                    let gm = match VectorIndex::open(&memory_index_path, IndexConfig::new(dimensions)) {
+                        Ok(idx) => {
+                            let bridge = Arc::new(VectorBridge::new(
+                                embedder.clone(),
+                                Arc::new(idx),
+                            ));
+                            info!("Graph RAG memory initialized with embedding search");
+                            gm.with_vector_bridge(bridge)
+                        }
+                        Err(e) => {
+                            warn!("Failed to open memory vector index: {e}, using graph-only");
+                            gm
+                        }
+                    };
+                    // Explicit memory embedding index (separate HNSW)
+                    let explicit_index_path = vectors_dir.join("explicit");
+                    match VectorIndex::open(&explicit_index_path, IndexConfig::new(dimensions)) {
+                        Ok(idx) => {
+                            let bridge = Arc::new(VectorBridge::new(
+                                embedder.clone(),
+                                Arc::new(idx),
+                            ));
+                            info!("Explicit memory vector index initialized");
+                            gm.with_explicit_vector_bridge(bridge)
+                        }
+                        Err(e) => {
+                            warn!("Failed to open explicit memory vector index: {e}");
+                            gm
+                        }
+                    }
+                } else {
+                    info!("Graph RAG memory initialized (graph-only, no embeddings)");
+                    gm
+                };
+                Some(Arc::new(gm))
+            }
+            Err(e) => {
+                warn!("Failed to initialize Graph RAG memory: {e}");
+                None
+            }
+        }
+    };
+
+    // Register memory tool (explicit save/recall)
+    if let Some(ref gm) = graph_memory {
+        tool_registry.register(Arc::new(crate::tools::MemoryTool::new(
+            Arc::clone(gm),
+        )));
+        // Backfill: embed any explicit memories missing from vector index
+        if let Err(e) = gm.reindex_explicit_memories().await {
+            warn!("Failed to reindex explicit memories: {e}");
         }
     }
 
@@ -886,41 +951,6 @@ pub async fn run() -> Result<()> {
         Err(e) => {
             warn!("Redis unavailable, using in-memory session store: {}", e);
             Arc::new(cratos_core::MemoryStore::new())
-        }
-    };
-
-    // ── Graph RAG Memory ──────────────────────────────────────────────
-    let graph_memory: Option<Arc<GraphMemory>> = {
-        let memory_db_path = data_dir.join("memory.db");
-        match GraphMemory::from_path(&memory_db_path).await {
-            Ok(gm) => {
-                let gm = if let Some(ref embedder) = embedding_provider {
-                    let dimensions = embedder.dimensions();
-                    let memory_index_path = vectors_dir.join("memory");
-                    match VectorIndex::open(&memory_index_path, IndexConfig::new(dimensions)) {
-                        Ok(idx) => {
-                            let bridge = Arc::new(VectorBridge::new(
-                                embedder.clone(),
-                                Arc::new(idx),
-                            ));
-                            info!("Graph RAG memory initialized with embedding search");
-                            gm.with_vector_bridge(bridge)
-                        }
-                        Err(e) => {
-                            warn!("Failed to open memory vector index: {e}, using graph-only");
-                            gm
-                        }
-                    }
-                } else {
-                    info!("Graph RAG memory initialized (graph-only, no embeddings)");
-                    gm
-                };
-                Some(Arc::new(gm))
-            }
-            Err(e) => {
-                warn!("Failed to initialize Graph RAG memory: {e}");
-                None
-            }
         }
     };
 

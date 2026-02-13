@@ -186,6 +186,7 @@ mod tests {
             tool_call_id: Some("tc1".into()),
             name: Some("web_search".into()),
             tool_calls: vec![],
+            images: vec![],
         };
 
         let messages = vec![

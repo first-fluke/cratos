@@ -42,6 +42,11 @@ impl EmbedAndStore for VectorBridge {
             .add(id, &vector)
             .map_err(|e| crate::Error::Embedding(e.to_string()))?;
 
+        // Persist to disk so vectors survive server restarts
+        self.index
+            .save()
+            .map_err(|e| crate::Error::Embedding(format!("Failed to save vector index: {e}")))?;
+
         Ok(())
     }
 }

@@ -10,6 +10,11 @@ use std::sync::LazyLock;
 
 // ── Compiled patterns ───────────────────────────────────────────
 
+static RE_ACRONYM: LazyLock<Regex> = LazyLock::new(|| {
+    // Uppercase acronyms 2-6 chars (SNS, API, LLM, OAuth, etc.)
+    Regex::new(r"\b([A-Z][A-Za-z0-9]{1,5})\b").unwrap()
+});
+
 static RE_FILE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\b([\w\-]+\.(?:rs|toml|json|yaml|yml|md|py|ts|js|tsx|jsx|sql|sh|css|html))\b")
         .unwrap()
@@ -142,6 +147,23 @@ pub fn extract(content: &str) -> Vec<ExtractedEntity> {
                 name: (*keyword).to_string(),
                 kind: EntityKind::Concept,
                 relevance: 0.6,
+            });
+        }
+    }
+
+    // ── Acronyms (uppercase 2-6 chars: SNS, API, LLM, OAuth, etc.) ──
+    for cap in RE_ACRONYM.captures_iter(content) {
+        let name = cap[1].to_string();
+        let lower = name.to_lowercase();
+        // Skip noise words and already-seen entries
+        if lower.len() >= 2
+            && !["the", "and", "for", "not", "but", "with", "from", "into"].contains(&lower.as_str())
+            && seen.insert(("acronym", lower.clone()))
+        {
+            entities.push(ExtractedEntity {
+                name: lower,
+                kind: EntityKind::Concept,
+                relevance: 0.5,
             });
         }
     }

@@ -133,6 +133,30 @@ pub struct RetrievedTurn {
     pub matched_entities: Vec<String>,
 }
 
+/// An explicitly saved memory (user-requested knowledge).
+///
+/// Unlike auto-indexed turns, these represent knowledge the user
+/// explicitly asked to remember, with a descriptive name and tags.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExplicitMemory {
+    /// Unique memory ID (UUID)
+    pub id: String,
+    /// Human-readable name (e.g. "stealth-native-logic-v1")
+    pub name: String,
+    /// Full memory content
+    pub content: String,
+    /// Category (general, knowledge, blueprint, strategy, pattern, error_fix)
+    pub category: String,
+    /// Searchable tags
+    pub tags: Vec<String>,
+    /// When this memory was created
+    pub created_at: DateTime<Utc>,
+    /// When this memory was last updated
+    pub updated_at: DateTime<Utc>,
+    /// Number of times this memory was recalled
+    pub access_count: u32,
+}
+
 /// An extracted entity with its relevance score (before persistence).
 #[derive(Debug, Clone)]
 pub struct ExtractedEntity {

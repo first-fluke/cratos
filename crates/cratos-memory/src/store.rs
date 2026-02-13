@@ -3,7 +3,7 @@
 //! Tables: `turns`, `entities`, `turn_entity_edges`, `entity_cooccurrence`.
 
 use crate::error::{Error, Result};
-use crate::types::{Entity, EntityKind, Turn, TurnEntityEdge, TurnRole};
+use crate::types::{Entity, EntityKind, ExplicitMemory, Turn, TurnEntityEdge, TurnRole};
 use chrono::{DateTime, Utc};
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
@@ -119,6 +119,51 @@ impl GraphStore {
                 cooccurrence_count INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY (entity_a, entity_b)
             )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // ── Explicit memories ────────────────────────────────────
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS explicit_memories (
+                id           TEXT PRIMARY KEY,
+                name         TEXT NOT NULL UNIQUE,
+                content      TEXT NOT NULL,
+                category     TEXT NOT NULL DEFAULT 'general',
+                tags         TEXT NOT NULL DEFAULT '',
+                created_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL,
+                access_count INTEGER NOT NULL DEFAULT 0
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_explicit_name ON explicit_memories(name)",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_explicit_category ON explicit_memories(category)",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS memory_entity_edges (
+                memory_id TEXT NOT NULL REFERENCES explicit_memories(id),
+                entity_id TEXT NOT NULL REFERENCES entities(id),
+                relevance REAL NOT NULL DEFAULT 1.0,
+                PRIMARY KEY (memory_id, entity_id)
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_mem_edges_entity ON memory_entity_edges(entity_id)",
         )
         .execute(&self.pool)
         .await?;
@@ -388,6 +433,228 @@ impl GraphStore {
             .await?;
         Ok(row.try_get::<i32, _>("cnt")? as u32)
     }
+
+    // ── Explicit Memories ─────────────────────────────────────
+
+    /// Save an explicit memory (INSERT OR REPLACE).
+    pub async fn save_explicit_memory(&self, mem: &ExplicitMemory) -> Result<()> {
+        let tags_str = mem.tags.join(",");
+        sqlx::query(
+            "INSERT INTO explicit_memories
+             (id, name, content, category, tags, created_at, updated_at, access_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(name) DO UPDATE SET
+                content = excluded.content,
+                category = excluded.category,
+                tags = excluded.tags,
+                updated_at = excluded.updated_at",
+        )
+        .bind(&mem.id)
+        .bind(&mem.name)
+        .bind(&mem.content)
+        .bind(&mem.category)
+        .bind(&tags_str)
+        .bind(mem.created_at.to_rfc3339())
+        .bind(mem.updated_at.to_rfc3339())
+        .bind(mem.access_count)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Get an explicit memory by name.
+    pub async fn get_explicit_by_name(&self, name: &str) -> Result<Option<ExplicitMemory>> {
+        let row = sqlx::query(
+            "SELECT id, name, content, category, tags, created_at, updated_at, access_count
+             FROM explicit_memories WHERE name = ?1",
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.as_ref().map(Self::row_to_explicit_memory).transpose()
+    }
+
+    /// Get an explicit memory by ID.
+    pub async fn get_explicit_by_id(&self, id: &str) -> Result<Option<ExplicitMemory>> {
+        let row = sqlx::query(
+            "SELECT id, name, content, category, tags, created_at, updated_at, access_count
+             FROM explicit_memories WHERE id = ?1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.as_ref().map(Self::row_to_explicit_memory).transpose()
+    }
+
+    /// Search explicit memories by name/content LIKE matching.
+    pub async fn search_explicit(
+        &self,
+        query: &str,
+        category: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<ExplicitMemory>> {
+        let pattern = format!("%{query}%");
+        let rows = if let Some(cat) = category {
+            sqlx::query(
+                "SELECT id, name, content, category, tags, created_at, updated_at, access_count
+                 FROM explicit_memories
+                 WHERE category = ?1 AND (name LIKE ?2 OR content LIKE ?2)
+                 ORDER BY access_count DESC, updated_at DESC
+                 LIMIT ?3",
+            )
+            .bind(cat)
+            .bind(&pattern)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query(
+                "SELECT id, name, content, category, tags, created_at, updated_at, access_count
+                 FROM explicit_memories
+                 WHERE name LIKE ?1 OR content LIKE ?1
+                 ORDER BY access_count DESC, updated_at DESC
+                 LIMIT ?2",
+            )
+            .bind(&pattern)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
+        };
+
+        rows.iter().map(Self::row_to_explicit_memory).collect()
+    }
+
+    /// List explicit memories, optionally filtered by category.
+    pub async fn list_explicit(
+        &self,
+        category: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<ExplicitMemory>> {
+        let rows = if let Some(cat) = category {
+            sqlx::query(
+                "SELECT id, name, content, category, tags, created_at, updated_at, access_count
+                 FROM explicit_memories
+                 WHERE category = ?1
+                 ORDER BY updated_at DESC
+                 LIMIT ?2",
+            )
+            .bind(cat)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query(
+                "SELECT id, name, content, category, tags, created_at, updated_at, access_count
+                 FROM explicit_memories
+                 ORDER BY updated_at DESC
+                 LIMIT ?1",
+            )
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
+        };
+
+        rows.iter().map(Self::row_to_explicit_memory).collect()
+    }
+
+    /// Delete an explicit memory by name. Returns true if a row was deleted.
+    pub async fn delete_explicit(&self, name: &str) -> Result<bool> {
+        // First get the ID for cascade cleanup
+        let id = sqlx::query("SELECT id FROM explicit_memories WHERE name = ?1")
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        if let Some(row) = id {
+            let mem_id: String = row.try_get("id")?;
+            // Delete entity edges first
+            sqlx::query("DELETE FROM memory_entity_edges WHERE memory_id = ?1")
+                .bind(&mem_id)
+                .execute(&self.pool)
+                .await?;
+            // Delete the memory
+            let result = sqlx::query("DELETE FROM explicit_memories WHERE id = ?1")
+                .bind(&mem_id)
+                .execute(&self.pool)
+                .await?;
+            Ok(result.rows_affected() > 0)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Increment the access count for a memory.
+    pub async fn increment_access_count(&self, id: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE explicit_memories SET access_count = access_count + 1 WHERE id = ?1",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Get explicit memories linked to an entity via memory_entity_edges.
+    pub async fn get_explicit_by_entity(&self, entity_id: &str) -> Result<Vec<ExplicitMemory>> {
+        let rows = sqlx::query(
+            "SELECT m.id, m.name, m.content, m.category, m.tags,
+                    m.created_at, m.updated_at, m.access_count
+             FROM explicit_memories m
+             JOIN memory_entity_edges me ON me.memory_id = m.id
+             WHERE me.entity_id = ?1
+             ORDER BY me.relevance DESC",
+        )
+        .bind(entity_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.iter().map(Self::row_to_explicit_memory).collect()
+    }
+
+    /// Insert an edge linking an explicit memory to an entity.
+    pub async fn insert_memory_entity_edge(
+        &self,
+        memory_id: &str,
+        entity_id: &str,
+        relevance: f32,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO memory_entity_edges (memory_id, entity_id, relevance)
+             VALUES (?1, ?2, ?3)",
+        )
+        .bind(memory_id)
+        .bind(entity_id)
+        .bind(relevance)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    fn row_to_explicit_memory(row: &sqlx::sqlite::SqliteRow) -> Result<ExplicitMemory> {
+        let tags_str: String = row.try_get("tags")?;
+        let created_str: String = row.try_get("created_at")?;
+        let updated_str: String = row.try_get("updated_at")?;
+        Ok(ExplicitMemory {
+            id: row.try_get("id")?,
+            name: row.try_get("name")?,
+            content: row.try_get("content")?,
+            category: row.try_get("category")?,
+            tags: if tags_str.is_empty() {
+                Vec::new()
+            } else {
+                tags_str.split(',').map(|s| s.trim().to_string()).collect()
+            },
+            created_at: DateTime::parse_from_rfc3339(&created_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: DateTime::parse_from_rfc3339(&updated_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            access_count: row.try_get::<i32, _>("access_count")? as u32,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -546,5 +813,107 @@ mod tests {
         // Empty list
         let empty = store.get_turns_by_ids(&[]).await.unwrap();
         assert!(empty.is_empty());
+    }
+
+    fn make_explicit(name: &str, content: &str) -> ExplicitMemory {
+        ExplicitMemory {
+            id: format!("em-{name}"),
+            name: name.into(),
+            content: content.into(),
+            category: "general".into(),
+            tags: vec!["test".into()],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            access_count: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_save_and_get_explicit_memory() {
+        let store = test_store().await;
+        let mem = make_explicit("my-note", "Remember to fix the bug");
+        store.save_explicit_memory(&mem).await.unwrap();
+
+        let got = store.get_explicit_by_name("my-note").await.unwrap().unwrap();
+        assert_eq!(got.name, "my-note");
+        assert_eq!(got.content, "Remember to fix the bug");
+        assert_eq!(got.category, "general");
+        assert_eq!(got.tags, vec!["test"]);
+    }
+
+    #[tokio::test]
+    async fn test_explicit_upsert_by_name() {
+        let store = test_store().await;
+        let mem = make_explicit("note", "version 1");
+        store.save_explicit_memory(&mem).await.unwrap();
+
+        let mut updated = make_explicit("note", "version 2");
+        updated.id = "em-note-v2".into();
+        store.save_explicit_memory(&updated).await.unwrap();
+
+        // Should have been updated (not duplicated)
+        let got = store.get_explicit_by_name("note").await.unwrap().unwrap();
+        assert_eq!(got.content, "version 2");
+    }
+
+    #[tokio::test]
+    async fn test_search_explicit() {
+        let store = test_store().await;
+        store.save_explicit_memory(&make_explicit("api-key", "The API key is xyz")).await.unwrap();
+        store.save_explicit_memory(&make_explicit("db-config", "Database on port 5432")).await.unwrap();
+
+        let results = store.search_explicit("API", None, 10).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "api-key");
+
+        // Search by category
+        let results = store.search_explicit("API", Some("knowledge"), 10).await.unwrap();
+        assert!(results.is_empty()); // category mismatch
+    }
+
+    #[tokio::test]
+    async fn test_list_explicit() {
+        let store = test_store().await;
+        store.save_explicit_memory(&make_explicit("a", "first")).await.unwrap();
+        store.save_explicit_memory(&make_explicit("b", "second")).await.unwrap();
+
+        let all = store.list_explicit(None, 10).await.unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_delete_explicit() {
+        let store = test_store().await;
+        store.save_explicit_memory(&make_explicit("to-delete", "bye")).await.unwrap();
+
+        assert!(store.delete_explicit("to-delete").await.unwrap());
+        assert!(store.get_explicit_by_name("to-delete").await.unwrap().is_none());
+        // Deleting again returns false
+        assert!(!store.delete_explicit("to-delete").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_increment_access_count() {
+        let store = test_store().await;
+        store.save_explicit_memory(&make_explicit("counted", "data")).await.unwrap();
+
+        store.increment_access_count("em-counted").await.unwrap();
+        store.increment_access_count("em-counted").await.unwrap();
+
+        let got = store.get_explicit_by_name("counted").await.unwrap().unwrap();
+        assert_eq!(got.access_count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_memory_entity_edges() {
+        let store = test_store().await;
+        store.save_explicit_memory(&make_explicit("orch-fix", "Fixed orchestrator bug")).await.unwrap();
+        store.upsert_entity(&make_entity("e1", "orchestrator.rs", EntityKind::File)).await.unwrap();
+
+        store.insert_memory_entity_edge("em-orch-fix", "e1", 0.9).await.unwrap();
+
+        let mems = store.get_explicit_by_entity("e1").await.unwrap();
+        assert_eq!(mems.len(), 1);
+        assert_eq!(mems[0].name, "orch-fix");
     }
 }
