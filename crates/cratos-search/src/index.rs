@@ -289,6 +289,14 @@ impl VectorIndex {
         // Allocate new key
         let key = self.next_key.fetch_add(1, Ordering::SeqCst);
 
+        // Auto-expand capacity if needed (loaded indexes may be at exact size)
+        if self.index.size() >= self.index.capacity() {
+            let new_cap = std::cmp::max(self.index.capacity() * 2, 64);
+            self.index
+                .reserve(new_cap)
+                .map_err(|e| Error::Index(format!("Failed to expand capacity: {}", e)))?;
+        }
+
         // Add to usearch index
         self.index
             .add(key, vector)
