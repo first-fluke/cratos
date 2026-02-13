@@ -50,12 +50,25 @@ Rules:
 - If uncertain or multi-domain, output "cratos"
 - Understand intent regardless of language (Korean, English, Japanese, etc.)"#;
 
+/// Skill routing match result with full details
+#[derive(Debug, Clone)]
+pub struct SkillMatch {
+    /// Skill ID (UUID) for tracking
+    pub skill_id: Uuid,
+    /// Skill name
+    pub skill_name: String,
+    /// Skill description
+    pub description: String,
+    /// Match score (0.0 - 1.0)
+    pub score: f32,
+}
+
 /// Trait for routing user input to a matching skill
 #[async_trait::async_trait]
 pub trait SkillRouting: Send + Sync {
     /// Route input to the best matching skill.
-    /// Returns `(skill_name, description, score)` if a match is found.
-    async fn route_best(&self, input: &str) -> Option<(String, String, f32)>;
+    /// Returns a `SkillMatch` with skill_id for persona-skill tracking.
+    async fn route_best(&self, input: &str) -> Option<SkillMatch>;
 }
 
 /// Execution status
@@ -121,6 +134,9 @@ pub struct ToolCallRecord {
     pub success: bool,
     /// Duration in milliseconds
     pub duration_ms: u64,
+    /// Persona name that executed this tool (for persona-skill metrics)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persona_name: Option<String>,
 }
 
 /// Input for orchestration
@@ -273,6 +289,8 @@ pub struct Orchestrator {
     persona_mapping: Option<PersonaMapping>,
     skill_router: Option<Arc<dyn SkillRouting>>,
     security_policy: Option<ToolSecurityPolicy>,
+    /// Persona-skill binding store for tracking persona-specific skill metrics
+    persona_skill_store: Option<Arc<cratos_skills::PersonaSkillStore>>,
     doctor: ToolDoctor,
     config: OrchestratorConfig,
     /// Active executions with cancellation tokens for chat.cancel support
@@ -303,6 +321,7 @@ impl Orchestrator {
             persona_mapping: None,
             skill_router: None,
             security_policy: None,
+            persona_skill_store: None,
             doctor: ToolDoctor::new(),
             config,
             active_executions: Arc::new(DashMap::new()),
@@ -373,6 +392,15 @@ impl Orchestrator {
     /// Set the 6-level tool security policy
     pub fn with_security_policy(mut self, policy: ToolSecurityPolicy) -> Self {
         self.security_policy = Some(policy);
+        self
+    }
+
+    /// Set the persona-skill store for tracking persona-specific skill metrics
+    pub fn with_persona_skill_store(
+        mut self,
+        store: Arc<cratos_skills::PersonaSkillStore>,
+    ) -> Self {
+        self.persona_skill_store = Some(store);
         self
     }
 
@@ -616,8 +644,22 @@ impl Orchestrator {
         };
 
         // ── Persona Routing (Phase 1 + Multi-Persona) ─────────────────
+        // Memory-related requests bypass persona routing to ensure tool usage
+        let is_memory_request = {
+            let lower = input.text.to_lowercase();
+            lower.contains("기억해")
+                || lower.contains("저장해")
+                || lower.contains("메모리")
+                || lower.contains("remember")
+                || lower.contains("recall")
+                || lower.contains("save this")
+        };
+
         let (persona_system_prompt, effective_persona): (Option<String>, String) =
-            if let Some(mapping) = &self.persona_mapping {
+            if is_memory_request {
+                info!("Memory request detected, using cratos directly");
+                (None, "cratos".to_string())
+            } else if let Some(mapping) = &self.persona_mapping {
                 let multi_extraction = extract_all_persona_mentions(&input.text, mapping);
 
                 match &multi_extraction {
@@ -675,19 +717,59 @@ impl Orchestrator {
                 (None, fb)
             };
 
-        // ── Skill Router (Phase 5) ──────────────────────────────────────
-        let skill_hint: Option<String> = if let Some(router) = &self.skill_router {
-            router
-                .route_best(&input.text)
-                .await
-                .filter(|(_, _, score)| *score > 0.7)
-                .map(|(name, desc, score)| {
-                    info!(skill = %name, score = %score, "Skill match found");
-                    format!("\n## Matched Skill: {}\n{}", name, desc)
-                })
-        } else {
-            None
-        };
+        // ── Skill Router (Phase 5) + Phase 8: skill_id extraction + persona bonus ─
+        let (skill_hint, matched_skill_id): (Option<String>, Option<Uuid>) =
+            if let Some(router) = &self.skill_router {
+                match router.route_best(&input.text).await {
+                    Some(mut m) => {
+                        // Apply persona skill proficiency bonus
+                        if let Some(store) = &self.persona_skill_store {
+                            let config = cratos_skills::AutoAssignmentConfig::default();
+                            if let Ok(proficiency_map) =
+                                store.get_skill_proficiency_map(&effective_persona).await
+                            {
+                                if let Some(&success_rate) = proficiency_map.get(&m.skill_name) {
+                                    if success_rate >= config.proficiency_threshold {
+                                        let old_score = m.score;
+                                        m.score = (m.score + config.persona_skill_bonus).min(1.0);
+                                        debug!(
+                                            persona = %effective_persona,
+                                            skill = %m.skill_name,
+                                            old_score = %old_score,
+                                            new_score = %m.score,
+                                            success_rate = %success_rate,
+                                            "Applied persona skill proficiency bonus"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+
+                        // Only accept if score exceeds threshold (after bonus)
+                        if m.score > 0.7 {
+                            info!(
+                                skill = %m.skill_name,
+                                skill_id = %m.skill_id,
+                                score = %m.score,
+                                persona = %effective_persona,
+                                "Skill match found"
+                            );
+                            (
+                                Some(format!(
+                                    "\n## Matched Skill: {}\n{}",
+                                    m.skill_name, m.description
+                                )),
+                                Some(m.skill_id),
+                            )
+                        } else {
+                            (None, None)
+                        }
+                    }
+                    None => (None, None),
+                }
+            } else {
+                (None, None)
+            };
 
         // Combine system prompt overrides
         // input.system_prompt_override takes highest priority (e.g., /develop workflow)
@@ -1055,6 +1137,8 @@ impl Orchestrator {
                         &filtered_calls,
                         &mut working_memory,
                         &mut tool_call_records,
+                        Some(effective_persona.as_str()),
+                        matched_skill_id,
                     )
                     .await;
 
@@ -1319,12 +1403,19 @@ impl Orchestrator {
     }
 
     /// Execute a list of tool calls
+    ///
+    /// # Phase 8: Persona-Skill Metrics
+    ///
+    /// When `matched_skill_id` is provided, records persona-skill metrics
+    /// via `PersonaSkillStore` and checks for auto-assignment eligibility.
     async fn execute_tool_calls(
         &self,
         execution_id: Uuid,
         tool_calls: &[ToolCall],
         working_memory: &mut WorkingMemory,
         records: &mut Vec<ToolCallRecord>,
+        active_persona: Option<&str>,
+        matched_skill_id: Option<Uuid>,
     ) -> Vec<serde_json::Value> {
         let mut results = Vec::with_capacity(tool_calls.len());
 
@@ -1378,6 +1469,7 @@ impl Orchestrator {
                             output: output.clone(),
                             success: false,
                             duration_ms: 0,
+                            persona_name: active_persona.map(String::from),
                         });
                         results.push(output);
                         continue;
@@ -1555,7 +1647,34 @@ impl Orchestrator {
                 output: output.clone(),
                 success,
                 duration_ms,
+                persona_name: active_persona.map(String::from),
             });
+
+            // Phase 8: Record persona-skill metrics if skill was matched
+            if let (Some(store), Some(persona), Some(skill_id)) =
+                (&self.persona_skill_store, active_persona, matched_skill_id)
+            {
+                let config = cratos_skills::AutoAssignmentConfig::default();
+                if let Err(e) = store
+                    .record_execution(persona, skill_id, success, Some(duration_ms))
+                    .await
+                {
+                    warn!(
+                        persona = %persona,
+                        skill_id = %skill_id,
+                        error = %e,
+                        "Failed to record persona-skill execution"
+                    );
+                }
+                if let Err(e) = store.check_auto_assignment(persona, skill_id, &config).await {
+                    warn!(
+                        persona = %persona,
+                        skill_id = %skill_id,
+                        error = %e,
+                        "Failed to check auto-assignment"
+                    );
+                }
+            }
 
             results.push(output);
         }
@@ -1960,6 +2079,7 @@ impl Orchestrator {
                         output,
                         success,
                         duration_ms: tool_start.elapsed().as_millis() as u64,
+                        persona_name: Some(persona_name.clone()),
                     });
                 }
 

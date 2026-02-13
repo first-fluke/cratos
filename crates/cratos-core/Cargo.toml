@@ -10,6 +10,7 @@ authors.workspace = true
 [dependencies]
 cratos-llm.workspace = true
 cratos-memory.workspace = true
+cratos-skills = { path = "../cratos-skills" }
 cratos-tools.workspace = true
 cratos-replay.workspace = true
 
