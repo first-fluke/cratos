@@ -46,7 +46,7 @@ cratos/
 │   ├── default.toml        # 기본 설정
 │   ├── pantheon/           # 페르소나 TOML (14개: 5 코어 + 9 확장)
 │   └── decrees/            # 율법, 계급, 개발 규칙
-├── crates/                 # Rust workspace
+├── crates/                 # Rust workspace (11개 크레이트)
 │   ├── cratos-core/        # 핵심 오케스트레이션, 보안, 자격증명
 │   ├── cratos-channels/    # 채널 어댑터 (Telegram, Slack, Discord, Matrix)
 │   ├── cratos-tools/       # 도구 레지스트리, 샌드박스
@@ -54,6 +54,8 @@ cratos/
 │   ├── cratos-replay/      # 리플레이 엔진 (SQLite)
 │   ├── cratos-skills/      # 자동 스킬 생성 시스템
 │   ├── cratos-search/      # 벡터 검색, 시맨틱 인덱싱
+│   ├── cratos-memory/      # Graph RAG 대화 메모리
+│   ├── cratos-crypto/      # 암호화, 키 관리
 │   ├── cratos-audio/       # 음성 제어 (STT/TTS, 선택적)
 │   └── cratos-canvas/      # 캔버스 (future)
 └── PRD.md                  # 상세 요구사항
@@ -61,6 +63,8 @@ cratos/
 ~/.cratos/                  # 데이터 디렉토리 (자동 생성)
 ├── cratos.db               # SQLite: 이벤트, 실행 기록
 ├── skills.db               # SQLite: 스킬, 패턴
+├── memory.db               # SQLite: Graph RAG 대화 메모리
+├── vectors/memory/         # HNSW 벡터 인덱스
 └── chronicles/             # 페르소나별 전공 기록
 ```
 

@@ -333,6 +333,15 @@ cratos pantheon show sindri       # Show persona details
 cratos pantheon summon sindri     # Summon (activate) a persona
 cratos pantheon dismiss           # Dismiss active persona
 
+# Pantheon Skill Management
+cratos pantheon skill list <persona>       # List skills bound to persona
+cratos pantheon skill show <persona> <skill>   # Show binding details
+cratos pantheon skill claim <persona> <skill>  # Manually assign skill
+cratos pantheon skill release <persona> <skill> # Release skill
+cratos pantheon skill leaderboard <skill>  # Skill leaderboard
+cratos pantheon skill summary <persona>    # Persona skill summary
+cratos pantheon skill sync <persona>       # Sync proficiency to chronicle
+
 # Decrees (Rules)
 cratos decrees show laws          # Show laws
 cratos decrees show ranks         # Show rank system

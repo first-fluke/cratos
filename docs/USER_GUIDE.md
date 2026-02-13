@@ -1268,4 +1268,4 @@ ACP 브릿지는 stdin/stdout을 통해 JSON-lines 형식으로 통신하며, ID
 나: /help
 ```
 
-또는 [GitHub Issues](https://github.com/cratos/cratos/issues)에서 문의하세요.
+또는 [GitHub Issues](https://github.com/first-fluke/cratos/issues)에서 문의하세요.

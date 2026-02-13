@@ -213,7 +213,7 @@ ollama serve
 ### 5.1 Cratos 다운로드
 
 ```bash
-git clone https://github.com/cratos/cratos.git
+git clone https://github.com/first-fluke/cratos.git
 cd cratos
 ```
 

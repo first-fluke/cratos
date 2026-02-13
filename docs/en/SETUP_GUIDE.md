@@ -213,7 +213,7 @@ ollama serve
 ### 5.1 Download Cratos
 
 ```bash
-git clone https://github.com/cratos/cratos.git
+git clone https://github.com/first-fluke/cratos.git
 cd cratos
 ```
 
@@ -559,11 +559,11 @@ Cratos will tell you about its capabilities.
 
 ### Additional Guides
 
-- [Telegram Integration](../guides/TELEGRAM.md)
-- [Slack Integration](../guides/SLACK.md)
-- [Discord Integration](../guides/DISCORD.md)
-- [WhatsApp Integration](../guides/WHATSAPP.md)
-- [Browser Automation](../guides/BROWSER_AUTOMATION.md)
-- [Skill Auto-Generation](../guides/SKILL_AUTO_GENERATION.md)
-- [Graceful Shutdown](../guides/GRACEFUL_SHUTDOWN.md)
-- [Native Apps (Tauri)](../guides/NATIVE_APPS.md)
+- [Telegram Integration](./guides/TELEGRAM.md)
+- [Slack Integration](./guides/SLACK.md)
+- [Discord Integration](./guides/DISCORD.md)
+- [WhatsApp Integration](./guides/WHATSAPP.md)
+- [Browser Automation](./guides/BROWSER_AUTOMATION.md)
+- [Skill Auto-Generation](./guides/SKILL_AUTO_GENERATION.md)
+- [Graceful Shutdown](./guides/GRACEFUL_SHUTDOWN.md)
+- [Native Apps (Tauri)](./guides/NATIVE_APPS.md)

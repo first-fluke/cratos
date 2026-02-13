@@ -1205,4 +1205,4 @@ You: help
 You: /help
 ```
 
-Or ask at [GitHub Issues](https://github.com/cratos/cratos/issues).
+Or ask at [GitHub Issues](https://github.com/first-fluke/cratos/issues).
