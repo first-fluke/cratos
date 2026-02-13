@@ -319,8 +319,12 @@ impl App {
                                     timestamp: Local::now(),
                                 });
                             }
-                            cratos_core::event_bus::OrchestratorEvent::ExecutionCompleted { .. }
-                            | cratos_core::event_bus::OrchestratorEvent::ExecutionFailed { .. } => {
+                            cratos_core::event_bus::OrchestratorEvent::ExecutionCompleted {
+                                ..
+                            }
+                            | cratos_core::event_bus::OrchestratorEvent::ExecutionFailed {
+                                ..
+                            } => {
                                 break;
                             }
                             _ => {}
@@ -442,10 +446,8 @@ impl App {
                 if is_free {
                     self.cost_line = format!("{} req (free tier)", stats.total_requests);
                 } else {
-                    self.cost_line = format!(
-                        "~${:.4} ({} req)",
-                        stats.total_cost, stats.total_requests,
-                    );
+                    self.cost_line =
+                        format!("~${:.4} ({} req)", stats.total_cost, stats.total_requests,);
                 }
             }
         }

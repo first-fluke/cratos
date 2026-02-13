@@ -37,7 +37,9 @@ impl LawViolation {
     pub fn description(&self) -> String {
         match self {
             Self::MissingResponseFormat { persona } => {
-                format!("{persona}: Response missing required format [Role] Name LvN : Message (Art.6)")
+                format!(
+                    "{persona}: Response missing required format [Role] Name LvN : Message (Art.6)"
+                )
             }
             Self::MissingCommitHash { persona } => {
                 format!("{persona}: Task completion without commit hash (Art.10)")

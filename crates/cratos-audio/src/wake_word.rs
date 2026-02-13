@@ -30,8 +30,8 @@ mod silero {
     use super::vad_constants::*;
     use super::*;
     use crate::error::Error;
-    use tract_onnx::prelude::*;
     use tracing::info;
+    use tract_onnx::prelude::*;
 
     type SileroModel = SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>;
 
@@ -50,7 +50,10 @@ mod silero {
                 .map_err(|e| Error::Config(format!("Failed to load Silero VAD model: {}", e)))?
                 .with_input_fact(
                     0,
-                    InferenceFact::dt_shape(f32::datum_type(), tvec![1, (WINDOW_SIZE + CONTEXT_SIZE) as i64]),
+                    InferenceFact::dt_shape(
+                        f32::datum_type(),
+                        tvec![1, (WINDOW_SIZE + CONTEXT_SIZE) as i64],
+                    ),
                 )
                 .map_err(|e| Error::Config(format!("Input fact error: {}", e)))?
                 .with_input_fact(
@@ -58,10 +61,7 @@ mod silero {
                     InferenceFact::dt_shape(f32::datum_type(), tvec![2, 1, STATE_DIM as i64]),
                 )
                 .map_err(|e| Error::Config(format!("State fact error: {}", e)))?
-                .with_input_fact(
-                    2,
-                    InferenceFact::dt_shape(i64::datum_type(), tvec![1]),
-                )
+                .with_input_fact(2, InferenceFact::dt_shape(i64::datum_type(), tvec![1]))
                 .map_err(|e| Error::Config(format!("SR fact error: {}", e)))?
                 .into_optimized()
                 .map_err(|e| Error::Config(format!("Model optimize error: {}", e)))?
@@ -81,8 +81,8 @@ mod silero {
         pub fn download_model() -> Result<std::path::PathBuf> {
             use hf_hub::api::sync::Api;
 
-            let api = Api::new()
-                .map_err(|e| Error::Config(format!("HuggingFace API error: {}", e)))?;
+            let api =
+                Api::new().map_err(|e| Error::Config(format!("HuggingFace API error: {}", e)))?;
             let repo = api.model("snakers4/silero-vad".to_string());
             let path = repo
                 .get("silero_vad.onnx")
@@ -107,12 +107,10 @@ mod silero {
             input_data.extend_from_slice(samples);
 
             let input_len = input_data.len();
-            let input_tensor: Tensor = tract_ndarray::Array2::from_shape_vec(
-                (1, input_len),
-                input_data,
-            )
-            .map_err(|e| Error::Config(format!("Input tensor error: {}", e)))?
-            .into();
+            let input_tensor: Tensor =
+                tract_ndarray::Array2::from_shape_vec((1, input_len), input_data)
+                    .map_err(|e| Error::Config(format!("Input tensor error: {}", e)))?
+                    .into();
 
             let state_tensor: Tensor = self.state.clone().into();
 

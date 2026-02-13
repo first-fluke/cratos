@@ -206,9 +206,7 @@ async fn show(name: &str) -> Result<()> {
 /// Add log entry to chronicle
 async fn log(message: &str, law: Option<&str>, persona: Option<&str>) -> Result<()> {
     let active = ActivePersonaState::new().load().unwrap_or(None);
-    let persona_name = persona
-        .or(active.as_deref())
-        .unwrap_or("sindri");
+    let persona_name = persona.or(active.as_deref()).unwrap_or("sindri");
 
     let store = ChronicleStore::new();
     let mut chronicle = store
@@ -329,9 +327,16 @@ async fn clean(name: Option<&str>, force: bool, reset_judgments: bool) -> Result
             return Ok(());
         }
 
-        println!("\nFound {} file(s) for \"{}\":", files_to_delete.len(), persona);
+        println!(
+            "\nFound {} file(s) for \"{}\":",
+            files_to_delete.len(),
+            persona
+        );
         for f in &files_to_delete {
-            println!("  - {}", f.file_name().unwrap_or_default().to_string_lossy());
+            println!(
+                "  - {}",
+                f.file_name().unwrap_or_default().to_string_lossy()
+            );
         }
 
         if !force {
@@ -397,7 +402,9 @@ async fn clean(name: Option<&str>, force: bool, reset_judgments: bool) -> Result
 
     if name.is_none() && !reset_judgments {
         println!("Usage:");
-        println!("  cratos chronicle clean <name> [--force]     Remove orphaned persona chronicles");
+        println!(
+            "  cratos chronicle clean <name> [--force]     Remove orphaned persona chronicles"
+        );
         println!("  cratos chronicle clean --reset-judgments     Reset all judgment scores");
         println!("  cratos chronicle clean <name> --reset-judgments  Reset judgments for specific persona");
     }

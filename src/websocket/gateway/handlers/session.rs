@@ -1,8 +1,8 @@
 use cratos_core::auth::Scope;
 use uuid::Uuid;
 
-use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 use super::super::dispatch::DispatchContext;
+use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 
 pub(crate) async fn handle(
     id: &str,
@@ -85,7 +85,11 @@ mod tests {
     fn test_orchestrator() -> Arc<Orchestrator> {
         let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
         let registry = Arc::new(ToolRegistry::new());
-        Arc::new(Orchestrator::new(provider, registry, OrchestratorConfig::default()))
+        Arc::new(Orchestrator::new(
+            provider,
+            registry,
+            OrchestratorConfig::default(),
+        ))
     }
 
     fn test_event_bus() -> Arc<EventBus> {
@@ -100,18 +104,38 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let ctx = DispatchContext { auth: &ro, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &ro,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
 
         // session.list should work with SessionRead
         let result = super::handle("6", "session.list", serde_json::json!({}), &ctx).await;
-        assert!(matches!(result, GatewayFrame::Response { result: Some(_), .. }));
+        assert!(matches!(
+            result,
+            GatewayFrame::Response {
+                result: Some(_),
+                ..
+            }
+        ));
 
         // session.create should fail without SessionWrite
         let result = super::handle("7", "session.create", serde_json::json!({}), &ctx).await;
-        assert!(matches!(result, GatewayFrame::Response { error: Some(_), .. }));
+        assert!(matches!(
+            result,
+            GatewayFrame::Response { error: Some(_), .. }
+        ));
 
         // session.delete should fail without SessionWrite
         let result = super::handle("8", "session.delete", serde_json::json!({}), &ctx).await;
-        assert!(matches!(result, GatewayFrame::Response { error: Some(_), .. }));
+        assert!(matches!(
+            result,
+            GatewayFrame::Response { error: Some(_), .. }
+        ));
     }
 }

@@ -350,14 +350,8 @@ async fn handle_client_message(
 
             // Build context from referenced blocks
             let context = collect_context_text(&state, session_id, &context_blocks).await;
-            let ai_response = run_ai_completion(
-                &state,
-                &prompt,
-                &context,
-                target_id,
-                session_id,
-            )
-            .await;
+            let ai_response =
+                run_ai_completion(&state, &prompt, &context, target_id, session_id).await;
 
             // Update the block content
             state
@@ -437,11 +431,7 @@ async fn handle_client_message(
 }
 
 /// Collect text from context blocks for AI prompt
-async fn collect_context_text(
-    state: &CanvasState,
-    session_id: Uuid,
-    block_ids: &[Uuid],
-) -> String {
+async fn collect_context_text(state: &CanvasState, session_id: Uuid, block_ids: &[Uuid]) -> String {
     if block_ids.is_empty() {
         return String::new();
     }
@@ -518,12 +508,7 @@ async fn run_ai_completion(
 }
 
 /// Stream AI text in chunks via broadcast
-async fn stream_ai_text(
-    state: &CanvasState,
-    text: &str,
-    target_id: Uuid,
-    session_id: Uuid,
-) {
+async fn stream_ai_text(state: &CanvasState, text: &str, target_id: Uuid, session_id: Uuid) {
     for chunk in text.chars().collect::<Vec<_>>().chunks(20) {
         let chunk_str: String = chunk.iter().collect();
         let _ = state.broadcast_tx.send(BroadcastMessage {

@@ -1,7 +1,7 @@
 use cratos_core::auth::Scope;
 
-use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 use super::super::dispatch::DispatchContext;
+use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 
 pub(crate) async fn handle(
     id: &str,
@@ -23,20 +23,25 @@ pub(crate) async fn handle(
     }
 }
 
-async fn send(
-    id: &str,
-    params: serde_json::Value,
-    ctx: &DispatchContext<'_>,
-) -> GatewayFrame {
+async fn send(id: &str, params: serde_json::Value, ctx: &DispatchContext<'_>) -> GatewayFrame {
     if !ctx.auth.has_scope(&Scope::ExecutionWrite) {
         return GatewayFrame::err(
             id,
             GatewayError::new(GatewayErrorCode::Forbidden, "Requires ExecutionWrite scope"),
         );
     }
-    let from_agent = params.get("from_agent").and_then(|v| v.as_str()).unwrap_or("");
-    let to_agent = params.get("to_agent").and_then(|v| v.as_str()).unwrap_or("");
-    let session_id = params.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+    let from_agent = params
+        .get("from_agent")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let to_agent = params
+        .get("to_agent")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let session_id = params
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let content = params.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
     if from_agent.is_empty() || to_agent.is_empty() || content.is_empty() {
@@ -62,22 +67,24 @@ async fn send(
     )
 }
 
-async fn list(
-    id: &str,
-    params: serde_json::Value,
-    ctx: &DispatchContext<'_>,
-) -> GatewayFrame {
+async fn list(id: &str, params: serde_json::Value, ctx: &DispatchContext<'_>) -> GatewayFrame {
     if !ctx.auth.has_scope(&Scope::ExecutionRead) {
         return GatewayFrame::err(
             id,
             GatewayError::new(GatewayErrorCode::Forbidden, "Requires ExecutionRead scope"),
         );
     }
-    let agent_id = params.get("agent_id").and_then(|v| v.as_str()).unwrap_or("");
+    let agent_id = params
+        .get("agent_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if agent_id.is_empty() {
         return GatewayFrame::err(
             id,
-            GatewayError::new(GatewayErrorCode::InvalidParams, "Missing 'agent_id' parameter"),
+            GatewayError::new(
+                GatewayErrorCode::InvalidParams,
+                "Missing 'agent_id' parameter",
+            ),
         );
     }
 
@@ -97,22 +104,24 @@ async fn list(
     )
 }
 
-async fn history(
-    id: &str,
-    params: serde_json::Value,
-    ctx: &DispatchContext<'_>,
-) -> GatewayFrame {
+async fn history(id: &str, params: serde_json::Value, ctx: &DispatchContext<'_>) -> GatewayFrame {
     if !ctx.auth.has_scope(&Scope::ExecutionRead) {
         return GatewayFrame::err(
             id,
             GatewayError::new(GatewayErrorCode::Forbidden, "Requires ExecutionRead scope"),
         );
     }
-    let session_id = params.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+    let session_id = params
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if session_id.is_empty() {
         return GatewayFrame::err(
             id,
-            GatewayError::new(GatewayErrorCode::InvalidParams, "Missing 'session_id' parameter"),
+            GatewayError::new(
+                GatewayErrorCode::InvalidParams,
+                "Missing 'session_id' parameter",
+            ),
         );
     }
 
@@ -178,7 +187,11 @@ mod tests {
     fn test_orchestrator() -> Arc<Orchestrator> {
         let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
         let registry = Arc::new(ToolRegistry::new());
-        Arc::new(Orchestrator::new(provider, registry, OrchestratorConfig::default()))
+        Arc::new(Orchestrator::new(
+            provider,
+            registry,
+            OrchestratorConfig::default(),
+        ))
     }
 
     fn test_event_bus() -> Arc<EventBus> {
@@ -193,7 +206,15 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &auth,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
 
         let result = dispatch_method(
             "50",
@@ -208,7 +229,9 @@ mod tests {
         )
         .await;
         match result {
-            GatewayFrame::Response { result: Some(v), .. } => {
+            GatewayFrame::Response {
+                result: Some(v), ..
+            } => {
                 assert_eq!(v["status"], "delivered");
                 assert!(v.get("message_id").is_some());
             }
@@ -229,7 +252,15 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &auth,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
 
         let result = dispatch_method(
             "51",
@@ -254,11 +285,21 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &auth,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
 
         // Send a message first
-        a2a.send(cratos_core::a2a::A2aMessage::new("backend", "frontend", "s1", "hello"))
-            .await;
+        a2a.send(cratos_core::a2a::A2aMessage::new(
+            "backend", "frontend", "s1", "hello",
+        ))
+        .await;
 
         let result = dispatch_method(
             "52",
@@ -268,7 +309,9 @@ mod tests {
         )
         .await;
         match result {
-            GatewayFrame::Response { result: Some(v), .. } => {
+            GatewayFrame::Response {
+                result: Some(v), ..
+            } => {
                 assert_eq!(v["count"], 1);
                 assert_eq!(v["agent_id"], "frontend");
             }
@@ -284,13 +327,25 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &auth,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
 
         // Send some messages
-        a2a.send(cratos_core::a2a::A2aMessage::new("backend", "frontend", "s1", "msg1"))
-            .await;
-        a2a.send(cratos_core::a2a::A2aMessage::new("frontend", "qa", "s1", "msg2"))
-            .await;
+        a2a.send(cratos_core::a2a::A2aMessage::new(
+            "backend", "frontend", "s1", "msg1",
+        ))
+        .await;
+        a2a.send(cratos_core::a2a::A2aMessage::new(
+            "frontend", "qa", "s1", "msg2",
+        ))
+        .await;
 
         let result = dispatch_method(
             "53",
@@ -300,7 +355,9 @@ mod tests {
         )
         .await;
         match result {
-            GatewayFrame::Response { result: Some(v), .. } => {
+            GatewayFrame::Response {
+                result: Some(v), ..
+            } => {
                 assert_eq!(v["count"], 2);
                 assert_eq!(v["session_id"], "s1");
             }
@@ -316,7 +373,15 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &auth,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
         let result = dispatch_method(
             "54",
             "a2a.send",

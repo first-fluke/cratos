@@ -21,17 +21,17 @@ pub mod agents;
 pub mod approval;
 pub mod auth;
 pub mod chronicles;
+pub mod credentials;
+pub mod decrees;
 pub mod dev_sessions;
 pub mod device_auth;
 pub mod discovery;
-pub mod pairing;
-pub mod external_auth;
-pub mod credentials;
-pub mod decrees;
 pub mod error;
 pub mod event_bus;
+pub mod external_auth;
 pub mod memory;
 pub mod nodes;
+pub mod pairing;
 
 pub mod olympus_hooks;
 pub mod orchestrator;
@@ -43,8 +43,8 @@ pub mod scheduler;
 pub mod security;
 pub mod session_manager;
 pub mod shutdown;
-pub mod tool_policy;
 pub mod telemetry;
+pub mod tool_policy;
 pub mod utils;
 
 pub use a2a::{A2aMessage, A2aMessageSummary, A2aRouter};
@@ -58,20 +58,14 @@ pub use auth::{
 pub use credentials::{
     get_api_key, Credential, CredentialBackend, CredentialError, CredentialStore, SecureString,
 };
+pub use dev_sessions::{DevSession, DevSessionMonitor, DevTool};
+pub use device_auth::{
+    generate_challenge, generate_device_keypair, sign_challenge, verify_signature, ChallengeStore,
+    DeviceAuthError,
+};
+pub use discovery::{DiscoveryConfig, DiscoveryService};
 pub use error::{format_error_for_chat, format_error_for_cli, Error, Result, UserFriendlyError};
 pub use event_bus::{EventBus, OrchestratorEvent};
-pub use nodes::{Node, NodeError, NodeRegistry, NodeRegisterParams, NodeStatus, NodeSummary, Platform};
-pub use session_manager::{SessionManager, SessionStatus, SessionSummary};
-pub use dev_sessions::{DevSession, DevSessionMonitor, DevTool};
-pub use discovery::{DiscoveryConfig, DiscoveryService};
-pub use tool_policy::{
-    PolicyAction, PolicyContext, PolicyDenial, PolicyLevel, PolicyRule, ToolPolicy,
-    ToolSecurityPolicy,
-};
-pub use device_auth::{
-    generate_challenge, generate_device_keypair, sign_challenge, verify_signature,
-    ChallengeStore, DeviceAuthError,
-};
 pub use external_auth::{
     ExternalAuthError, ExternalAuthRegistry, ExternalAuthResult, ExternalAuthVerifier,
     TailscaleVerifier,
@@ -79,6 +73,9 @@ pub use external_auth::{
 pub use memory::{
     MemoryStore, RedisStore, SessionBackend, SessionBackendConfig, SessionContext, SessionStore,
     SqliteStore, ToolExecution, WorkingMemory,
+};
+pub use nodes::{
+    Node, NodeError, NodeRegisterParams, NodeRegistry, NodeStatus, NodeSummary, Platform,
 };
 pub use orchestrator::{
     ExecutionResult, ExecutionStatus, Orchestrator, OrchestratorConfig, OrchestratorInput,
@@ -93,6 +90,11 @@ pub use queue::{ExecutionQueue, QueueConfig, QueueMode, QueuePermit};
 pub use security::{
     sanitize_input, validate_tool_output, InjectionDetector, InjectionError, InjectionPattern,
     SecurityConfig, ThreatLevel,
+};
+pub use session_manager::{SessionManager, SessionStatus, SessionSummary};
+pub use tool_policy::{
+    PolicyAction, PolicyContext, PolicyDenial, PolicyLevel, PolicyRule, ToolPolicy,
+    ToolSecurityPolicy,
 };
 pub use utils::{
     metrics_global, retry_with_backoff, CircuitBreaker, CircuitBreakerConfig, CircuitState,

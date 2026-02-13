@@ -376,8 +376,9 @@ fn cratos_dir() -> crate::Result<PathBuf> {
         .join(".cratos");
 
     if !dir.exists() {
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| crate::Error::OAuth(format!("Failed to create {}: {}", dir.display(), e)))?;
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            crate::Error::OAuth(format!("Failed to create {}: {}", dir.display(), e))
+        })?;
     }
     Ok(dir)
 }
@@ -472,7 +473,12 @@ mod tests {
             code_challenge: "challenge".to_string(),
         };
 
-        let url = build_auth_url(&config, "http://127.0.0.1:9999/callback", &pkce, "test-state");
+        let url = build_auth_url(
+            &config,
+            "http://127.0.0.1:9999/callback",
+            &pkce,
+            "test-state",
+        );
         assert!(url.starts_with("https://example.com/auth?"));
         assert!(url.contains("client_id=test-client"));
         assert!(url.contains("code_challenge=challenge"));

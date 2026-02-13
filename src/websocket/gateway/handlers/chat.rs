@@ -2,8 +2,8 @@ use cratos_core::auth::Scope;
 use cratos_core::OrchestratorInput;
 use uuid::Uuid;
 
-use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 use super::super::dispatch::DispatchContext;
+use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 
 pub(crate) async fn handle(
     id: &str,
@@ -24,21 +24,14 @@ pub(crate) async fn handle(
     }
 }
 
-async fn send(
-    id: &str,
-    params: serde_json::Value,
-    ctx: &DispatchContext<'_>,
-) -> GatewayFrame {
+async fn send(id: &str, params: serde_json::Value, ctx: &DispatchContext<'_>) -> GatewayFrame {
     if !ctx.auth.has_scope(&Scope::ExecutionWrite) {
         return GatewayFrame::err(
             id,
             GatewayError::new(GatewayErrorCode::Forbidden, "Requires ExecutionWrite scope"),
         );
     }
-    let text = params
-        .get("text")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let text = params.get("text").and_then(|v| v.as_str()).unwrap_or("");
     if text.is_empty() {
         return GatewayFrame::err(
             id,
@@ -52,12 +45,7 @@ async fn send(
         .unwrap_or("default");
 
     // Build orchestrator input
-    let input = OrchestratorInput::new(
-        "websocket",
-        session_id,
-        &ctx.auth.user_id,
-        text,
-    );
+    let input = OrchestratorInput::new("websocket", session_id, &ctx.auth.user_id, text);
 
     let execution_id = Uuid::new_v4();
 
@@ -189,7 +177,11 @@ mod tests {
     fn test_orchestrator() -> Arc<Orchestrator> {
         let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
         let registry = Arc::new(ToolRegistry::new());
-        Arc::new(Orchestrator::new(provider, registry, OrchestratorConfig::default()))
+        Arc::new(Orchestrator::new(
+            provider,
+            registry,
+            OrchestratorConfig::default(),
+        ))
     }
 
     fn test_event_bus() -> Arc<EventBus> {
@@ -213,9 +205,12 @@ mod tests {
             event_bus: &eb,
             approval_manager: None,
         };
-        let result = super::handle("2", "chat.send", serde_json::json!({"text": "hello"}), &ctx).await;
+        let result =
+            super::handle("2", "chat.send", serde_json::json!({"text": "hello"}), &ctx).await;
         match result {
-            GatewayFrame::Response { result: Some(v), .. } => {
+            GatewayFrame::Response {
+                result: Some(v), ..
+            } => {
                 assert_eq!(v["status"], "accepted");
                 assert!(v["execution_id"].is_string());
             }
@@ -240,7 +235,8 @@ mod tests {
             event_bus: &eb,
             approval_manager: None,
         };
-        let result = super::handle("3", "chat.send", serde_json::json!({"text": "hello"}), &ctx).await;
+        let result =
+            super::handle("3", "chat.send", serde_json::json!({"text": "hello"}), &ctx).await;
         match result {
             GatewayFrame::Response { error: Some(e), .. } => {
                 assert_eq!(e.code, GatewayErrorCode::Forbidden);
@@ -292,7 +288,13 @@ mod tests {
             event_bus: &eb,
             approval_manager: None,
         };
-        let result = super::handle("5", "chat.cancel", serde_json::json!({"execution_id": "not-a-uuid"}), &ctx).await;
+        let result = super::handle(
+            "5",
+            "chat.cancel",
+            serde_json::json!({"execution_id": "not-a-uuid"}),
+            &ctx,
+        )
+        .await;
         match result {
             GatewayFrame::Response { error: Some(e), .. } => {
                 assert_eq!(e.code, GatewayErrorCode::InvalidParams);

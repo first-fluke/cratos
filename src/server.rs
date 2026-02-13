@@ -2,17 +2,16 @@
 //!
 //! Contains the main server initialization and runtime logic.
 
+use crate::middleware::rate_limit::{RateLimitLayer, RateLimitSettings};
 use anyhow::{Context, Result};
 use axum::{routing::get, Extension, Router};
 use config::{Config, Environment, File, FileFormat};
 use cratos_channels::{TelegramAdapter, TelegramConfig};
 use cratos_core::{
-    admin_scopes, shutdown_signal_with_controller,
-    ApprovalManager, AuthStore, EventBus, OlympusConfig, OlympusHooks, Orchestrator,
-    OrchestratorConfig, PlannerConfig, RedisStore, SchedulerConfig, SchedulerEngine,
-    SchedulerStore, SessionStore, ShutdownController,
+    admin_scopes, shutdown_signal_with_controller, ApprovalManager, AuthStore, EventBus,
+    OlympusConfig, OlympusHooks, Orchestrator, OrchestratorConfig, PlannerConfig, RedisStore,
+    SchedulerConfig, SchedulerEngine, SchedulerStore, SessionStore, ShutdownController,
 };
-use crate::middleware::rate_limit::{RateLimitLayer, RateLimitSettings};
 use cratos_llm::{
     AnthropicConfig, AnthropicProvider, DeepSeekConfig, DeepSeekProvider, EmbeddingProvider,
     GeminiConfig, GeminiProvider, GlmConfig, GlmProvider, GroqConfig, GroqProvider, LlmProvider,
@@ -20,11 +19,13 @@ use cratos_llm::{
     OllamaProvider, OpenAiConfig, OpenAiProvider, OpenRouterConfig, OpenRouterProvider, QwenConfig,
     QwenProvider, SharedEmbeddingProvider, TractEmbeddingProvider,
 };
-use cratos_replay::{EventStore, ExecutionSearcher, SearchEmbedder};
 use cratos_memory::{GraphMemory, VectorBridge};
+use cratos_replay::{EventStore, ExecutionSearcher, SearchEmbedder};
 use cratos_search::{IndexConfig, VectorIndex};
 use cratos_skills::{SemanticSkillRouter, SkillEmbedder, SkillRegistry, SkillStore};
-use cratos_tools::{register_builtins_with_config, BuiltinsConfig, ExecConfig, ExecMode, RunnerConfig, ToolRegistry};
+use cratos_tools::{
+    register_builtins_with_config, BuiltinsConfig, ExecConfig, ExecMode, RunnerConfig, ToolRegistry,
+};
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -222,10 +223,17 @@ fn default_exec_timeout() -> u64 {
 
 fn default_blocked_paths() -> Vec<String> {
     vec![
-        "/etc".to_string(), "/root".to_string(), "/var/log".to_string(),
-        "/boot".to_string(), "/dev".to_string(), "/proc".to_string(),
-        "/sys".to_string(), "/usr/bin".to_string(), "/usr/sbin".to_string(),
-        "/bin".to_string(), "/sbin".to_string(),
+        "/etc".to_string(),
+        "/root".to_string(),
+        "/var/log".to_string(),
+        "/boot".to_string(),
+        "/dev".to_string(),
+        "/proc".to_string(),
+        "/sys".to_string(),
+        "/usr/bin".to_string(),
+        "/usr/sbin".to_string(),
+        "/bin".to_string(),
+        "/sbin".to_string(),
     ]
 }
 
@@ -603,9 +611,7 @@ fn validate_production_config(config: &AppConfig) -> Result<()> {
 ///
 /// Does NOT start the server, channels, scheduler, or background tasks.
 /// Initialises: config → LLM → tools → event store → orchestrator.
-pub async fn build_orchestrator_for_cli(
-    config: &AppConfig,
-) -> Result<Arc<Orchestrator>> {
+pub async fn build_orchestrator_for_cli(config: &AppConfig) -> Result<Arc<Orchestrator>> {
     let data_dir = config
         .data_dir
         .as_ref()
@@ -656,14 +662,19 @@ pub async fn build_orchestrator_for_cli(
         .with_planner_config({
             let (prov_name, model_name) = if llm_provider.name() == "router" {
                 let model = llm_provider.default_model();
-                let name = if config.llm.default_provider.is_empty() || config.llm.default_provider == "auto" {
+                let name = if config.llm.default_provider.is_empty()
+                    || config.llm.default_provider == "auto"
+                {
                     "auto-selected"
                 } else {
                     config.llm.default_provider.as_str()
                 };
                 (name.to_string(), model.to_string())
             } else {
-                (llm_provider.name().to_string(), llm_provider.default_model().to_string())
+                (
+                    llm_provider.name().to_string(),
+                    llm_provider.default_model().to_string(),
+                )
             };
             PlannerConfig::default()
                 .with_machine_info()
@@ -671,16 +682,24 @@ pub async fn build_orchestrator_for_cli(
         })
         .with_runner_config(runner_config);
 
-    let mut orchestrator =
-        Orchestrator::new(llm_provider, tool_registry, orchestrator_config)
-            .with_event_store(event_store)
-            .with_persona_mapping(cratos_core::PersonaMapping::default_mapping());
+    let mut orchestrator = Orchestrator::new(llm_provider, tool_registry, orchestrator_config)
+        .with_event_store(event_store)
+        .with_persona_mapping(cratos_core::PersonaMapping::default_mapping());
 
     // Auto-detect fallback provider
     {
         let primary = config.llm.default_provider.clone();
-        let fallback_candidates = ["groq", "openai", "novita", "deepseek", "anthropic", "openrouter", "ollama"];
-        if let Some(fb) = fallback_candidates.iter()
+        let fallback_candidates = [
+            "groq",
+            "openai",
+            "novita",
+            "deepseek",
+            "anthropic",
+            "openrouter",
+            "ollama",
+        ];
+        if let Some(fb) = fallback_candidates
+            .iter()
             .filter(|n| **n != primary.as_str())
             .find_map(|n| llm_router.get(n))
         {
@@ -859,10 +878,7 @@ pub async fn run() -> Result<()> {
     register_builtins_with_config(&mut tool_registry, &builtins_config);
 
     // Register application-level tools (bridge multiple crates)
-    tool_registry.register(Arc::new(crate::tools::StatusTool::new(
-        skill_store.clone(),
-    )));
-
+    tool_registry.register(Arc::new(crate::tools::StatusTool::new(skill_store.clone())));
 
     // MCP tool auto-registration from .mcp.json
     let mcp_json_path = std::path::Path::new(".mcp.json");
@@ -885,28 +901,25 @@ pub async fn run() -> Result<()> {
                     let dimensions = embedder.dimensions();
                     // Turn embedding index
                     let memory_index_path = vectors_dir.join("memory");
-                    let gm = match VectorIndex::open(&memory_index_path, IndexConfig::new(dimensions)) {
-                        Ok(idx) => {
-                            let bridge = Arc::new(VectorBridge::new(
-                                embedder.clone(),
-                                Arc::new(idx),
-                            ));
-                            info!("Graph RAG memory initialized with embedding search");
-                            gm.with_vector_bridge(bridge)
-                        }
-                        Err(e) => {
-                            warn!("Failed to open memory vector index: {e}, using graph-only");
-                            gm
-                        }
-                    };
+                    let gm =
+                        match VectorIndex::open(&memory_index_path, IndexConfig::new(dimensions)) {
+                            Ok(idx) => {
+                                let bridge =
+                                    Arc::new(VectorBridge::new(embedder.clone(), Arc::new(idx)));
+                                info!("Graph RAG memory initialized with embedding search");
+                                gm.with_vector_bridge(bridge)
+                            }
+                            Err(e) => {
+                                warn!("Failed to open memory vector index: {e}, using graph-only");
+                                gm
+                            }
+                        };
                     // Explicit memory embedding index (separate HNSW)
                     let explicit_index_path = vectors_dir.join("explicit");
                     match VectorIndex::open(&explicit_index_path, IndexConfig::new(dimensions)) {
                         Ok(idx) => {
-                            let bridge = Arc::new(VectorBridge::new(
-                                embedder.clone(),
-                                Arc::new(idx),
-                            ));
+                            let bridge =
+                                Arc::new(VectorBridge::new(embedder.clone(), Arc::new(idx)));
                             info!("Explicit memory vector index initialized");
                             gm.with_explicit_vector_bridge(bridge)
                         }
@@ -930,9 +943,7 @@ pub async fn run() -> Result<()> {
 
     // Register memory tool (explicit save/recall)
     if let Some(ref gm) = graph_memory {
-        tool_registry.register(Arc::new(crate::tools::MemoryTool::new(
-            Arc::clone(gm),
-        )));
+        tool_registry.register(Arc::new(crate::tools::MemoryTool::new(Arc::clone(gm))));
         // Backfill: embed any explicit memories missing from vector index
         if let Err(e) = gm.reindex_explicit_memories().await {
             warn!("Failed to reindex explicit memories: {e}");
@@ -968,14 +979,19 @@ pub async fn run() -> Result<()> {
             let (prov_name, model_name) = if llm_provider.name() == "router" {
                 // LlmRouter delegates to default provider
                 let model = llm_provider.default_model();
-                let name = if config.llm.default_provider.is_empty() || config.llm.default_provider == "auto" {
+                let name = if config.llm.default_provider.is_empty()
+                    || config.llm.default_provider == "auto"
+                {
                     "auto-selected"
                 } else {
                     config.llm.default_provider.as_str()
                 };
                 (name.to_string(), model.to_string())
             } else {
-                (llm_provider.name().to_string(), llm_provider.default_model().to_string())
+                (
+                    llm_provider.name().to_string(),
+                    llm_provider.default_model().to_string(),
+                )
             };
             PlannerConfig::default()
                 .with_machine_info()
@@ -995,14 +1011,17 @@ pub async fn run() -> Result<()> {
     let event_bus = Arc::new(EventBus::new(256));
     info!("EventBus initialized (capacity: 256)");
 
-    let mut orchestrator =
-        Orchestrator::new(llm_provider.clone(), tool_registry.clone(), orchestrator_config)
-            .with_event_store(event_store.clone())
-            .with_event_bus(event_bus.clone())
-            .with_memory(session_store)
-            .with_approval_manager(approval_manager)
-            .with_olympus_hooks(olympus_hooks)
-            .with_persona_mapping(cratos_core::PersonaMapping::default_mapping());
+    let mut orchestrator = Orchestrator::new(
+        llm_provider.clone(),
+        tool_registry.clone(),
+        orchestrator_config,
+    )
+    .with_event_store(event_store.clone())
+    .with_event_bus(event_bus.clone())
+    .with_memory(session_store)
+    .with_approval_manager(approval_manager)
+    .with_olympus_hooks(olympus_hooks)
+    .with_persona_mapping(cratos_core::PersonaMapping::default_mapping());
     if let Some(gm) = graph_memory {
         orchestrator = orchestrator.with_graph_memory(gm);
     }
@@ -1010,8 +1029,17 @@ pub async fn run() -> Result<()> {
     // Phase 4: Auto-detect fallback provider
     {
         let primary = config.llm.default_provider.clone();
-        let fallback_candidates = ["groq", "openai", "novita", "deepseek", "anthropic", "openrouter", "ollama"];
-        if let Some(fb) = fallback_candidates.iter()
+        let fallback_candidates = [
+            "groq",
+            "openai",
+            "novita",
+            "deepseek",
+            "anthropic",
+            "openrouter",
+            "ollama",
+        ];
+        if let Some(fb) = fallback_candidates
+            .iter()
             .filter(|n| **n != primary.as_str())
             .find_map(|n| llm_router.get(n))
         {
@@ -1027,14 +1055,14 @@ pub async fn run() -> Result<()> {
         #[async_trait::async_trait]
         impl cratos_core::SkillRouting for SkillRouterAdapter {
             async fn route_best(&self, input: &str) -> Option<(String, String, f32)> {
-                self.0.route_best(input).await
+                self.0
+                    .route_best(input)
+                    .await
                     .map(|m| (m.skill.name, m.skill.description, m.score))
             }
         }
 
-        orchestrator = orchestrator.with_skill_router(
-            Arc::new(SkillRouterAdapter(sr.clone()))
-        );
+        orchestrator = orchestrator.with_skill_router(Arc::new(SkillRouterAdapter(sr.clone())));
         info!("Skill router connected to orchestrator");
     }
 
@@ -1139,25 +1167,24 @@ pub async fn run() -> Result<()> {
                                         "system",
                                         &prompt,
                                     );
-                                    orch.process(input)
-                                        .await
-                                        .map(|r| r.response)
-                                        .map_err(|e| cratos_core::scheduler::SchedulerError::Execution(
+                                    orch.process(input).await.map(|r| r.response).map_err(|e| {
+                                        cratos_core::scheduler::SchedulerError::Execution(
                                             e.to_string(),
-                                        ))
+                                        )
+                                    })
                                 }
-                                TaskAction::ToolCall { tool, args } => {
-                                    orch.runner()
-                                        .execute(&tool, args)
-                                        .await
-                                        .map(|r| {
-                                            serde_json::to_string(&r.result.output)
-                                                .unwrap_or_default()
-                                        })
-                                        .map_err(|e| cratos_core::scheduler::SchedulerError::Execution(
+                                TaskAction::ToolCall { tool, args } => orch
+                                    .runner()
+                                    .execute(&tool, args)
+                                    .await
+                                    .map(|r| {
+                                        serde_json::to_string(&r.result.output).unwrap_or_default()
+                                    })
+                                    .map_err(|e| {
+                                        cratos_core::scheduler::SchedulerError::Execution(
                                             e.to_string(),
-                                        ))
-                                }
+                                        )
+                                    }),
                                 TaskAction::Shell { command, cwd } => {
                                     // Route shell commands through exec tool to apply
                                     // security filters (blocked_commands, blocked_paths, injection defense)
@@ -1172,9 +1199,11 @@ pub async fn run() -> Result<()> {
                                             serde_json::to_string(&r.result.output)
                                                 .unwrap_or_default()
                                         })
-                                        .map_err(|e| cratos_core::scheduler::SchedulerError::Execution(
-                                            e.to_string(),
-                                        ))
+                                        .map_err(|e| {
+                                            cratos_core::scheduler::SchedulerError::Execution(
+                                                e.to_string(),
+                                            )
+                                        })
                                 }
                                 _ => Ok("Action type not yet supported".to_string()),
                             }
@@ -1351,20 +1380,17 @@ pub async fn run() -> Result<()> {
     info!("Browser relay initialized");
 
     // PairingManager (PIN-based device pairing) — try SQLite, fall back to in-memory
-    let pairing_manager = match cratos_core::pairing::PairingManager::new_with_db(
-        event_store.pool().clone(),
-    )
-    .await
-    {
-        Ok(mgr) => {
-            info!("PairingManager initialized with SQLite persistence");
-            Arc::new(mgr)
-        }
-        Err(e) => {
-            warn!("PairingManager SQLite init failed ({}), using in-memory", e);
-            Arc::new(cratos_core::pairing::PairingManager::new())
-        }
-    };
+    let pairing_manager =
+        match cratos_core::pairing::PairingManager::new_with_db(event_store.pool().clone()).await {
+            Ok(mgr) => {
+                info!("PairingManager initialized with SQLite persistence");
+                Arc::new(mgr)
+            }
+            Err(e) => {
+                warn!("PairingManager SQLite init failed ({}), using in-memory", e);
+                Arc::new(cratos_core::pairing::PairingManager::new())
+            }
+        };
 
     // ChallengeStore for device challenge-response auth
     let challenge_store = Arc::new(cratos_core::device_auth::ChallengeStore::new());

@@ -68,7 +68,11 @@ pub fn mask_for_logging(text: &str) -> String {
 
     // Truncate long messages (char boundary safe for multi-byte UTF-8)
     if text.len() > MAX_LOG_TEXT_LENGTH {
-        let truncated = match text.char_indices().take_while(|(i, _)| *i < MAX_LOG_TEXT_LENGTH).last() {
+        let truncated = match text
+            .char_indices()
+            .take_while(|(i, _)| *i < MAX_LOG_TEXT_LENGTH)
+            .last()
+        {
             Some((i, c)) => &text[..i + c.len_utf8()],
             None => "",
         };

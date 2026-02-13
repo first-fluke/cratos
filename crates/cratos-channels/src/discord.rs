@@ -11,9 +11,9 @@ use serde::Deserialize;
 use serenity::all::{
     ButtonStyle, ChannelId, Client, Command, CommandInteraction, CommandOptionType,
     ComponentInteraction, Context, CreateActionRow, CreateButton, CreateCommand,
-    CreateCommandOption, CreateEmbed, CreateInteractionResponse,
-    CreateInteractionResponseMessage, CreateMessage, EditMessage, EventHandler,
-    GatewayIntents, Interaction, Message, MessageId, MessageReference, Ready,
+    CreateCommandOption, CreateEmbed, CreateInteractionResponse, CreateInteractionResponseMessage,
+    CreateMessage, EditMessage, EventHandler, GatewayIntents, Interaction, Message, MessageId,
+    MessageReference, Ready,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -209,7 +209,10 @@ impl DiscordAdapter {
                         }) => {
                             let embed = CreateEmbed::new()
                                 .title("Approval Required")
-                                .description(format!("Execution `{}` requires approval.", execution_id))
+                                .description(format!(
+                                    "Execution `{}` requires approval.",
+                                    execution_id
+                                ))
                                 .field("Request ID", request_id.to_string(), true)
                                 .color(0xffaa00);
                             let approve_btn = CreateButton::new(format!("approve:{}", request_id))
@@ -219,9 +222,7 @@ impl DiscordAdapter {
                                 .label("Deny")
                                 .style(ButtonStyle::Danger);
                             let row = CreateActionRow::Buttons(vec![approve_btn, deny_btn]);
-                            let msg = CreateMessage::new()
-                                .embed(embed)
-                                .components(vec![row]);
+                            let msg = CreateMessage::new().embed(embed).components(vec![row]);
                             if let Err(e) = channel_id.send_message(&http_for_events, msg).await {
                                 warn!(error = %e, "Failed to send approval notification to Discord");
                             }
@@ -252,7 +253,10 @@ impl DiscordAdapter {
                 }
                 let _ = orch_for_events; // keep orchestrator alive
             });
-            info!("Discord EventBus notification listener started (channel: {})", notify_ch);
+            info!(
+                "Discord EventBus notification listener started (channel: {})",
+                notify_ch
+            );
         }
 
         client
@@ -528,9 +532,7 @@ impl EventHandler for DiscordHandler {
                     "sessions" => {
                         CreateInteractionResponseMessage::new().content(self.handle_sessions())
                     }
-                    "tools" => {
-                        CreateInteractionResponseMessage::new().content(self.handle_tools())
-                    }
+                    "tools" => CreateInteractionResponseMessage::new().content(self.handle_tools()),
                     "cancel" => {
                         let id = get_string_option(&command, "id").unwrap_or_default();
                         CreateInteractionResponseMessage::new().content(self.handle_cancel(&id))
@@ -652,10 +654,7 @@ impl DiscordHandler {
     }
 
     fn handle_sessions(&self) -> String {
-        let count = self
-            .orchestrator
-            .active_execution_count()
-            .unwrap_or(0);
+        let count = self.orchestrator.active_execution_count().unwrap_or(0);
         if count == 0 {
             "No active sessions.".to_string()
         } else {

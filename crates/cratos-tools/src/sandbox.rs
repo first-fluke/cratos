@@ -374,7 +374,9 @@ impl Default for SandboxConfig {
         let seccomp_opt = match &seccomp_profile {
             Some(path) => format!("seccomp={}", path.display()),
             None => {
-                tracing::warn!("No seccomp profile found at config/seccomp-default.json, using unconfined");
+                tracing::warn!(
+                    "No seccomp profile found at config/seccomp-default.json, using unconfined"
+                );
                 "seccomp=unconfined".to_string()
             }
         };
@@ -384,10 +386,7 @@ impl Default for SandboxConfig {
             default_network: NetworkMode::None,
             default_limits: ResourceLimits::default(),
             image: "alpine:latest".to_string(),
-            security_opts: vec![
-                "no-new-privileges:true".to_string(),
-                seccomp_opt,
-            ],
+            security_opts: vec!["no-new-privileges:true".to_string(), seccomp_opt],
             seccomp_profile,
             runtime_preference: "auto".to_string(),
             prefer_apple_container: true,

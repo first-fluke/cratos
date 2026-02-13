@@ -407,15 +407,15 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             }
         }
         Some(Commands::Security(cmd)) => match cmd {
-            SecurityCommands::Audit { json } => {
-                security::run_audit_cli(json).await
-            }
+            SecurityCommands::Audit { json } => security::run_audit_cli(json).await,
         },
         Some(Commands::Voice { lang }) => voice::run(lang).await,
         Some(Commands::Pair(cmd)) => pair::run(cmd).await,
-        Some(Commands::Develop { issue, repo, dry_run }) => {
-            develop::run(&issue, repo.as_deref(), dry_run).await
-        }
+        Some(Commands::Develop {
+            issue,
+            repo,
+            dry_run,
+        }) => develop::run(&issue, repo.as_deref(), dry_run).await,
         Some(Commands::Browser(cmd)) => match cmd {
             BrowserCommands::Extension(ext) => match ext {
                 BrowserExtCommands::Install => browser_ext::install().await,

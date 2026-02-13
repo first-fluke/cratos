@@ -1,19 +1,15 @@
 //! Method dispatch routing for the Gateway WebSocket.
 
 use cratos_core::{
-    a2a::A2aRouter,
-    auth::AuthContext,
-    nodes::NodeRegistry,
-    Orchestrator,
-    approval::SharedApprovalManager,
-    event_bus::EventBus,
+    a2a::A2aRouter, approval::SharedApprovalManager, auth::AuthContext, event_bus::EventBus,
+    nodes::NodeRegistry, Orchestrator,
 };
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 use super::browser_relay::SharedBrowserRelay;
 use super::handlers;
+use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 
 /// Shared context for method dispatch, replacing individual parameters.
 pub(crate) struct DispatchContext<'a> {
@@ -40,7 +36,9 @@ pub(crate) async fn dispatch_method(
         m if m.starts_with("approval.") => handlers::approval::handle(id, m, params, ctx).await,
         m if m.starts_with("node.") => handlers::node::handle(id, m, params, ctx).await,
         m if m.starts_with("a2a.") => handlers::a2a::handle(id, m, params, ctx).await,
-        m if m.starts_with("browser.") => handlers::browser::handle(id, m, params, ctx.browser_relay).await,
+        m if m.starts_with("browser.") => {
+            handlers::browser::handle(id, m, params, ctx.browser_relay).await
+        }
         _ => GatewayFrame::err(
             id,
             GatewayError::new(
@@ -100,7 +98,7 @@ mod tests {
     use crate::websocket::gateway::browser_relay::BrowserRelay;
     use cratos_core::auth::AuthMethod;
     use cratos_core::auth::Scope;
-    use cratos_core::{OrchestratorConfig, Orchestrator};
+    use cratos_core::{Orchestrator, OrchestratorConfig};
     use cratos_tools::ToolRegistry;
 
     fn admin_auth() -> AuthContext {
@@ -138,7 +136,11 @@ mod tests {
     fn test_orchestrator() -> Arc<Orchestrator> {
         let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
         let registry = Arc::new(ToolRegistry::new());
-        Arc::new(Orchestrator::new(provider, registry, OrchestratorConfig::default()))
+        Arc::new(Orchestrator::new(
+            provider,
+            registry,
+            OrchestratorConfig::default(),
+        ))
     }
 
     fn test_event_bus() -> Arc<EventBus> {
@@ -190,9 +192,7 @@ mod tests {
         };
         let result = dispatch_method("5", "unknown.method", serde_json::json!({}), &ctx).await;
         match result {
-            GatewayFrame::Response {
-                error: Some(e), ..
-            } => {
+            GatewayFrame::Response { error: Some(e), .. } => {
                 assert_eq!(e.code, GatewayErrorCode::UnknownMethod);
             }
             _ => panic!("expected error response"),

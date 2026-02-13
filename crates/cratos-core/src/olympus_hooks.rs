@@ -161,8 +161,7 @@ impl OlympusHooks {
                 }
                 Ok(None) => {
                     // No chronicle yet - create one
-                    let mut chronicle =
-                        crate::chronicles::Chronicle::new(persona);
+                    let mut chronicle = crate::chronicles::Chronicle::new(persona);
                     chronicle.add_entry(&entry_text, None);
 
                     if violations.is_empty() && task_completed {
@@ -198,7 +197,11 @@ impl OlympusHooks {
 fn truncate_response(s: &str, max_len: usize) -> String {
     let first_line = s.lines().next().unwrap_or(s);
     if first_line.len() > max_len {
-        let truncated = match first_line.char_indices().take_while(|(i, _)| *i < max_len).last() {
+        let truncated = match first_line
+            .char_indices()
+            .take_while(|(i, _)| *i < max_len)
+            .last()
+        {
             Some((i, c)) => &first_line[..i + c.len_utf8()],
             None => "",
         };
@@ -224,10 +227,7 @@ mod tests {
     fn test_truncate_response() {
         assert_eq!(truncate_response("hello", 10), "hello");
         assert_eq!(truncate_response("hello world!", 5), "hello...");
-        assert_eq!(
-            truncate_response("line1\nline2\nline3", 100),
-            "line1"
-        );
+        assert_eq!(truncate_response("line1\nline2\nline3", 100), "line1");
     }
 
     #[test]

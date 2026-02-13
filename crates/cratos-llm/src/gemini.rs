@@ -357,8 +357,8 @@ impl GeminiConfig {
             std::env::var("GEMINI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
         // 1. Try explicit API key
-        if let Ok(api_key) = std::env::var("GOOGLE_API_KEY")
-            .or_else(|_| std::env::var("GEMINI_API_KEY"))
+        if let Ok(api_key) =
+            std::env::var("GOOGLE_API_KEY").or_else(|_| std::env::var("GEMINI_API_KEY"))
         {
             return Ok(Self {
                 auth: GeminiAuth::ApiKey(api_key),
@@ -453,7 +453,9 @@ impl GeminiConfig {
                 .build()
                 .ok()?;
             rt.block_on(async {
-                crate::oauth::refresh_token(&oauth_config, &refresh_tok).await.ok()
+                crate::oauth::refresh_token(&oauth_config, &refresh_tok)
+                    .await
+                    .ok()
             })
         })
         .join()
@@ -663,8 +665,9 @@ impl GeminiProvider {
     /// Google's OAuth token endpoint directly.
     async fn refresh_with_token(&self, refresh_token: &str) -> Result<String> {
         // Get Gemini CLI's OAuth client_id/secret
-        let cli_creds = crate::gemini_auth::resolve_gemini_cli_credentials()
-            .ok_or_else(|| Error::OAuth("Gemini CLI credentials not found for refresh".to_string()))?;
+        let cli_creds = crate::gemini_auth::resolve_gemini_cli_credentials().ok_or_else(|| {
+            Error::OAuth("Gemini CLI credentials not found for refresh".to_string())
+        })?;
 
         let config = crate::oauth::OAuthProviderConfig {
             client_id: cli_creds.client_id,
@@ -677,7 +680,8 @@ impl GeminiProvider {
             token_file: String::new(),
         };
 
-        let new_tokens = crate::oauth::refresh_token(&config, refresh_token).await
+        let new_tokens = crate::oauth::refresh_token(&config, refresh_token)
+            .await
             .map_err(|e| Error::OAuth(format!("OAuth token refresh failed: {}", e)))?;
 
         // Save refreshed tokens back to disk for other processes
@@ -685,10 +689,15 @@ impl GeminiProvider {
             &new_tokens.access_token,
             new_tokens.refresh_token.as_deref().unwrap_or(refresh_token),
             new_tokens.expiry_date,
-        ).map_err(|e| {
-            tracing::warn!("Failed to write refreshed Gemini credentials to disk: {}", e);
+        )
+        .map_err(|e| {
+            tracing::warn!(
+                "Failed to write refreshed Gemini credentials to disk: {}",
+                e
+            );
             e
-        }).ok();
+        })
+        .ok();
 
         Ok(new_tokens.access_token)
     }
@@ -781,7 +790,10 @@ impl GeminiProvider {
                         // Tool messages into one GeminiContent.
                         if let Some(last) = gemini_contents.last_mut() {
                             if last.role.as_deref() == Some("user")
-                                && last.parts.iter().all(|p| matches!(p, GeminiPart::FunctionResponse { .. }))
+                                && last
+                                    .parts
+                                    .iter()
+                                    .all(|p| matches!(p, GeminiPart::FunctionResponse { .. }))
                             {
                                 last.parts.push(part);
                             } else {
@@ -806,7 +818,15 @@ impl GeminiProvider {
         // different providers (e.g. after a fallback), drop the function call
         // turns that lack signatures so only consistent turns remain.
         let has_some = gemini_contents.iter().any(|c| {
-            c.parts.iter().any(|p| matches!(p, GeminiPart::FunctionCall { thought_signature: Some(_), .. }))
+            c.parts.iter().any(|p| {
+                matches!(
+                    p,
+                    GeminiPart::FunctionCall {
+                        thought_signature: Some(_),
+                        ..
+                    }
+                )
+            })
         });
         if has_some {
             let before = gemini_contents.len();
@@ -814,7 +834,13 @@ impl GeminiProvider {
             for content in &mut gemini_contents {
                 if content.role.as_deref() == Some("model") {
                     content.parts.retain(|p| {
-                        !matches!(p, GeminiPart::FunctionCall { thought_signature: None, .. })
+                        !matches!(
+                            p,
+                            GeminiPart::FunctionCall {
+                                thought_signature: None,
+                                ..
+                            }
+                        )
                     });
                 }
             }
@@ -900,8 +926,9 @@ impl GeminiProvider {
                 match self.send_request_once(&current_model, &request).await {
                     Ok(resp) => return Ok((resp, current_model)),
                     Err(Error::RateLimit) if attempt < MAX_RETRIES => {
-                        let gemini_delay =
-                            self.last_retry_after.load(std::sync::atomic::Ordering::Relaxed);
+                        let gemini_delay = self
+                            .last_retry_after
+                            .load(std::sync::atomic::Ordering::Relaxed);
                         let delay_secs = if gemini_delay > 0 {
                             gemini_delay.clamp(1, 15)
                         } else {
@@ -973,9 +1000,16 @@ impl GeminiProvider {
     /// (`generativelanguage.googleapis.com`). The Code Assist internal API
     /// (`cloudcode-pa.googleapis.com`) is intentionally NOT used — Google bans
     /// accounts that use it from third-party tools (since Jan 2026).
-    async fn send_request_once(&self, model: &str, request: &GeminiRequest) -> Result<GeminiResponse> {
+    async fn send_request_once(
+        &self,
+        model: &str,
+        request: &GeminiRequest,
+    ) -> Result<GeminiResponse> {
         // SECURITY: Don't log the full URL (may contain API key)
-        debug!("Sending request to Gemini model: {} (auth_source={:?})", model, self.config.auth_source);
+        debug!(
+            "Sending request to Gemini model: {} (auth_source={:?})",
+            model, self.config.auth_source
+        );
 
         let current_auth = self.current_auth();
         let mut request_builder = match &current_auth {
@@ -987,11 +1021,9 @@ impl GeminiProvider {
                 self.client.post(&url)
             }
             GeminiAuth::OAuth(token) => {
-                let url = format!(
-                    "{}/models/{}:generateContent",
-                    self.config.base_url, model
-                );
-                let mut rb = self.client
+                let url = format!("{}/models/{}:generateContent", self.config.base_url, model);
+                let mut rb = self
+                    .client
                     .post(&url)
                     .header("Authorization", format!("Bearer {}", token));
 
@@ -1036,7 +1068,10 @@ impl GeminiProvider {
                     "Gemini API error detail"
                 );
                 if status.as_u16() == 403
-                    && error.error.message.contains("insufficient authentication scopes")
+                    && error
+                        .error
+                        .message
+                        .contains("insufficient authentication scopes")
                 {
                     tracing::warn!(
                         auth_source = ?self.config.auth_source,
@@ -1053,8 +1088,7 @@ impl GeminiProvider {
                     // Parse retryDelay from Gemini error details if present
                     if let Some(details) = error.error.details.as_ref() {
                         for detail in details {
-                            if let Some(delay) = detail.get("retryDelay").and_then(|v| v.as_str())
-                            {
+                            if let Some(delay) = detail.get("retryDelay").and_then(|v| v.as_str()) {
                                 if let Some(secs_str) = delay.strip_suffix('s') {
                                     if let Ok(secs) = secs_str.parse::<u64>() {
                                         retry_secs = secs;
@@ -1075,7 +1109,8 @@ impl GeminiProvider {
                         }
                     }
                     if retry_secs > 0 {
-                        self.last_retry_after.store(retry_secs, std::sync::atomic::Ordering::Relaxed);
+                        self.last_retry_after
+                            .store(retry_secs, std::sync::atomic::Ordering::Relaxed);
                         crate::quota::global_quota_tracker()
                             .update_from_retry_after("gemini", retry_secs)
                             .await;
@@ -1098,7 +1133,8 @@ impl GeminiProvider {
             // 5xx without parseable error body — still retryable
             if status.is_server_error() {
                 return Err(Error::ServerError(sanitize_api_error(&format!(
-                    "HTTP {}", status
+                    "HTTP {}",
+                    status
                 ))));
             }
             // SECURITY: Don't expose raw HTTP response body
@@ -1175,7 +1211,9 @@ impl LlmProvider for GeminiProvider {
 
         if content.is_empty() {
             if candidate.finish_reason.as_deref() == Some("MAX_TOKENS") {
-                tracing::warn!("Gemini response empty (MAX_TOKENS). Code Assist API may be limiting output.");
+                tracing::warn!(
+                    "Gemini response empty (MAX_TOKENS). Code Assist API may be limiting output."
+                );
             }
             content = "(empty response)".to_string();
         }
@@ -1373,7 +1411,10 @@ mod tests {
 
     #[test]
     fn test_downgrade_chain() {
-        assert_eq!(downgrade_model("gemini-3-pro-preview"), Some("gemini-3-flash-preview"));
+        assert_eq!(
+            downgrade_model("gemini-3-pro-preview"),
+            Some("gemini-3-flash-preview")
+        );
         // gemini-3-flash-preview must NOT downgrade to non-thinking model
         // (would cause thought_signature mismatch in conversation history)
         assert_eq!(downgrade_model("gemini-3-flash-preview"), None);

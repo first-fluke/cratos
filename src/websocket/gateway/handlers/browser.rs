@@ -20,14 +20,14 @@ pub(crate) async fn handle(
             let connected = relay.is_connected().await;
             GatewayFrame::ok(id, serde_json::json!({ "connected": connected }))
         }
-        "browser.tabs" | "browser.screenshot" | "browser.action" | "browser.open" | "browser.navigate" | "browser.context" => {
+        "browser.tabs" | "browser.screenshot" | "browser.action" | "browser.open"
+        | "browser.navigate" | "browser.context" => {
             // Relay to the connected extension
             match relay.send_request(method, params).await {
                 Ok(result) => GatewayFrame::ok(id, result),
-                Err(msg) => GatewayFrame::err(
-                    id,
-                    GatewayError::new(GatewayErrorCode::InternalError, msg),
-                ),
+                Err(msg) => {
+                    GatewayFrame::err(id, GatewayError::new(GatewayErrorCode::InternalError, msg))
+                }
             }
         }
         _ => GatewayFrame::err(

@@ -219,7 +219,10 @@ impl BrowserTool {
         match client.get(&url).send().await {
             Ok(resp) => {
                 if let Ok(body) = resp.json::<serde_json::Value>().await {
-                    let connected = body.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let connected = body
+                        .get("connected")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     info!(connected = connected, url = %self.config.server_url, "Extension status check result");
                     connected
                 } else {
@@ -266,18 +269,13 @@ impl BrowserTool {
     async fn execute_via_extension(&self, action: BrowserAction) -> Result<BrowserActionResult> {
         // Route to correct REST endpoint based on action type
         let (endpoint, params) = match &action {
-            BrowserAction::Navigate { url, .. } => (
-                "/api/v1/browser/open",
-                serde_json::json!({ "url": url }),
-            ),
-            BrowserAction::Screenshot { .. } => (
-                "/api/v1/browser/screenshot",
-                action.to_relay_args(),
-            ),
-            _ => (
-                "/api/v1/browser/action",
-                action.to_relay_args(),
-            ),
+            BrowserAction::Navigate { url, .. } => {
+                ("/api/v1/browser/open", serde_json::json!({ "url": url }))
+            }
+            BrowserAction::Screenshot { .. } => {
+                ("/api/v1/browser/screenshot", action.to_relay_args())
+            }
+            _ => ("/api/v1/browser/action", action.to_relay_args()),
         };
         let url = format!("{}{}", self.config.server_url, endpoint);
 
@@ -304,7 +302,10 @@ impl BrowserTool {
             return Ok(BrowserActionResult::failure(err));
         }
 
-        let screenshot = body.get("screenshot").and_then(|v| v.as_str()).map(String::from);
+        let screenshot = body
+            .get("screenshot")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         let mut result = BrowserActionResult::success(body);
         if let Some(ss) = screenshot {
             result = result.with_screenshot(ss);
@@ -483,12 +484,13 @@ impl BrowserTool {
                     selector: selector.to_string(),
                 })
             }
-            "get_html" => {
-                Ok(BrowserAction::GetHtml {
-                    selector: input.get("selector").and_then(|v| v.as_str()).map(String::from),
-                    outer: input.get("outer").and_then(|v| v.as_bool()).unwrap_or(true),
-                })
-            }
+            "get_html" => Ok(BrowserAction::GetHtml {
+                selector: input
+                    .get("selector")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                outer: input.get("outer").and_then(|v| v.as_bool()).unwrap_or(true),
+            }),
             "get_attribute" => {
                 let selector = input
                     .get("selector")
@@ -777,9 +779,13 @@ mod tests {
     #[test]
     fn test_is_dom_level_error() {
         // DOM errors → should NOT fallback
-        assert!(is_dom_level_error("Element not found: div[aria-label=\"Follow\"]"));
+        assert!(is_dom_level_error(
+            "Element not found: div[aria-label=\"Follow\"]"
+        ));
         assert!(is_dom_level_error("Element not found: #submit-button"));
-        assert!(is_dom_level_error("Cannot execute action on restricted page: chrome://extensions"));
+        assert!(is_dom_level_error(
+            "Cannot execute action on restricted page: chrome://extensions"
+        ));
         assert!(is_dom_level_error("Action not supported: unknown_action"));
         assert!(is_dom_level_error("Cannot read properties of null"));
         assert!(is_dom_level_error("myVar is not defined"));

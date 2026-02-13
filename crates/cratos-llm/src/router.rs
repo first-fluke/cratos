@@ -1022,10 +1022,10 @@ impl ModelRoutingConfig {
             ("openai", ModelTier::Standard) => 5.63, // GPT-5 avg
             ("openai", ModelTier::Premium) => 5.63,
             // Anthropic - Claude 4.5 family
-            ("anthropic", ModelTier::UltraBudget) => 3.0,  // Haiku 4.5 avg
+            ("anthropic", ModelTier::UltraBudget) => 3.0, // Haiku 4.5 avg
             ("anthropic", ModelTier::Fast) => 3.0,
-            ("anthropic", ModelTier::Standard) => 9.0,  // Sonnet 4.5 avg
-            ("anthropic", ModelTier::Premium) => 15.0,  // Opus 4.5 avg
+            ("anthropic", ModelTier::Standard) => 9.0, // Sonnet 4.5 avg
+            ("anthropic", ModelTier::Premium) => 15.0, // Opus 4.5 avg
             // Gemini - Gemini 2.5 family
             ("gemini", ModelTier::UltraBudget) => 0.175, // Flash avg
             ("gemini", ModelTier::Fast) => 0.175,
@@ -1180,7 +1180,10 @@ mod tests {
             "gemini-2.5-flash-lite"
         );
         assert_eq!(ModelTier::Fast.default_model("gemini"), "gemini-2.5-flash");
-        assert_eq!(ModelTier::Standard.default_model("gemini"), "gemini-2.5-pro");
+        assert_eq!(
+            ModelTier::Standard.default_model("gemini"),
+            "gemini-2.5-pro"
+        );
 
         // DeepSeek (ultra-low-cost)
         assert_eq!(

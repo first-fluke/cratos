@@ -7,8 +7,8 @@
 //! - System → skipped
 
 use crate::types::{Turn, TurnRole};
-use cratos_llm::{Message, MessageRole};
 use chrono::Utc;
+use cratos_llm::{Message, MessageRole};
 use uuid::Uuid;
 
 /// Maximum characters kept in the summary field.
@@ -22,11 +22,7 @@ const TOOL_RESULT_PREVIEW_CHARS: usize = 100;
 ///
 /// `session_id` tags every produced turn. Already-indexed turns
 /// (those with `turn_index <= skip_before`) are not emitted.
-pub fn decompose(
-    session_id: &str,
-    messages: &[Message],
-    skip_before: Option<u32>,
-) -> Vec<Turn> {
+pub fn decompose(session_id: &str, messages: &[Message], skip_before: Option<u32>) -> Vec<Turn> {
     let mut turns: Vec<Turn> = Vec::new();
     let mut turn_index: u32 = 0;
 
@@ -63,11 +59,8 @@ pub fn decompose(
             }
             MessageRole::Assistant => {
                 // Collect tool names from this assistant message
-                let tool_names: Vec<&str> = msg
-                    .tool_calls
-                    .iter()
-                    .map(|tc| tc.name.as_str())
-                    .collect();
+                let tool_names: Vec<&str> =
+                    msg.tool_calls.iter().map(|tc| tc.name.as_str()).collect();
 
                 // Merge any immediately following Tool messages
                 let mut merged_content = msg.content.clone();
@@ -75,11 +68,10 @@ pub fn decompose(
                 while j < messages.len() && messages[j].role == MessageRole::Tool {
                     // Append a short note about the tool result
                     let tool_msg = &messages[j];
-                    let result_preview = truncate_safe(&tool_msg.content, TOOL_RESULT_PREVIEW_CHARS);
+                    let result_preview =
+                        truncate_safe(&tool_msg.content, TOOL_RESULT_PREVIEW_CHARS);
                     let tool_name = tool_msg.name.as_deref().unwrap_or("tool");
-                    merged_content.push_str(&format!(
-                        "\n[{tool_name} result: {result_preview}]"
-                    ));
+                    merged_content.push_str(&format!("\n[{tool_name} result: {result_preview}]"));
                     j += 1;
                 }
 
@@ -189,11 +181,7 @@ mod tests {
             images: vec![],
         };
 
-        let messages = vec![
-            Message::user("Search for Rust"),
-            assistant_msg,
-            tool_msg,
-        ];
+        let messages = vec![Message::user("Search for Rust"), assistant_msg, tool_msg];
 
         let turns = decompose("s1", &messages, None);
         assert_eq!(turns.len(), 2); // user + assistant (tool merged)

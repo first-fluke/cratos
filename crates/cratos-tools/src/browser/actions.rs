@@ -220,9 +220,15 @@ impl BrowserAction {
     pub fn to_relay_args(&self) -> serde_json::Value {
         match self {
             Self::Navigate { url, .. } => serde_json::json!({ "action": "navigate", "url": url }),
-            Self::Click { selector, .. } => serde_json::json!({ "action": "click", "selector": selector }),
-            Self::Type { selector, text, .. } => serde_json::json!({ "action": "type", "selector": selector, "text": text }),
-            Self::Fill { selector, value } => serde_json::json!({ "action": "fill", "selector": selector, "value": value }),
+            Self::Click { selector, .. } => {
+                serde_json::json!({ "action": "click", "selector": selector })
+            }
+            Self::Type { selector, text, .. } => {
+                serde_json::json!({ "action": "type", "selector": selector, "text": text })
+            }
+            Self::Fill { selector, value } => {
+                serde_json::json!({ "action": "fill", "selector": selector, "value": value })
+            }
             Self::Screenshot { selector, .. } => {
                 let mut v = serde_json::json!({ "action": "screenshot" });
                 if let Some(s) = selector {
@@ -230,14 +236,35 @@ impl BrowserAction {
                 }
                 v
             }
-            Self::GetText { selector } => serde_json::json!({ "action": "get_text", "selector": selector }),
-            Self::GetHtml { selector, outer } => serde_json::json!({ "action": "get_html", "selector": selector, "outer": outer }),
-            Self::GetAttribute { selector, attribute } => serde_json::json!({ "action": "get_attribute", "selector": selector, "attribute": attribute }),
-            Self::WaitForSelector { selector, timeout, .. } => serde_json::json!({ "action": "wait_for_selector", "selector": selector, "timeout": timeout }),
-            Self::Evaluate { script } => serde_json::json!({ "action": "evaluate", "script": script }),
-            Self::Select { selector, value } => serde_json::json!({ "action": "select", "selector": selector, "value": value }),
-            Self::Check { selector, checked } => serde_json::json!({ "action": "check", "selector": selector, "checked": checked }),
-            Self::Hover { selector } => serde_json::json!({ "action": "hover", "selector": selector }),
+            Self::GetText { selector } => {
+                serde_json::json!({ "action": "get_text", "selector": selector })
+            }
+            Self::GetHtml { selector, outer } => {
+                serde_json::json!({ "action": "get_html", "selector": selector, "outer": outer })
+            }
+            Self::GetAttribute {
+                selector,
+                attribute,
+            } => {
+                serde_json::json!({ "action": "get_attribute", "selector": selector, "attribute": attribute })
+            }
+            Self::WaitForSelector {
+                selector, timeout, ..
+            } => {
+                serde_json::json!({ "action": "wait_for_selector", "selector": selector, "timeout": timeout })
+            }
+            Self::Evaluate { script } => {
+                serde_json::json!({ "action": "evaluate", "script": script })
+            }
+            Self::Select { selector, value } => {
+                serde_json::json!({ "action": "select", "selector": selector, "value": value })
+            }
+            Self::Check { selector, checked } => {
+                serde_json::json!({ "action": "check", "selector": selector, "checked": checked })
+            }
+            Self::Hover { selector } => {
+                serde_json::json!({ "action": "hover", "selector": selector })
+            }
             Self::Scroll { selector, x, y } => {
                 let mut v = serde_json::json!({ "action": "scroll", "x": x, "y": y });
                 if let Some(s) = selector {
@@ -281,7 +308,7 @@ impl BrowserAction {
                 })
             }
             Self::Close => serde_json::json!({}),
-            
+
             // All other actions use browser_evaluate with JS
             action => {
                 let script = action.to_js_function();
@@ -321,10 +348,15 @@ impl BrowserAction {
                      el.dispatchEvent(new MouseEvent('mousedown', opts)); \
                      el.dispatchEvent(new MouseEvent('mouseup', opts)); \
                      el.dispatchEvent(new MouseEvent('click', opts)); }}",
-                    sel = sel, btn = btn
+                    sel = sel,
+                    btn = btn
                 )
             }
-            Self::Type { selector, text, delay } => {
+            Self::Type {
+                selector,
+                text,
+                delay,
+            } => {
                 let sel = serde_json::to_string(selector).unwrap();
                 let val = serde_json::to_string(text).unwrap();
                 let delay_ms = delay.unwrap_or(50);
@@ -356,7 +388,8 @@ impl BrowserAction {
                      el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
                      el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
                      el.blur(); }}",
-                    sel = sel, val = val
+                    sel = sel,
+                    val = val
                 )
             }
             Self::GetText { selector } => {
@@ -367,9 +400,10 @@ impl BrowserAction {
                 let selector = selector.as_deref().unwrap_or("html");
                 let sel = serde_json::to_string(selector).unwrap();
                 let prop = if *outer { "outerHTML" } else { "innerHTML" };
-                
+
                 // Script to clean and return HTML (prevents huge token usage)
-                format!(r#"
+                format!(
+                    r#"
                     () => {{
                         const el = document.querySelector({});
                         if (!el) return 'Element not found';
@@ -383,16 +417,24 @@ impl BrowserAction {
                         }}
                         return html;
                     }}
-                "#, sel, prop)
+                "#,
+                    sel, prop
+                )
             }
-            Self::GetAttribute { selector, attribute } => {
+            Self::GetAttribute {
+                selector,
+                attribute,
+            } => {
                 let sel = serde_json::to_string(selector).unwrap();
                 let attr = serde_json::to_string(attribute).unwrap();
                 format!("() => {{ const el = document.querySelector({}); return el ? el.getAttribute({}) : null; }}", sel, attr)
             }
-            Self::WaitForSelector { selector, timeout, .. } => {
+            Self::WaitForSelector {
+                selector, timeout, ..
+            } => {
                 let sel = serde_json::to_string(selector).unwrap();
-                format!(r#"
+                format!(
+                    r#"
                     async () => {{
                         const selector = {};
                         const timeout = {};
@@ -403,11 +445,16 @@ impl BrowserAction {
                         }}
                         throw new Error('Timeout waiting for selector: ' + selector);
                     }}
-                "#, sel, timeout)
+                "#,
+                    sel, timeout
+                )
             }
             Self::WaitForNavigation { timeout } => {
                 // Approximate wait with sleep
-                 format!("async () => {{ await new Promise(r => setTimeout(r, {})); }}", timeout)
+                format!(
+                    "async () => {{ await new Promise(r => setTimeout(r, {})); }}",
+                    timeout
+                )
             }
             Self::Evaluate { script } => {
                 // Wrap user script in function if not already
@@ -420,26 +467,26 @@ impl BrowserAction {
             Self::Select { selector, value } => {
                 let sel = serde_json::to_string(selector).unwrap();
                 let val = serde_json::to_string(value).unwrap();
-                 format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.value = {}; el.dispatchEvent(new Event('change', {{ bubbles: true }})); }}", sel, val)
+                format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.value = {}; el.dispatchEvent(new Event('change', {{ bubbles: true }})); }}", sel, val)
             }
             Self::Check { selector, checked } => {
                 let sel = serde_json::to_string(selector).unwrap();
-                 format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.checked = {}; el.dispatchEvent(new Event('change', {{ bubbles: true }})); }}", sel, checked)
+                format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.checked = {}; el.dispatchEvent(new Event('change', {{ bubbles: true }})); }}", sel, checked)
             }
             Self::Hover { selector } => {
                 let sel = serde_json::to_string(selector).unwrap();
-                 format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.dispatchEvent(new MouseEvent('mouseover', {{ bubbles: true }})); }}", sel)
+                format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.dispatchEvent(new MouseEvent('mouseover', {{ bubbles: true }})); }}", sel)
             }
             Self::Press { key, count } => {
                 let k = serde_json::to_string(key).unwrap();
-                 format!("() => {{ for(let i=0; i<{}; i++) document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {{ key: {}, bubbles: true }})); }}", count, k)
+                format!("() => {{ for(let i=0; i<{}; i++) document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {{ key: {}, bubbles: true }})); }}", count, k)
             }
             Self::Scroll { selector, x, y } => {
                 if let Some(s) = selector {
                     let sel = serde_json::to_string(s).unwrap();
-                     format!("() => {{ const el = document.querySelector({}); if(el) el.scrollBy({}, {}); else window.scrollBy({}, {}); }}", sel, x, y, x, y)
+                    format!("() => {{ const el = document.querySelector({}); if(el) el.scrollBy({}, {}); else window.scrollBy({}, {}); }}", sel, x, y, x, y)
                 } else {
-                     format!("() => {{ window.scrollBy({}, {}); }}", x, y)
+                    format!("() => {{ window.scrollBy({}, {}); }}", x, y)
                 }
             }
             Self::GetUrl => "() => window.location.href".to_string(),

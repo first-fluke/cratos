@@ -76,7 +76,10 @@ impl Tool for McpToolBridge {
         if mcp_result.is_error {
             Ok(ToolResult::failure(text, duration))
         } else {
-            Ok(ToolResult::success(serde_json::json!({ "output": text }), duration))
+            Ok(ToolResult::success(
+                serde_json::json!({ "output": text }),
+                duration,
+            ))
         }
     }
 }

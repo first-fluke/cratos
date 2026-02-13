@@ -37,35 +37,87 @@ const SHELL_METACHARACTERS: &[char] = &[
 /// Network tools (curl, wget, etc.) are blocked separately via NETWORK_EXFIL_COMMANDS.
 const DEFAULT_BLOCKED_COMMANDS: &[&str] = &[
     // Destructive system commands
-    "rm", "rmdir", "dd", "mkfs", "fdisk", "parted",
-    "shred", "truncate",
+    "rm",
+    "rmdir",
+    "dd",
+    "mkfs",
+    "fdisk",
+    "parted",
+    "shred",
+    "truncate",
     // System control
-    "shutdown", "reboot", "poweroff", "halt", "init",
+    "shutdown",
+    "reboot",
+    "poweroff",
+    "halt",
+    "init",
     // User/permission manipulation
-    "passwd", "useradd", "userdel", "usermod", "groupadd", "groupdel",
-    "chmod", "chown", "chgrp",
+    "passwd",
+    "useradd",
+    "userdel",
+    "usermod",
+    "groupadd",
+    "groupdel",
+    "chmod",
+    "chown",
+    "chgrp",
     // Network firewall (can lock out user)
-    "iptables", "ip6tables", "nft",
+    "iptables",
+    "ip6tables",
+    "nft",
     // Shell spawning (prevents shell escape)
-    "bash", "sh", "zsh", "fish", "csh", "tcsh", "ksh",
+    "bash",
+    "sh",
+    "zsh",
+    "fish",
+    "csh",
+    "tcsh",
+    "ksh",
     // Network attack tools
-    "nc", "netcat", "ncat",
+    "nc",
+    "netcat",
+    "ncat",
     // Privilege escalation
-    "sudo", "su", "doas",
+    "sudo",
+    "su",
+    "doas",
     // Container/VM escape
-    "docker", "podman", "kubectl", "crictl",
+    "docker",
+    "podman",
+    "kubectl",
+    "crictl",
     // Process control
-    "kill", "pkill", "killall",
+    "kill",
+    "pkill",
+    "killall",
     // Persistence mechanisms
-    "crontab", "at", "launchctl", "systemctl",
+    "crontab",
+    "at",
+    "launchctl",
+    "systemctl",
     // Symlink attacks
     "ln",
     // Interpreters (can bypass all checks)
-    "python", "python3", "perl", "ruby", "node",
-    "php", "lua", "tclsh", "wish",
+    "python",
+    "python3",
+    "perl",
+    "ruby",
+    "node",
+    "php",
+    "lua",
+    "tclsh",
+    "wish",
     // H1: Command wrappers that can invoke blocked commands indirectly
-    "env", "xargs", "nice", "timeout", "watch", "strace", "ltrace",
-    "nohup", "setsid", "osascript",
+    "env",
+    "xargs",
+    "nice",
+    "timeout",
+    "watch",
+    "strace",
+    "ltrace",
+    "nohup",
+    "setsid",
+    "osascript",
 ];
 
 /// Command prefixes blocked to prevent versioned interpreter bypass (e.g. `python3.11`, `perl5.34`).
@@ -76,15 +128,22 @@ const BLOCKED_COMMAND_PREFIXES: &[&str] = &[
 /// Network exfiltration commands blocked by default.
 /// Users needing HTTP should use http_get/http_post tools instead.
 const NETWORK_EXFIL_COMMANDS: &[&str] = &[
-    "curl", "wget",
-    "scp", "sftp", "rsync",
-    "ftp", "telnet", "socat", "ssh",
+    "curl", "wget", "scp", "sftp", "rsync", "ftp", "telnet", "socat", "ssh",
 ];
 
 /// Default dangerous path patterns
 const DEFAULT_BLOCKED_PATHS: &[&str] = &[
-    "/etc", "/root", "/var/log", "/boot", "/dev", "/proc", "/sys",
-    "/usr/bin", "/usr/sbin", "/bin", "/sbin",
+    "/etc",
+    "/root",
+    "/var/log",
+    "/boot",
+    "/dev",
+    "/proc",
+    "/sys",
+    "/usr/bin",
+    "/usr/sbin",
+    "/bin",
+    "/sbin",
 ];
 
 /// Exec security mode
@@ -141,7 +200,10 @@ impl Default for ExecConfig {
             max_timeout_secs: DEFAULT_MAX_TIMEOUT_SECS,
             extra_blocked_commands: Vec::new(),
             allowed_commands: Vec::new(),
-            blocked_paths: DEFAULT_BLOCKED_PATHS.iter().map(|s| (*s).to_string()).collect(),
+            blocked_paths: DEFAULT_BLOCKED_PATHS
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
             allow_network_commands: false,
             sandbox_image: "alpine:latest".to_string(),
             sandbox_memory_limit: "256m".to_string(),
@@ -226,17 +288,26 @@ impl ExecTool {
         match self.config.mode {
             ExecMode::Strict => {
                 // In strict mode, block everything except allowed_commands
-                !self.config.allowed_commands.iter().any(|a| a == base_command)
+                !self
+                    .config
+                    .allowed_commands
+                    .iter()
+                    .any(|a| a == base_command)
             }
             ExecMode::Permissive => {
                 // In permissive mode, only block built-in + extra + network commands
                 let is_builtin_blocked = DEFAULT_BLOCKED_COMMANDS.contains(&base_command);
                 let is_network_blocked = !self.config.allow_network_commands
                     && NETWORK_EXFIL_COMMANDS.contains(&base_command);
-                let is_extra_blocked = self.config.extra_blocked_commands.iter().any(|b| b == base_command);
+                let is_extra_blocked = self
+                    .config
+                    .extra_blocked_commands
+                    .iter()
+                    .any(|b| b == base_command);
                 // C2: Block versioned interpreters (e.g. python3.11, perl5.34)
-                let is_prefix_blocked =
-                    BLOCKED_COMMAND_PREFIXES.iter().any(|p| base_command.starts_with(p));
+                let is_prefix_blocked = BLOCKED_COMMAND_PREFIXES
+                    .iter()
+                    .any(|p| base_command.starts_with(p));
                 is_builtin_blocked || is_network_blocked || is_extra_blocked || is_prefix_blocked
             }
         }
@@ -246,7 +317,10 @@ impl ExecTool {
     fn is_path_dangerous(&self, path: &str) -> bool {
         let normalized = PathBuf::from(path);
         let path_str = normalized.to_string_lossy();
-        self.config.blocked_paths.iter().any(|pattern| path_str.starts_with(pattern.as_str()))
+        self.config
+            .blocked_paths
+            .iter()
+            .any(|pattern| path_str.starts_with(pattern.as_str()))
     }
 }
 
@@ -388,8 +462,8 @@ impl Tool for ExecTool {
                 let mut c = Command::new("docker");
                 c.arg("run")
                     .arg("--rm")
-                    .arg("--network=none")             // No network access
-                    .arg("--read-only")                 // Read-only root filesystem
+                    .arg("--network=none") // No network access
+                    .arg("--read-only") // Read-only root filesystem
                     .arg("--tmpfs=/tmp:rw,noexec,nosuid,size=64m")
                     .arg(format!("--memory={}", self.config.sandbox_memory_limit))
                     .arg(format!("--cpus={}", self.config.sandbox_cpu_limit))
@@ -398,9 +472,7 @@ impl Tool for ExecTool {
                 if let Some(dir) = cwd {
                     c.arg("-w").arg(dir);
                 }
-                c.arg(&self.config.sandbox_image)
-                    .arg(command)
-                    .args(&args);
+                c.arg(&self.config.sandbox_image).arg(command).args(&args);
                 c
             }
         };

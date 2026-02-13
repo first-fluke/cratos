@@ -59,7 +59,7 @@ fn is_headless() -> bool {
     if std::env::var("SSH_CLIENT").is_ok() || std::env::var("SSH_TTY").is_ok() {
         return true;
     }
-    
+
     // Linux without display server
     #[cfg(target_os = "linux")]
     {
@@ -67,7 +67,7 @@ fn is_headless() -> bool {
             return true;
         }
     }
-    
+
     false
 }
 
@@ -110,8 +110,7 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
     println!("  {}", t.telegram_help_link);
     println!();
 
-    let skip_telegram =
-        prompts::confirm(t.telegram_skip, true, Some(t.telegram_skip_note))?;
+    let skip_telegram = prompts::confirm(t.telegram_skip, true, Some(t.telegram_skip_note))?;
 
     let telegram_token = if skip_telegram {
         String::new()
@@ -289,10 +288,7 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
         .find(|p| selected_persona.starts_with(p.display(lang)))
         .unwrap_or(&PERSONAS[0]);
 
-    println!(
-        "\n  Selected: {} ({})\n",
-        persona.name, persona.domain
-    );
+    println!("\n  Selected: {} ({})\n", persona.name, persona.domain);
 
     // ── 10. Connection tests ──
     print_header(t.test_title);
@@ -310,7 +306,8 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
     }
 
     // CLI auth detected if api_key is empty but provider is not ollama
-    let has_cli_auth = api_key.is_empty() && provider.name != "ollama"
+    let has_cli_auth = api_key.is_empty()
+        && provider.name != "ollama"
         && (provider.name == "google" || provider.name == "openai");
 
     if !api_key.is_empty() || provider.name == "ollama" || has_cli_auth {
@@ -366,11 +363,19 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
     println!("    Persona: {} ({})", persona.name, persona.domain);
     println!(
         "    Telegram: {}",
-        if telegram_token.is_empty() { t.disabled } else { t.enabled }
+        if telegram_token.is_empty() {
+            t.disabled
+        } else {
+            t.enabled
+        }
     );
     println!(
         "    Slack: {}",
-        if slack_token.is_empty() { t.disabled } else { t.enabled }
+        if slack_token.is_empty() {
+            t.disabled
+        } else {
+            t.enabled
+        }
     );
     println!("{}", t.complete_next_steps);
     println!("{}", t.complete_tips);
@@ -388,9 +393,7 @@ fn prompt_api_key(
 ) -> anyhow::Result<String> {
     print_header(&format!("{} — {}", t.apikey_title, provider.name));
 
-    let instructions = t
-        .apikey_instructions
-        .replace("{url}", provider.signup_url);
+    let instructions = t.apikey_instructions.replace("{url}", provider.signup_url);
     println!("{}", instructions);
     println!();
 
@@ -456,8 +459,8 @@ async fn resolve_google_auth(
         if prompts::confirm(t.gcloud_use_prompt, true, None)? {
             // Verify token is valid (non-empty is checked by get_gcloud_access_token)
             // We use the token to check validity implicitly, but get_gcloud_access_token() essentially does that by running the command.
-             println!("  {}", t.gcloud_success);
-             return Ok(String::new());
+            println!("  {}", t.gcloud_success);
+            return Ok(String::new());
         }
     }
 

@@ -693,7 +693,8 @@ impl EventStoreTrait for EventStore {
         status: &str,
         output_text: Option<&str>,
     ) -> Result<()> {
-        self.update_execution_status_str(id, status, output_text).await
+        self.update_execution_status_str(id, status, output_text)
+            .await
     }
 
     fn name(&self) -> &str {

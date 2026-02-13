@@ -1,8 +1,8 @@
 use cratos_core::auth::Scope;
 use cratos_core::nodes::{NodeError, NodeRegisterParams};
 
-use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 use super::super::dispatch::{parse_uuid_param, DispatchContext};
+use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 
 pub(crate) async fn handle(
     id: &str,
@@ -26,11 +26,7 @@ pub(crate) async fn handle(
     }
 }
 
-async fn register(
-    id: &str,
-    params: serde_json::Value,
-    ctx: &DispatchContext<'_>,
-) -> GatewayFrame {
+async fn register(id: &str, params: serde_json::Value, ctx: &DispatchContext<'_>) -> GatewayFrame {
     if !ctx.auth.has_scope(&Scope::NodeManage) {
         return GatewayFrame::err(
             id,
@@ -62,11 +58,7 @@ async fn register(
     }
 }
 
-async fn heartbeat(
-    id: &str,
-    params: serde_json::Value,
-    ctx: &DispatchContext<'_>,
-) -> GatewayFrame {
+async fn heartbeat(id: &str, params: serde_json::Value, ctx: &DispatchContext<'_>) -> GatewayFrame {
     if !ctx.auth.has_scope(&Scope::NodeManage) {
         return GatewayFrame::err(
             id,
@@ -94,11 +86,7 @@ async fn list(id: &str, ctx: &DispatchContext<'_>) -> GatewayFrame {
     GatewayFrame::ok(id, serde_json::json!({"nodes": nodes}))
 }
 
-async fn invoke(
-    id: &str,
-    params: serde_json::Value,
-    ctx: &DispatchContext<'_>,
-) -> GatewayFrame {
+async fn invoke(id: &str, params: serde_json::Value, ctx: &DispatchContext<'_>) -> GatewayFrame {
     if !ctx.auth.has_scope(&Scope::ExecutionWrite) || !ctx.auth.has_scope(&Scope::NodeManage) {
         return GatewayFrame::err(
             id,
@@ -112,18 +100,22 @@ async fn invoke(
         Ok(id) => id,
         Err(frame) => return frame,
     };
-    let command = params
-        .get("command")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("");
     if command.is_empty() {
         return GatewayFrame::err(
             id,
-            GatewayError::new(GatewayErrorCode::InvalidParams, "Missing 'command' parameter"),
+            GatewayError::new(
+                GatewayErrorCode::InvalidParams,
+                "Missing 'command' parameter",
+            ),
         );
     }
     // Check tool policy before attempting invoke
-    match ctx.node_registry.check_command(node_id, command, ctx.auth).await {
+    match ctx
+        .node_registry
+        .check_command(node_id, command, ctx.auth)
+        .await
+    {
         Ok(()) => GatewayFrame::ok(
             id,
             serde_json::json!({
@@ -137,11 +129,7 @@ async fn invoke(
     }
 }
 
-async fn remove(
-    id: &str,
-    params: serde_json::Value,
-    ctx: &DispatchContext<'_>,
-) -> GatewayFrame {
+async fn remove(id: &str, params: serde_json::Value, ctx: &DispatchContext<'_>) -> GatewayFrame {
     if !ctx.auth.has_scope(&Scope::NodeManage) {
         return GatewayFrame::err(
             id,
@@ -170,9 +158,7 @@ fn node_error_to_gateway(err: NodeError) -> GatewayError {
         NodeError::PolicyDenied(_) => {
             GatewayError::new(GatewayErrorCode::Forbidden, err.to_string())
         }
-        NodeError::Unauthorized => {
-            GatewayError::new(GatewayErrorCode::Forbidden, err.to_string())
-        }
+        NodeError::Unauthorized => GatewayError::new(GatewayErrorCode::Forbidden, err.to_string()),
         NodeError::SignatureInvalid(_) => {
             GatewayError::new(GatewayErrorCode::Unauthorized, err.to_string())
         }
@@ -232,7 +218,11 @@ mod tests {
     fn test_orchestrator() -> Arc<Orchestrator> {
         let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
         let registry = Arc::new(ToolRegistry::new());
-        Arc::new(Orchestrator::new(provider, registry, OrchestratorConfig::default()))
+        Arc::new(Orchestrator::new(
+            provider,
+            registry,
+            OrchestratorConfig::default(),
+        ))
     }
 
     fn test_event_bus() -> Arc<EventBus> {
@@ -247,7 +237,15 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &auth,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
         let result = dispatch_method(
             "20",
             "node.register",
@@ -261,7 +259,9 @@ mod tests {
         )
         .await;
         match result {
-            GatewayFrame::Response { result: Some(v), .. } => {
+            GatewayFrame::Response {
+                result: Some(v), ..
+            } => {
                 assert!(v.get("node_id").is_some());
                 assert_eq!(v["name"], "test-node");
             }
@@ -277,7 +277,15 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &auth,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
         let result = dispatch_method(
             "21",
             "node.register",
@@ -285,7 +293,10 @@ mod tests {
             &ctx,
         )
         .await;
-        assert!(matches!(result, GatewayFrame::Response { error: Some(_), .. }));
+        assert!(matches!(
+            result,
+            GatewayFrame::Response { error: Some(_), .. }
+        ));
     }
 
     #[tokio::test]
@@ -296,7 +307,15 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &auth,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
 
         // Register a node first
         let _ = dispatch_method(
@@ -313,7 +332,9 @@ mod tests {
 
         let result = dispatch_method("31", "node.list", serde_json::json!({}), &ctx).await;
         match result {
-            GatewayFrame::Response { result: Some(v), .. } => {
+            GatewayFrame::Response {
+                result: Some(v), ..
+            } => {
                 let nodes = v["nodes"].as_array().unwrap();
                 assert_eq!(nodes.len(), 1);
             }
@@ -329,7 +350,15 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let ctx = DispatchContext { auth: &auth, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &auth,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
 
         // Register a node
         let reg_result = dispatch_method(
@@ -344,9 +373,9 @@ mod tests {
         )
         .await;
         let node_id = match reg_result {
-            GatewayFrame::Response { result: Some(v), .. } => {
-                v["node_id"].as_str().unwrap().to_string()
-            }
+            GatewayFrame::Response {
+                result: Some(v), ..
+            } => v["node_id"].as_str().unwrap().to_string(),
             _ => panic!("expected ok"),
         };
 

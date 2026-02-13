@@ -234,7 +234,7 @@ async fn test_gemini_oauth() -> bool {
     if let Ok(token) = cratos_llm::cli_auth::get_gcloud_access_token().await {
         let project_id = cratos_llm::cli_auth::get_gcloud_project_id_blocking().ok();
         if test_gemini_bearer(&token, project_id.as_deref()).await {
-             return true;
+            return true;
         }
     }
 
@@ -258,13 +258,15 @@ async fn test_gemini_bearer(token: &str, project_id: Option<&str>) -> bool {
         Err(_) => return false,
     };
 
-    let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+    let url =
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
     let body = serde_json::json!({
         "contents": [{"parts": [{"text": "Say OK"}]}],
         "generationConfig": {"maxOutputTokens": 5}
     });
 
-    let mut rb = client.post(url)
+    let mut rb = client
+        .post(url)
         .header("Authorization", format!("Bearer {}", token));
 
     if let Some(pid) = project_id {
@@ -274,12 +276,12 @@ async fn test_gemini_bearer(token: &str, project_id: Option<&str>) -> bool {
     match rb.json(&body).send().await {
         Ok(resp) => {
             if !resp.status().is_success() {
-                 let body = resp.text().await.unwrap_or_default();
-                 tracing::debug!("Gemini Bearer test failed: {}", body);
-                 return false;
+                let body = resp.text().await.unwrap_or_default();
+                tracing::debug!("Gemini Bearer test failed: {}", body);
+                return false;
             }
             true
-        },
+        }
         Err(e) => {
             tracing::debug!("Gemini Bearer test network error: {}", e);
             false
@@ -291,7 +293,13 @@ async fn test_gemini_bearer(token: &str, project_id: Option<&str>) -> bool {
 async fn test_openai_codex_auth() -> bool {
     if let Some(tokens) = cratos_llm::cli_auth::read_cratos_openai_oauth() {
         let auth = format!("Bearer {}", tokens.access_token);
-        if test_openai_compatible("https://api.openai.com/v1/chat/completions", "gpt-4o-mini", &auth).await {
+        if test_openai_compatible(
+            "https://api.openai.com/v1/chat/completions",
+            "gpt-4o-mini",
+            &auth,
+        )
+        .await
+        {
             return true;
         }
         if let Some(ref rt) = tokens.refresh_token {
@@ -299,7 +307,13 @@ async fn test_openai_codex_auth() -> bool {
             if let Ok(refreshed) = cratos_llm::oauth::refresh_token(&config, rt).await {
                 let _ = cratos_llm::oauth::save_tokens(&config.token_file, &refreshed);
                 let auth = format!("Bearer {}", refreshed.access_token);
-                if test_openai_compatible("https://api.openai.com/v1/chat/completions", "gpt-4o-mini", &auth).await {
+                if test_openai_compatible(
+                    "https://api.openai.com/v1/chat/completions",
+                    "gpt-4o-mini",
+                    &auth,
+                )
+                .await
+                {
                     return true;
                 }
             }
@@ -312,7 +326,12 @@ async fn test_openai_codex_auth() -> bool {
     };
 
     let auth = format!("Bearer {}", creds.tokens.access_token);
-    test_openai_compatible("https://api.openai.com/v1/chat/completions", "gpt-4o-mini", &auth).await
+    test_openai_compatible(
+        "https://api.openai.com/v1/chat/completions",
+        "gpt-4o-mini",
+        &auth,
+    )
+    .await
 }
 
 /// Test Ollama with an actual model inference
@@ -436,7 +455,10 @@ pub fn has_suitable_model(installed: &[String]) -> Option<String> {
     for rec in OLLAMA_RECOMMENDED_MODELS {
         for inst in installed {
             // Match "qwen2.5:7b" against "qwen2.5:7b" or "qwen2.5:7b-instruct" etc.
-            if inst.starts_with(rec.name) || inst.starts_with(rec.name.split(':').next().unwrap_or("")) && inst.contains(rec.name.split(':').nth(1).unwrap_or("")) {
+            if inst.starts_with(rec.name)
+                || inst.starts_with(rec.name.split(':').next().unwrap_or(""))
+                    && inst.contains(rec.name.split(':').nth(1).unwrap_or(""))
+            {
                 return Some(inst.clone());
             }
         }

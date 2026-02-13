@@ -140,23 +140,18 @@ impl SessionManager {
             .values()
             .filter(|s| {
                 s.status != SessionStatus::Closed
-                    && (requester.has_scope(&Scope::Admin)
-                        || s.owner_user_id == requester.user_id)
+                    && (requester.has_scope(&Scope::Admin) || s.owner_user_id == requester.user_id)
             })
             .map(|s| s.to_summary())
             .collect()
     }
 
     /// Get a session by ID with ownership check.
-    pub async fn get_session(
-        &self,
-        id: Uuid,
-        requester: &AuthContext,
-    ) -> Result<SessionSummary> {
+    pub async fn get_session(&self, id: Uuid, requester: &AuthContext) -> Result<SessionSummary> {
         let sessions = self.sessions.read().await;
-        let session = sessions.get(&id).ok_or_else(|| {
-            Error::NotFound(format!("Session {} not found", id))
-        })?;
+        let session = sessions
+            .get(&id)
+            .ok_or_else(|| Error::NotFound(format!("Session {} not found", id)))?;
         self.check_ownership(session, requester)?;
         Ok(session.to_summary())
     }
@@ -172,9 +167,9 @@ impl SessionManager {
         requester: &AuthContext,
     ) -> Result<Option<String>> {
         let mut sessions = self.sessions.write().await;
-        let session = sessions.get_mut(&session_id).ok_or_else(|| {
-            Error::NotFound(format!("Session {} not found", session_id))
-        })?;
+        let session = sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| Error::NotFound(format!("Session {} not found", session_id)))?;
         self.check_ownership(session, requester)?;
 
         if session.status == SessionStatus::Closed {
@@ -204,9 +199,9 @@ impl SessionManager {
     /// Returns the next queued message text if there is one.
     pub async fn execution_completed(&self, session_id: Uuid) -> Result<Option<String>> {
         let mut sessions = self.sessions.write().await;
-        let session = sessions.get_mut(&session_id).ok_or_else(|| {
-            Error::NotFound(format!("Session {} not found", session_id))
-        })?;
+        let session = sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| Error::NotFound(format!("Session {} not found", session_id)))?;
 
         session.active_execution = None;
 
@@ -228,9 +223,9 @@ impl SessionManager {
         requester: &AuthContext,
     ) -> Result<bool> {
         let mut sessions = self.sessions.write().await;
-        let session = sessions.get_mut(&session_id).ok_or_else(|| {
-            Error::NotFound(format!("Session {} not found", session_id))
-        })?;
+        let session = sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| Error::NotFound(format!("Session {} not found", session_id)))?;
         self.check_ownership(session, requester)?;
 
         if session.active_execution.is_some() {
@@ -243,26 +238,18 @@ impl SessionManager {
     }
 
     /// Delete (close) a session.
-    pub async fn delete_session(
-        &self,
-        session_id: Uuid,
-        requester: &AuthContext,
-    ) -> Result<()> {
+    pub async fn delete_session(&self, session_id: Uuid, requester: &AuthContext) -> Result<()> {
         let mut sessions = self.sessions.write().await;
-        let session = sessions.get_mut(&session_id).ok_or_else(|| {
-            Error::NotFound(format!("Session {} not found", session_id))
-        })?;
+        let session = sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| Error::NotFound(format!("Session {} not found", session_id)))?;
         self.check_ownership(session, requester)?;
         session.status = SessionStatus::Closed;
         Ok(())
     }
 
     /// Verify the requester owns the session or is Admin.
-    fn check_ownership(
-        &self,
-        session: &ManagedSession,
-        requester: &AuthContext,
-    ) -> Result<()> {
+    fn check_ownership(&self, session: &ManagedSession, requester: &AuthContext) -> Result<()> {
         if requester.has_scope(&Scope::Admin) || session.owner_user_id == requester.user_id {
             Ok(())
         } else {
@@ -313,7 +300,10 @@ mod tests {
     async fn test_create_session() {
         let mgr = SessionManager::new();
         let auth = user_auth("alice");
-        let summary = mgr.create_session(&auth, Some("Test".to_string())).await.unwrap();
+        let summary = mgr
+            .create_session(&auth, Some("Test".to_string()))
+            .await
+            .unwrap();
 
         assert_eq!(summary.name, Some("Test".to_string()));
         assert_eq!(summary.status, SessionStatus::Idle);
@@ -326,8 +316,12 @@ mod tests {
         let alice = user_auth("alice");
         let bob = user_auth("bob");
 
-        mgr.create_session(&alice, Some("Alice's".to_string())).await.unwrap();
-        mgr.create_session(&bob, Some("Bob's".to_string())).await.unwrap();
+        mgr.create_session(&alice, Some("Alice's".to_string()))
+            .await
+            .unwrap();
+        mgr.create_session(&bob, Some("Bob's".to_string()))
+            .await
+            .unwrap();
 
         // Alice sees only her sessions
         let alice_sessions = mgr.list_sessions(&alice).await;

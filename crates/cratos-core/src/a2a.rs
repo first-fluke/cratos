@@ -158,10 +158,7 @@ impl A2aRouter {
     /// Receive all pending messages for an agent (drains the queue).
     pub async fn receive(&self, agent_id: &str) -> Vec<A2aMessage> {
         let mut queues = self.queues.write().await;
-        queues
-            .remove(agent_id)
-            .map(Vec::from)
-            .unwrap_or_default()
+        queues.remove(agent_id).map(Vec::from).unwrap_or_default()
     }
 
     /// Peek at pending messages for an agent without draining.
@@ -271,7 +268,12 @@ mod tests {
             .send(A2aMessage::new("frontend", "qa", "s1", "step 2"))
             .await;
         router
-            .send(A2aMessage::new("backend", "frontend", "s2", "other session"))
+            .send(A2aMessage::new(
+                "backend",
+                "frontend",
+                "s2",
+                "other session",
+            ))
             .await;
 
         let history = router.session_history("s1").await;
@@ -324,12 +326,8 @@ mod tests {
     async fn test_clear_session() {
         let router = A2aRouter::new(100);
 
-        router
-            .send(A2aMessage::new("a", "b", "s1", "msg1"))
-            .await;
-        router
-            .send(A2aMessage::new("a", "b", "s2", "msg2"))
-            .await;
+        router.send(A2aMessage::new("a", "b", "s1", "msg1")).await;
+        router.send(A2aMessage::new("a", "b", "s2", "msg2")).await;
 
         router.clear_session("s1").await;
 

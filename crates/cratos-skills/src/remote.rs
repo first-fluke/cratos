@@ -138,7 +138,11 @@ impl RemoteRegistry {
         // Verify checksum
         let mut hasher = Sha256::new();
         hasher.update(&body);
-        let computed: String = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect();
+        let computed: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
 
         if computed != entry.checksum {
             return Err(Error::Internal(format!(
@@ -186,7 +190,11 @@ impl RemoteRegistry {
 pub fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
-    hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
 }
 
 #[cfg(test)]

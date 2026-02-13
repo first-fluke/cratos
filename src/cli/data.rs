@@ -87,7 +87,10 @@ async fn stats() -> Result<()> {
     if db_path.exists() {
         let store = cratos_replay::EventStore::from_path(&db_path).await?;
         // count via a large-limit query
-        let execs = store.list_recent_executions(i64::MAX).await.unwrap_or_default();
+        let execs = store
+            .list_recent_executions(i64::MAX)
+            .await
+            .unwrap_or_default();
         println!(
             "Executions:     {:<12}(cratos.db: {})",
             execs.len(),
@@ -170,7 +173,9 @@ async fn clear(target: Option<ClearTarget>, force: bool) -> Result<()> {
         Some(ClearTarget::Sessions) => clear_sessions(force).await,
         Some(ClearTarget::Memory) => clear_memory(force).await,
         Some(ClearTarget::History { older_than }) => clear_history(older_than, force).await,
-        Some(ClearTarget::Chronicles { persona }) => clear_chronicles(persona.as_deref(), force).await,
+        Some(ClearTarget::Chronicles { persona }) => {
+            clear_chronicles(persona.as_deref(), force).await
+        }
         Some(ClearTarget::Vectors) => clear_vectors(force).await,
         Some(ClearTarget::Skills) => clear_skills(force).await,
     }
@@ -220,10 +225,8 @@ async fn clear_sessions(force: bool) -> Result<()> {
 
                     let count = keys.len();
                     for key in &keys {
-                        let _: Result<(), _> = redis::cmd("DEL")
-                            .arg(key)
-                            .query_async(&mut conn)
-                            .await;
+                        let _: Result<(), _> =
+                            redis::cmd("DEL").arg(key).query_async(&mut conn).await;
                     }
                     println!("  ✅ Cleared {count} Redis session(s).");
                 }

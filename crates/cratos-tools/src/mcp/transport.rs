@@ -101,9 +101,7 @@ impl McpConnection {
             McpTransport::Stdio { command, args, env } => {
                 self.start_stdio(&command, &args, &env).await
             }
-            McpTransport::Sse { url, api_key } => {
-                self.start_sse(&url, api_key.as_deref()).await
-            }
+            McpTransport::Sse { url, api_key } => self.start_sse(&url, api_key.as_deref()).await,
         }
     }
 
@@ -210,7 +208,10 @@ impl McpConnection {
 
         // MCP SSE: GET the SSE endpoint to receive events
         let sse_url = url.to_string();
-        let post_url = format!("{}/message", url.trim_end_matches("/sse").trim_end_matches('/'));
+        let post_url = format!(
+            "{}/message",
+            url.trim_end_matches("/sse").trim_end_matches('/')
+        );
         self.sse_post_url = Some(post_url);
         self.http_client = Some(client.clone());
 
@@ -260,7 +261,8 @@ impl McpConnection {
                                                         let mut pend = pending
                                                             .lock()
                                                             .unwrap_or_else(|e| e.into_inner());
-                                                        if let Some(tx) = pend.remove(&response.id) {
+                                                        if let Some(tx) = pend.remove(&response.id)
+                                                        {
                                                             let _ = tx.send(response);
                                                         }
                                                     }

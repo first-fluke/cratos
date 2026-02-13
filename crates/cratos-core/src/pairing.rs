@@ -297,9 +297,7 @@ mod tests {
         let pin = mgr.start_pairing().await;
 
         let (_, vk) = crate::device_auth::generate_device_keypair();
-        let result = mgr
-            .verify_pin(&pin, "my-phone", vk.as_bytes())
-            .await;
+        let result = mgr.verify_pin(&pin, "my-phone", vk.as_bytes()).await;
 
         assert!(result.success);
         assert!(result.device_id.is_some());

@@ -154,7 +154,9 @@ impl std::fmt::Display for NodeError {
             Self::PolicyDenied(p) => write!(f, "policy denied: {}", p),
             Self::Unauthorized => write!(f, "not authorized for this node"),
             Self::SignatureInvalid(msg) => write!(f, "signature verification failed: {}", msg),
-            Self::SignatureMissing => write!(f, "public_key provided but challenge/signature missing"),
+            Self::SignatureMissing => {
+                write!(f, "public_key provided but challenge/signature missing")
+            }
         }
     }
 }
@@ -199,8 +201,14 @@ impl NodeRegistry {
     ) -> std::result::Result<Node, NodeError> {
         // Verify Ed25519 signature if public key is provided
         let public_key = if let Some(ref pk) = params.public_key {
-            let challenge = params.challenge.as_ref().ok_or(NodeError::SignatureMissing)?;
-            let signature = params.signature.as_ref().ok_or(NodeError::SignatureMissing)?;
+            let challenge = params
+                .challenge
+                .as_ref()
+                .ok_or(NodeError::SignatureMissing)?;
+            let signature = params
+                .signature
+                .as_ref()
+                .ok_or(NodeError::SignatureMissing)?;
 
             device_auth::verify_signature(pk, challenge, signature)
                 .map_err(|e| NodeError::SignatureInvalid(e.to_string()))?;
@@ -237,7 +245,9 @@ impl NodeRegistry {
         auth: &AuthContext,
     ) -> std::result::Result<(), NodeError> {
         let mut nodes = self.nodes.write().await;
-        let node = nodes.get_mut(&node_id).ok_or(NodeError::NotFound(node_id))?;
+        let node = nodes
+            .get_mut(&node_id)
+            .ok_or(NodeError::NotFound(node_id))?;
         self.check_node_ownership(node, auth)?;
 
         node.last_heartbeat = Utc::now();
@@ -296,8 +306,7 @@ impl NodeRegistry {
 
     /// Check liveness of all nodes (mark offline if heartbeat stale).
     pub async fn check_liveness(&self) {
-        let cutoff =
-            Utc::now() - chrono::Duration::seconds(self.heartbeat_timeout_secs);
+        let cutoff = Utc::now() - chrono::Duration::seconds(self.heartbeat_timeout_secs);
         let mut nodes = self.nodes.write().await;
         for node in nodes.values_mut() {
             if node.status == NodeStatus::Online && node.last_heartbeat < cutoff {
@@ -435,8 +444,14 @@ mod tests {
         let node = registry.register(test_params(), &auth).await.unwrap();
         registry.heartbeat(node.id, &auth).await.unwrap();
 
-        assert!(registry.check_command(node.id, "git status", &auth).await.is_ok());
-        assert!(registry.check_command(node.id, "cargo build", &auth).await.is_ok());
+        assert!(registry
+            .check_command(node.id, "git status", &auth)
+            .await
+            .is_ok());
+        assert!(registry
+            .check_command(node.id, "cargo build", &auth)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -447,7 +462,10 @@ mod tests {
         registry.heartbeat(node.id, &auth).await.unwrap();
 
         let result = registry.check_command(node.id, "npm install", &auth).await;
-        assert!(matches!(result, Err(NodeError::PolicyDenied(PolicyDenial::NotDeclared(_)))));
+        assert!(matches!(
+            result,
+            Err(NodeError::PolicyDenied(PolicyDenial::NotDeclared(_)))
+        ));
     }
 
     #[tokio::test]
@@ -459,8 +477,13 @@ mod tests {
         let node = registry.register(params, &auth).await.unwrap();
         registry.heartbeat(node.id, &auth).await.unwrap();
 
-        let result = registry.check_command(node.id, "dd if=/dev/zero", &auth).await;
-        assert!(matches!(result, Err(NodeError::PolicyDenied(PolicyDenial::DenyListed(_)))));
+        let result = registry
+            .check_command(node.id, "dd if=/dev/zero", &auth)
+            .await;
+        assert!(matches!(
+            result,
+            Err(NodeError::PolicyDenied(PolicyDenial::DenyListed(_)))
+        ));
     }
 
     #[tokio::test]

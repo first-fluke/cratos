@@ -19,7 +19,10 @@ pub mod registry;
 pub mod runner;
 pub mod sandbox;
 
-pub use builtins::{register_builtins, register_builtins_with_config, BashConfig, BashSecurityMode, BashTool, BuiltinsConfig, ExecConfig, ExecMode, WebSearchTool};
+pub use builtins::{
+    register_builtins, register_builtins_with_config, BashConfig, BashSecurityMode, BashTool,
+    BuiltinsConfig, ExecConfig, ExecMode, WebSearchTool,
+};
 pub use doctor::{ChecklistItem, Diagnosis, FailureCategory, ProbableCause, ToolDoctor};
 pub use error::{Error, Result};
 pub use registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolRegistry, ToolResult};
@@ -30,7 +33,9 @@ pub use sandbox::{
 };
 
 // Re-export MCP types
-pub use mcp::{McpClient, McpClientConfig, McpError, McpServerConfig, McpTool, McpToolBridge, McpTransport};
+pub use mcp::{
+    McpClient, McpClientConfig, McpError, McpServerConfig, McpTool, McpToolBridge, McpTransport,
+};
 
 // Re-export browser types
 pub use browser::{BrowserAction, BrowserConfig, BrowserEngine, BrowserTool};

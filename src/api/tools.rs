@@ -31,18 +31,17 @@ async fn list_tools(
     registry: Option<Extension<Arc<ToolRegistry>>>,
 ) -> Json<ApiResponse<Vec<ToolInfo>>> {
     let tools: Vec<ToolInfo> = match registry {
-        Some(Extension(reg)) => {
-            reg.list_definitions()
-                .into_iter()
-                .map(|def| ToolInfo {
-                    name: def.name.clone(),
-                    description: def.description.clone(),
-                    category: format!("{:?}", def.category),
-                    requires_approval: def.risk_level != cratos_tools::RiskLevel::Low,
-                    parameters: def.parameters.clone(),
-                })
-                .collect()
-        }
+        Some(Extension(reg)) => reg
+            .list_definitions()
+            .into_iter()
+            .map(|def| ToolInfo {
+                name: def.name.clone(),
+                description: def.description.clone(),
+                category: format!("{:?}", def.category),
+                requires_approval: def.risk_level != cratos_tools::RiskLevel::Low,
+                parameters: def.parameters.clone(),
+            })
+            .collect(),
         None => Vec::new(),
     };
     Json(ApiResponse::success(tools))

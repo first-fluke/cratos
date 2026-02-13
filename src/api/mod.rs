@@ -20,11 +20,11 @@ pub mod tools;
 use axum::Router;
 
 pub use browser::browser_routes;
-pub use health::health_routes;
-pub use pairing::pairing_routes;
 pub use config::config_routes;
 pub use dev_sessions::dev_sessions_routes;
 pub use executions::executions_routes;
+pub use health::health_routes;
+pub use pairing::pairing_routes;
 pub use quota::quota_routes;
 pub use scheduler::scheduler_routes;
 pub use sessions::{sessions_routes_with_state, SessionState};

@@ -70,7 +70,14 @@ pub async fn run(language: Option<String>) -> Result<()> {
     println!("\nCratos Voice Assistant");
     println!("{}", "-".repeat(40));
     println!("  Mode:      {:?}", controller.mode());
-    println!("  STT:       {}", if controller.stt_enabled() { "enabled" } else { "disabled" });
+    println!(
+        "  STT:       {}",
+        if controller.stt_enabled() {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
     println!("  Language:  {}", controller.config().language);
     println!("  Wake word: {}", controller.config().wake_word.name);
     println!();
@@ -82,7 +89,10 @@ pub async fn run(language: Option<String>) -> Result<()> {
         return Ok(());
     }
 
-    println!("Listening... Say '{}' to activate.", controller.config().wake_word.name);
+    println!(
+        "Listening... Say '{}' to activate.",
+        controller.config().wake_word.name
+    );
     println!("Press Ctrl+C to exit.\n");
 
     // ── Event handler ────────────────────────────────────────────

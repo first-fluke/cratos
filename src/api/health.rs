@@ -241,10 +241,8 @@ mod tests {
 
     #[test]
     fn test_component_health_with_details() {
-        let h = ComponentHealth::healthy_with_details(
-            10,
-            serde_json::json!({"provider": "gemini"}),
-        );
+        let h =
+            ComponentHealth::healthy_with_details(10, serde_json::json!({"provider": "gemini"}));
         assert_eq!(h.status, "healthy");
         assert!(h.details.is_some());
     }

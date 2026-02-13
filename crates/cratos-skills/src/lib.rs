@@ -135,9 +135,9 @@ pub mod executor;
 pub mod generator;
 pub mod protocol;
 pub mod registry;
-pub mod router;
 #[cfg(feature = "remote")]
 pub mod remote;
+pub mod router;
 #[cfg(feature = "semantic")]
 pub mod semantic_router;
 pub mod skill;
@@ -170,7 +170,7 @@ pub use protocol::{
 
 // Re-export remote registry when feature is enabled
 #[cfg(feature = "remote")]
-pub use remote::{RemoteRegistry, RegistryEntry};
+pub use remote::{RegistryEntry, RemoteRegistry};
 
 // Re-export semantic router when feature is enabled
 #[cfg(feature = "semantic")]

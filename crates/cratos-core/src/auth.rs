@@ -247,9 +247,10 @@ impl AuthStore {
             revoked: false,
         };
 
-        let mut keys = self.keys.write().map_err(|e| {
-            AuthError::Internal(format!("Lock poisoned: {}", e))
-        })?;
+        let mut keys = self
+            .keys
+            .write()
+            .map_err(|e| AuthError::Internal(format!("Lock poisoned: {}", e)))?;
         keys.insert(key_hash_hex.clone(), stored);
 
         info!(
@@ -282,9 +283,10 @@ impl AuthStore {
         let token_hash = Self::hash_key(token);
         let token_hash_hex = Self::hash_to_hex(&token_hash);
 
-        let keys = self.keys.read().map_err(|e| {
-            AuthError::Internal(format!("Lock poisoned: {}", e))
-        })?;
+        let keys = self
+            .keys
+            .read()
+            .map_err(|e| AuthError::Internal(format!("Lock poisoned: {}", e)))?;
 
         // Find the stored key by hash
         if let Some(stored) = keys.get(&token_hash_hex) {
@@ -321,9 +323,10 @@ impl AuthStore {
 
     /// Revoke a key by its hash
     pub fn revoke_key(&self, key_hash_hex: &str) -> Result<()> {
-        let mut keys = self.keys.write().map_err(|e| {
-            AuthError::Internal(format!("Lock poisoned: {}", e))
-        })?;
+        let mut keys = self
+            .keys
+            .write()
+            .map_err(|e| AuthError::Internal(format!("Lock poisoned: {}", e)))?;
 
         if let Some(stored) = keys.get_mut(key_hash_hex) {
             stored.revoked = true;
@@ -340,9 +343,10 @@ impl AuthStore {
 
     /// List all keys (non-sensitive info only)
     pub fn list_keys(&self) -> Result<Vec<ApiKeyInfo>> {
-        let keys = self.keys.read().map_err(|e| {
-            AuthError::Internal(format!("Lock poisoned: {}", e))
-        })?;
+        let keys = self
+            .keys
+            .read()
+            .map_err(|e| AuthError::Internal(format!("Lock poisoned: {}", e)))?;
 
         Ok(keys
             .iter()

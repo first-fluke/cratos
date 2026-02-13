@@ -89,7 +89,10 @@ async fn list_executions(
 
     // Use channel-specific query if channel filter provided
     let executions = if let Some(ref channel) = query.channel {
-        match store.list_executions_by_channel(channel, "", limit, 0).await {
+        match store
+            .list_executions_by_channel(channel, "", limit, 0)
+            .await
+        {
             Ok(execs) => execs,
             Err(e) => {
                 return Json(ApiResponse::error(format!(
@@ -196,7 +199,10 @@ async fn get_replay_events(
     let viewer = ExecutionViewer::new((*store).clone());
     match viewer.get_timeline(id).await {
         Ok(timeline) => Json(ApiResponse::success(timeline)),
-        Err(e) => Json(ApiResponse::error(format!("Failed to get replay events: {}", e))),
+        Err(e) => Json(ApiResponse::error(format!(
+            "Failed to get replay events: {}",
+            e
+        ))),
     }
 }
 
@@ -210,7 +216,10 @@ async fn rerun_execution(
     let viewer = ExecutionViewer::new((*store).clone());
     match viewer.rerun(id, options).await {
         Ok(result) => Json(ApiResponse::success(result)),
-        Err(e) => Json(ApiResponse::error(format!("Failed to rerun execution: {}", e))),
+        Err(e) => Json(ApiResponse::error(format!(
+            "Failed to rerun execution: {}",
+            e
+        ))),
     }
 }
 

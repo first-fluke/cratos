@@ -1,8 +1,8 @@
 use cratos_core::auth::Scope;
 use uuid::Uuid;
 
-use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 use super::super::dispatch::DispatchContext;
+use crate::websocket::protocol::{GatewayError, GatewayErrorCode, GatewayFrame};
 
 pub(crate) async fn handle(
     id: &str,
@@ -110,10 +110,7 @@ async fn list_pending(id: &str, ctx: &DispatchContext<'_>) -> GatewayFrame {
     let manager = match ctx.approval_manager {
         Some(m) => m,
         None => {
-            return GatewayFrame::ok(
-                id,
-                serde_json::json!({"pending": [], "count": 0}),
-            );
+            return GatewayFrame::ok(id, serde_json::json!({"pending": [], "count": 0}));
         }
     };
 
@@ -191,7 +188,11 @@ mod tests {
     fn test_orchestrator() -> Arc<Orchestrator> {
         let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
         let registry = Arc::new(ToolRegistry::new());
-        Arc::new(Orchestrator::new(provider, registry, OrchestratorConfig::default()))
+        Arc::new(Orchestrator::new(
+            provider,
+            registry,
+            OrchestratorConfig::default(),
+        ))
     }
 
     fn test_event_bus() -> Arc<EventBus> {
@@ -208,7 +209,15 @@ mod tests {
 
         // Readonly user should be forbidden
         let ro = readonly_auth();
-        let ctx = DispatchContext { auth: &ro, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &ro,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
         let result = super::handle("9", "approval.respond", serde_json::json!({}), &ctx).await;
         match result {
             GatewayFrame::Response { error: Some(e), .. } => {
@@ -219,9 +228,23 @@ mod tests {
 
         // Admin without approval_manager → returns ok with "not configured" message
         let admin = admin_auth();
-        let ctx = DispatchContext { auth: &admin, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &admin,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
         let result = super::handle("10", "approval.respond", serde_json::json!({"request_id": "00000000-0000-0000-0000-000000000000", "approved": true}), &ctx).await;
-        assert!(matches!(result, GatewayFrame::Response { result: Some(_), .. }));
+        assert!(matches!(
+            result,
+            GatewayFrame::Response {
+                result: Some(_),
+                ..
+            }
+        ));
     }
 
     #[tokio::test]
@@ -232,8 +255,22 @@ mod tests {
         let orch = test_orchestrator();
         let eb = test_event_bus();
         let admin = admin_auth();
-        let ctx = DispatchContext { auth: &admin, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
-        let result = super::handle("11", "approval.respond", serde_json::json!({"request_id": "not-a-uuid"}), &ctx).await;
+        let ctx = DispatchContext {
+            auth: &admin,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
+        let result = super::handle(
+            "11",
+            "approval.respond",
+            serde_json::json!({"request_id": "not-a-uuid"}),
+            &ctx,
+        )
+        .await;
         match result {
             GatewayFrame::Response { error: Some(e), .. } => {
                 assert_eq!(e.code, GatewayErrorCode::InvalidParams);
@@ -250,10 +287,20 @@ mod tests {
         let orch = test_orchestrator();
         let eb = test_event_bus();
         let admin = admin_auth();
-        let ctx = DispatchContext { auth: &admin, node_registry: &nr, a2a_router: &a2a, browser_relay: &br, orchestrator: &orch, event_bus: &eb, approval_manager: None };
+        let ctx = DispatchContext {
+            auth: &admin,
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
         let result = super::handle("12", "approval.list", serde_json::json!({}), &ctx).await;
         match result {
-            GatewayFrame::Response { result: Some(v), .. } => {
+            GatewayFrame::Response {
+                result: Some(v), ..
+            } => {
                 assert_eq!(v["count"], 0);
             }
             _ => panic!("expected ok"),

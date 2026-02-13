@@ -4,7 +4,6 @@
 //! Google credentials are base64-encoded (same obfuscation as OpenClaw/Gemini CLI).
 //! OpenAI is a public client (PKCE only, no secret).
 
-
 use crate::oauth::OAuthProviderConfig;
 
 /// Token filename for Google OAuth tokens.
@@ -22,9 +21,8 @@ const GOOGLE_CLIENT_ID_BYTES: &[u8] = &[
 ];
 
 // "notasecret"
-const GOOGLE_CLIENT_SECRET_BYTES: &[u8] = &[
-    0x21, 0x30, 0x27, 0x36, 0x30, 0x26, 0x34, 0x21, 0x3A, 0x3B,
-];
+const GOOGLE_CLIENT_SECRET_BYTES: &[u8] =
+    &[0x21, 0x30, 0x27, 0x36, 0x30, 0x26, 0x34, 0x21, 0x3A, 0x3B];
 
 fn deobfuscate(bytes: &[u8]) -> String {
     let extracted: Vec<u8> = bytes.iter().map(|b| b ^ 0x55).rev().collect();
@@ -55,17 +53,21 @@ pub fn google_oauth_config() -> OAuthProviderConfig {
     // Try to resolve Gemini CLI credentials for comparison/fallback
     let gemini_creds = crate::gemini_auth::resolve_gemini_cli_credentials();
 
-    let (client_id, client_secret, is_gemini_cli) = if let (Some(id), Some(secret)) = (env_id, env_secret) {
-        tracing::debug!("Using custom Google OAuth credentials from Environment");
-        (id, secret, false)
-    } else if let Some(creds) = gemini_creds {
-        tracing::info!("Using Google OAuth credentials from Gemini CLI installation");
-        (creds.client_id, creds.client_secret, true)
-    } else {
-        let default_id = default_google_client_id();
-        tracing::info!("Using default Google OAuth credentials (Google Cloud SDK). ID: {}", default_id);
-        (default_id, default_google_client_secret(), true)
-    };
+    let (client_id, client_secret, is_gemini_cli) =
+        if let (Some(id), Some(secret)) = (env_id, env_secret) {
+            tracing::debug!("Using custom Google OAuth credentials from Environment");
+            (id, secret, false)
+        } else if let Some(creds) = gemini_creds {
+            tracing::info!("Using Google OAuth credentials from Gemini CLI installation");
+            (creds.client_id, creds.client_secret, true)
+        } else {
+            let default_id = default_google_client_id();
+            tracing::info!(
+                "Using default Google OAuth credentials (Google Cloud SDK). ID: {}",
+                default_id
+            );
+            (default_id, default_google_client_secret(), true)
+        };
 
     // Scopes for internal/CLI IDs (Gemini CLI, gcloud SDK).
     // Include `generative-language` for Standard API compatibility.

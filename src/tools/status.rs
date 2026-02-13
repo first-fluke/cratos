@@ -60,31 +60,29 @@ impl StatusTool {
     /// Query persona chronicle(s)
     fn query_persona(&self, name: Option<&str>) -> serde_json::Value {
         match name {
-            Some(persona_name) => {
-                match self.chronicle_store.load(persona_name) {
-                    Ok(Some(chronicle)) => {
-                        json!({
-                            "persona": chronicle.persona_name,
-                            "level": chronicle.level,
-                            "status": format!("{:?}", chronicle.status).to_lowercase(),
-                            "rating": chronicle.rating,
-                            "entries": chronicle.log.len(),
-                            "quests_total": chronicle.quests.len(),
-                            "quests_completed": chronicle.completed_quests(),
-                            "judgments": chronicle.judgments.len(),
-                            "promotion_eligible": chronicle.is_promotion_eligible(),
-                            "rating_gap": chronicle.rating_gap(),
-                            "entries_until_promotion": chronicle.entries_until_promotion(),
-                        })
-                    }
-                    Ok(None) => {
-                        json!({"error": format!("persona '{}' not found", persona_name)})
-                    }
-                    Err(e) => {
-                        json!({"error": format!("failed to load persona: {}", e)})
-                    }
+            Some(persona_name) => match self.chronicle_store.load(persona_name) {
+                Ok(Some(chronicle)) => {
+                    json!({
+                        "persona": chronicle.persona_name,
+                        "level": chronicle.level,
+                        "status": format!("{:?}", chronicle.status).to_lowercase(),
+                        "rating": chronicle.rating,
+                        "entries": chronicle.log.len(),
+                        "quests_total": chronicle.quests.len(),
+                        "quests_completed": chronicle.completed_quests(),
+                        "judgments": chronicle.judgments.len(),
+                        "promotion_eligible": chronicle.is_promotion_eligible(),
+                        "rating_gap": chronicle.rating_gap(),
+                        "entries_until_promotion": chronicle.entries_until_promotion(),
+                    })
                 }
-            }
+                Ok(None) => {
+                    json!({"error": format!("persona '{}' not found", persona_name)})
+                }
+                Err(e) => {
+                    json!({"error": format!("failed to load persona: {}", e)})
+                }
+            },
             None => {
                 // Return all personas
                 match self.chronicle_store.load_all() {
@@ -187,7 +185,9 @@ impl Tool for StatusTool {
                     "skills": skills.get("skills").cloned().unwrap_or(json!([])),
                 })
             }
-            other => json!({"error": format!("unknown target: '{}'. Use persona, skill, or all", other)}),
+            other => {
+                json!({"error": format!("unknown target: '{}'. Use persona, skill, or all", other)})
+            }
         };
 
         let duration = start.elapsed().as_millis() as u64;
@@ -215,10 +215,7 @@ mod tests {
         let store = Arc::new(SkillStore::in_memory().await.unwrap());
         let tool = StatusTool::new(store);
 
-        let result = tool
-            .execute(json!({"target": "skill"}))
-            .await
-            .unwrap();
+        let result = tool.execute(json!({"target": "skill"})).await.unwrap();
 
         assert!(result.success);
         let skills = result.output.get("skills").unwrap();
@@ -245,10 +242,7 @@ mod tests {
         let store = Arc::new(SkillStore::in_memory().await.unwrap());
         let tool = StatusTool::new(store);
 
-        let result = tool
-            .execute(json!({"target": "all"}))
-            .await
-            .unwrap();
+        let result = tool.execute(json!({"target": "all"})).await.unwrap();
 
         assert!(result.success);
         assert!(result.output.get("personas").is_some());
@@ -260,10 +254,7 @@ mod tests {
         let store = Arc::new(SkillStore::in_memory().await.unwrap());
         let tool = StatusTool::new(store);
 
-        let result = tool
-            .execute(json!({"target": "unknown"}))
-            .await
-            .unwrap();
+        let result = tool.execute(json!({"target": "unknown"})).await.unwrap();
 
         assert!(result.success);
         assert!(result.output.get("error").is_some());

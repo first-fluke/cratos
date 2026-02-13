@@ -178,7 +178,8 @@ impl AcpBridge {
                     &self.orchestrator,
                     &self.event_bus,
                     None,
-                ).await;
+                )
+                .await;
                 frame.into()
             }
             // Client shouldn't send Response or Event
@@ -218,9 +219,19 @@ pub async fn run_acp(token: Option<String>) -> anyhow::Result<()> {
     let a2a_router = Arc::new(A2aRouter::default());
     let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
     let registry = Arc::new(cratos_tools::ToolRegistry::new());
-    let orchestrator = Arc::new(Orchestrator::new(provider, registry, cratos_core::OrchestratorConfig::default()));
+    let orchestrator = Arc::new(Orchestrator::new(
+        provider,
+        registry,
+        cratos_core::OrchestratorConfig::default(),
+    ));
 
-    let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router, orchestrator);
+    let bridge = AcpBridge::new(
+        auth_store,
+        event_bus,
+        node_registry,
+        a2a_router,
+        orchestrator,
+    );
     bridge.run(token).await
 }
 
@@ -231,7 +242,11 @@ mod tests {
     fn test_orchestrator() -> Arc<Orchestrator> {
         let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
         let registry = Arc::new(cratos_tools::ToolRegistry::new());
-        Arc::new(Orchestrator::new(provider, registry, cratos_core::OrchestratorConfig::default()))
+        Arc::new(Orchestrator::new(
+            provider,
+            registry,
+            cratos_core::OrchestratorConfig::default(),
+        ))
     }
 
     #[test]
@@ -240,7 +255,13 @@ mod tests {
         let event_bus = Arc::new(EventBus::new(16));
         let node_registry = Arc::new(NodeRegistry::new());
         let a2a_router = Arc::new(A2aRouter::default());
-        let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router, test_orchestrator());
+        let bridge = AcpBridge::new(
+            auth_store,
+            event_bus,
+            node_registry,
+            a2a_router,
+            test_orchestrator(),
+        );
 
         let auth = bridge.authenticate(None).unwrap();
         assert_eq!(auth.user_id, "acp-local");
@@ -256,7 +277,13 @@ mod tests {
         let event_bus = Arc::new(EventBus::new(16));
         let node_registry = Arc::new(NodeRegistry::new());
         let a2a_router = Arc::new(A2aRouter::default());
-        let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router, test_orchestrator());
+        let bridge = AcpBridge::new(
+            auth_store,
+            event_bus,
+            node_registry,
+            a2a_router,
+            test_orchestrator(),
+        );
 
         let auth = bridge.authenticate(Some(key.expose())).unwrap();
         assert_eq!(auth.user_id, "test");
@@ -268,7 +295,13 @@ mod tests {
         let event_bus = Arc::new(EventBus::new(16));
         let node_registry = Arc::new(NodeRegistry::new());
         let a2a_router = Arc::new(A2aRouter::default());
-        let bridge = AcpBridge::new(auth_store, event_bus, node_registry, a2a_router, test_orchestrator());
+        let bridge = AcpBridge::new(
+            auth_store,
+            event_bus,
+            node_registry,
+            a2a_router,
+            test_orchestrator(),
+        );
 
         let result = bridge.authenticate(None);
         assert!(result.is_err());

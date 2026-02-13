@@ -236,7 +236,9 @@ impl PlannerConfig {
                 lines.push("      end repeat".to_string());
                 lines.push("    end repeat".to_string());
                 lines.push("  end tell".to_string());
-                lines.push("  if output is \"\" then return \"해당 날짜에 일정이 없습니다.\"".to_string());
+                lines.push(
+                    "  if output is \"\" then return \"해당 날짜에 일정이 없습니다.\"".to_string(),
+                );
                 lines.push("  return output".to_string());
                 lines.push("  ```".to_string());
                 lines.push("  **금지**: `short time string`, `short date string` 은 AppleScript에 존재하지 않음. 반드시 `time string of`만 사용.".to_string());
@@ -252,14 +254,15 @@ impl PlannerConfig {
                     lines.insert(0, "- **Calendar/일정 조회** (preferred) → `exec` with `icalBuddy`. Example: command=\"icalBuddy\" args=[\"eventsFrom:today\", \"to:today+7\"]".to_string());
                 }
                 lines.push("- **macOS apps** → `exec` with `osascript` for Reminders, Notes, Contacts, etc. Each -e flag = one AppleScript line.".to_string());
-                lines.push("- **System info** → `exec` with `sw_vers`, `sysctl`, `diskutil`, etc.".to_string());
+                lines.push(
+                    "- **System info** → `exec` with `sw_vers`, `sysctl`, `diskutil`, etc."
+                        .to_string(),
+                );
                 lines.join("\n")
             }
-            "linux" => {
-                "- **Calendar** → `exec` with `calcurse` or `gcalcli` if available\n\
+            "linux" => "- **Calendar** → `exec` with `calcurse` or `gcalcli` if available\n\
                  - **System info** → `exec` with `uname -a`, `lsb_release -a`, `df -h`, etc."
-                    .to_string()
-            }
+                .to_string(),
             _ => String::new(),
         };
 
@@ -444,16 +447,14 @@ impl Planner {
             crate::utils::metrics_global::labeled_histogram("cratos_llm_duration_seconds")
                 .observe(&[("provider", provider_name)], llm_secs);
             if let Some(ref usage) = response.usage {
-                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total")
-                    .inc_by(
-                        &[("provider", provider_name), ("direction", "input")],
-                        u64::from(usage.prompt_tokens),
-                    );
-                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total")
-                    .inc_by(
-                        &[("provider", provider_name), ("direction", "output")],
-                        u64::from(usage.completion_tokens),
-                    );
+                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total").inc_by(
+                    &[("provider", provider_name), ("direction", "input")],
+                    u64::from(usage.prompt_tokens),
+                );
+                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total").inc_by(
+                    &[("provider", provider_name), ("direction", "output")],
+                    u64::from(usage.completion_tokens),
+                );
             }
 
             Ok(PlanResponse {
@@ -497,16 +498,14 @@ impl Planner {
             crate::utils::metrics_global::labeled_histogram("cratos_llm_duration_seconds")
                 .observe(&[("provider", provider_name)], llm_secs);
             if let Some(ref usage) = response.usage {
-                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total")
-                    .inc_by(
-                        &[("provider", provider_name), ("direction", "input")],
-                        u64::from(usage.prompt_tokens),
-                    );
-                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total")
-                    .inc_by(
-                        &[("provider", provider_name), ("direction", "output")],
-                        u64::from(usage.completion_tokens),
-                    );
+                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total").inc_by(
+                    &[("provider", provider_name), ("direction", "input")],
+                    u64::from(usage.prompt_tokens),
+                );
+                crate::utils::metrics_global::labeled_counter("cratos_llm_tokens_total").inc_by(
+                    &[("provider", provider_name), ("direction", "output")],
+                    u64::from(usage.completion_tokens),
+                );
             }
 
             let is_final = response.tool_calls.is_empty();
@@ -556,7 +555,11 @@ impl Planner {
                         .take_while(|(i, _)| *i < Self::MAX_TOOL_RESULT_CHARS)
                         .map(|(_, c)| c)
                         .collect();
-                    format!("{}...\n[truncated: {} total chars]", truncated, content.len())
+                    format!(
+                        "{}...\n[truncated: {} total chars]",
+                        truncated,
+                        content.len()
+                    )
                 } else {
                     content
                 };

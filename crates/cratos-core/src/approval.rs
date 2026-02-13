@@ -351,7 +351,9 @@ impl ApprovalManager {
         responder: &AuthContext,
     ) -> std::result::Result<ApprovalRequest, ApprovalError> {
         let mut requests = self.requests.write().await;
-        let request = requests.get_mut(&request_id).ok_or(ApprovalError::NotFound)?;
+        let request = requests
+            .get_mut(&request_id)
+            .ok_or(ApprovalError::NotFound)?;
 
         // Check 1: Nonce must match (replay defense)
         if request.nonce != nonce {
@@ -359,8 +361,7 @@ impl ApprovalManager {
         }
 
         // Check 2: Ownership (original user or Admin)
-        if request.user_id != responder.user_id
-            && !responder.has_scope(&crate::auth::Scope::Admin)
+        if request.user_id != responder.user_id && !responder.has_scope(&crate::auth::Scope::Admin)
         {
             return Err(ApprovalError::Unauthorized);
         }
@@ -763,7 +764,12 @@ mod tests {
         };
 
         let result = manager
-            .resolve(request.id, request.nonce, ApprovalStatus::Approved, &other_user)
+            .resolve(
+                request.id,
+                request.nonce,
+                ApprovalStatus::Approved,
+                &other_user,
+            )
             .await;
         assert_eq!(result.unwrap_err(), ApprovalError::Unauthorized);
     }
@@ -828,7 +834,9 @@ mod tests {
                 session_id: None,
                 device_id: None,
             };
-            let _ = mgr.resolve(req_id, nonce, ApprovalStatus::Approved, &auth).await;
+            let _ = mgr
+                .resolve(req_id, nonce, ApprovalStatus::Approved, &auth)
+                .await;
         });
 
         let result = ApprovalManager::wait_async(rx, std::time::Duration::from_secs(5)).await;
@@ -852,8 +860,7 @@ mod tests {
             .await;
 
         // Very short timeout → should get Rejected
-        let result =
-            ApprovalManager::wait_async(rx, std::time::Duration::from_millis(10)).await;
+        let result = ApprovalManager::wait_async(rx, std::time::Duration::from_millis(10)).await;
         assert_eq!(result, ApprovalStatus::Rejected);
     }
 

@@ -36,9 +36,7 @@ use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use super::protocol::{
-    ConnectParams, ConnectResult, GatewayError, GatewayErrorCode, GatewayFrame,
-};
+use super::protocol::{ConnectParams, ConnectResult, GatewayError, GatewayErrorCode, GatewayFrame};
 use dispatch::DispatchContext;
 
 /// Max time without receiving a message before considering the connection dead.
@@ -67,7 +65,16 @@ pub async fn gateway_handler(
     let approval_mgr = approval_manager.map(|Extension(am)| am);
     ws.max_message_size(MAX_MESSAGE_BYTES)
         .on_upgrade(move |socket| {
-            handle_gateway(socket, auth_store, event_bus, node_registry, a2a_router, browser_relay, orchestrator, approval_mgr)
+            handle_gateway(
+                socket,
+                auth_store,
+                event_bus,
+                node_registry,
+                a2a_router,
+                browser_relay,
+                orchestrator,
+                approval_mgr,
+            )
         })
 }
 
@@ -106,23 +113,23 @@ async fn handle_gateway(
     if is_browser {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         browser_relay
-            .register(browser_relay::ExtensionConnection {
-                conn_id,
-                tx,
-            })
+            .register(browser_relay::ExtensionConnection { conn_id, tx })
             .await;
         relay_rx = Some(rx);
     }
 
     // Phase 2: Authenticated message loop with event forwarding
     let mut event_rx = event_bus.subscribe();
-    let ping_interval =
-        tokio::time::interval(tokio::time::Duration::from_secs(PING_INTERVAL_SECS));
+    let ping_interval = tokio::time::interval(tokio::time::Duration::from_secs(PING_INTERVAL_SECS));
     tokio::pin!(ping_interval);
 
     // Application-level keep-alive for browser extensions (MV3 SW idle workaround)
     let browser_keepalive = tokio::time::interval(tokio::time::Duration::from_secs(
-        if is_browser { BROWSER_KEEPALIVE_SECS } else { 86400 }, // effectively disabled for non-browser
+        if is_browser {
+            BROWSER_KEEPALIVE_SECS
+        } else {
+            86400
+        }, // effectively disabled for non-browser
     ));
     tokio::pin!(browser_keepalive);
 
@@ -441,7 +448,11 @@ mod tests {
     fn test_orchestrator() -> Arc<Orchestrator> {
         let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
         let registry = Arc::new(ToolRegistry::new());
-        Arc::new(Orchestrator::new(provider, registry, OrchestratorConfig::default()))
+        Arc::new(Orchestrator::new(
+            provider,
+            registry,
+            OrchestratorConfig::default(),
+        ))
     }
 
     fn test_event_bus() -> Arc<EventBus> {
@@ -455,7 +466,8 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        let result = handle_message("not json", &admin_auth(), &nr, &a2a, &br, &orch, &eb, None).await;
+        let result =
+            handle_message("not json", &admin_auth(), &nr, &a2a, &br, &orch, &eb, None).await;
         assert!(result.is_some());
         match result.unwrap() {
             GatewayFrame::Response { error: Some(e), .. } => {

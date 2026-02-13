@@ -5,6 +5,6 @@
 //!
 //! Usage: `cratos acp [--token <token>]`
 
-pub mod protocol;
 pub mod bridge;
 pub mod mcp_compat;
+pub mod protocol;

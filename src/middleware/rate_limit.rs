@@ -193,9 +193,8 @@ pub struct RateLimitService<S> {
     state: RateLimitState,
 }
 
-type BoxFuture<T, E> = std::pin::Pin<
-    Box<dyn std::future::Future<Output = std::result::Result<T, E>> + Send>,
->;
+type BoxFuture<T, E> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = std::result::Result<T, E>> + Send>>;
 
 impl<S, B> Service<Request<B>> for RateLimitService<S>
 where

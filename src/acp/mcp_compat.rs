@@ -152,9 +152,7 @@ impl McpBridge {
             "tools/list" => self.handle_tools_list(req.id),
             "tools/call" => self.handle_tools_call(req.id, req.params).await,
             "prompts/list" => JsonRpcResponse::ok(req.id, serde_json::json!({ "prompts": [] })),
-            "resources/list" => {
-                JsonRpcResponse::ok(req.id, serde_json::json!({ "resources": [] }))
-            }
+            "resources/list" => JsonRpcResponse::ok(req.id, serde_json::json!({ "resources": [] })),
             "notifications/initialized" => {
                 // Client acknowledges initialization — no response needed for notifications,
                 // but since we're line-based, return ok
@@ -311,8 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_initialize() {
-        let provider: Arc<dyn cratos_llm::LlmProvider> =
-            Arc::new(cratos_llm::MockProvider::new());
+        let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
         let registry = Arc::new(ToolRegistry::new());
         let orchestrator = Arc::new(Orchestrator::new(
             provider,
@@ -336,8 +333,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_unknown_method() {
-        let provider: Arc<dyn cratos_llm::LlmProvider> =
-            Arc::new(cratos_llm::MockProvider::new());
+        let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
         let registry = Arc::new(ToolRegistry::new());
         let orchestrator = Arc::new(Orchestrator::new(
             provider,

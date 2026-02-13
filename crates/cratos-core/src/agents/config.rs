@@ -367,12 +367,20 @@ impl AgentConfig {
 
     /// Create an HR agent
     pub fn hr() -> Self {
-        Self::new("hr", "HR Specialist", "Team management and culture specialist")
+        Self::new(
+            "hr",
+            "HR Specialist",
+            "Team management and culture specialist",
+        )
     }
 
     /// Create a Business Analyst agent
     pub fn ba() -> Self {
-        Self::new("ba", "Business Analyst", "Requirements analysis and process mapping specialist")
+        Self::new(
+            "ba",
+            "Business Analyst",
+            "Requirements analysis and process mapping specialist",
+        )
     }
 
     /// Create a UX Designer agent
@@ -404,17 +412,29 @@ impl AgentConfig {
 
     /// Create a Customer Support agent
     pub fn cs() -> Self {
-        Self::new("cs", "Customer Support", "User advocacy and issue resolution specialist")
+        Self::new(
+            "cs",
+            "Customer Support",
+            "User advocacy and issue resolution specialist",
+        )
     }
 
     /// Create a Legal agent
     pub fn legal() -> Self {
-        Self::new("legal", "Legal Advisor", "Compliance, licensing, and privacy specialist")
+        Self::new(
+            "legal",
+            "Legal Advisor",
+            "Compliance, licensing, and privacy specialist",
+        )
     }
 
     /// Create a Marketing agent
     pub fn marketing() -> Self {
-        Self::new("marketing", "Marketing Specialist", "Growth, content strategy, and brand management specialist")
+        Self::new(
+            "marketing",
+            "Marketing Specialist",
+            "Growth, content strategy, and brand management specialist",
+        )
     }
 
     /// Create a DevOps agent

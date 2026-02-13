@@ -52,9 +52,18 @@ impl AuditReport {
     fn from_findings(findings: Vec<AuditFinding>) -> Self {
         let summary = AuditSummary {
             total: findings.len(),
-            pass: findings.iter().filter(|f| f.severity == Severity::Pass).count(),
-            info: findings.iter().filter(|f| f.severity == Severity::Info).count(),
-            warnings: findings.iter().filter(|f| f.severity == Severity::Warning).count(),
+            pass: findings
+                .iter()
+                .filter(|f| f.severity == Severity::Pass)
+                .count(),
+            info: findings
+                .iter()
+                .filter(|f| f.severity == Severity::Info)
+                .count(),
+            warnings: findings
+                .iter()
+                .filter(|f| f.severity == Severity::Warning)
+                .count(),
             critical: findings
                 .iter()
                 .filter(|f| f.severity == Severity::Critical)
@@ -145,9 +154,7 @@ impl AuditCheck for RateLimitCheck {
                 check_name: "rate_limit".to_string(),
                 severity: Severity::Warning,
                 message: "Rate limiting is DISABLED".to_string(),
-                recommendation: Some(
-                    "Enable [server.rate_limit] enabled = true".to_string(),
-                ),
+                recommendation: Some("Enable [server.rate_limit] enabled = true".to_string()),
             }
         } else if input.rate_limit_rpm > 300 {
             AuditFinding {

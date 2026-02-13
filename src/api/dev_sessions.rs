@@ -15,9 +15,7 @@ pub fn dev_sessions_routes() -> Router {
         .route("/api/v1/dev/sessions/{tool}", get(list_sessions_by_tool))
 }
 
-async fn list_sessions(
-    Extension(monitor): Extension<Arc<DevSessionMonitor>>,
-) -> Json<Value> {
+async fn list_sessions(Extension(monitor): Extension<Arc<DevSessionMonitor>>) -> Json<Value> {
     let sessions = monitor.sessions().await;
     Json(serde_json::json!({
         "sessions": sessions,

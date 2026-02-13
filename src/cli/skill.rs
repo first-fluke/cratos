@@ -26,9 +26,11 @@ pub async fn run(cmd: SkillCommands) -> Result<()> {
         SkillCommands::Bundle { name, output } => export_bundle(&store, &name, output).await,
         SkillCommands::Search { query, registry } => search_remote(&query, registry).await,
         SkillCommands::Install { name, registry } => install_remote(&store, &name, registry).await,
-        SkillCommands::Publish { name, token, registry } => {
-            publish_remote(&store, &name, token, registry).await
-        }
+        SkillCommands::Publish {
+            name,
+            token,
+            registry,
+        } => publish_remote(&store, &name, token, registry).await,
     }
 }
 
@@ -151,8 +153,8 @@ async fn print_skill_detail(skill: &Skill, store: &SkillStore) -> Result<()> {
         println!("\n  Steps:");
         for step in &skill.steps {
             let on_err = format!("[{} on error]", step.on_error);
-            let input_preview = serde_json::to_string(&step.input_template)
-                .unwrap_or_else(|_| "{}".to_string());
+            let input_preview =
+                serde_json::to_string(&step.input_template).unwrap_or_else(|_| "{}".to_string());
             // Truncate long input previews safely
             let input_short = truncate_str(&input_preview, 40);
             println!(
@@ -174,7 +176,10 @@ async fn print_skill_detail(skill: &Skill, store: &SkillStore) -> Result<()> {
     };
 
     println!("\n  Metrics:");
-    println!("    Usage:        {} executions", skill.metadata.usage_count);
+    println!(
+        "    Usage:        {} executions",
+        skill.metadata.usage_count
+    );
     println!(
         "    Success rate: {:.1}% ({}/{})",
         rate_pct, successes, total
@@ -280,10 +285,7 @@ async fn import_skill(store: &SkillStore, path: &str) -> Result<()> {
             .context("Failed to import bundle")?;
         let new_count = results.iter().filter(|r| r.is_new).count();
         let updated = results.len() - new_count;
-        println!(
-            "Bundle import: {} new, {} updated",
-            new_count, updated
-        );
+        println!("Bundle import: {} new, {} updated", new_count, updated);
         for r in &results {
             let status = if r.is_new { "new" } else { "updated" };
             println!("  {} {}", status, r.skill.name);
@@ -314,11 +316,7 @@ async fn export_bundle(store: &SkillStore, name: &str, output: Option<String>) -
     let json = serde_json::to_string_pretty(&bundle).context("Failed to serialize bundle")?;
     std::fs::write(&output_path, json).context("Failed to write file")?;
 
-    println!(
-        "Exported {} skills to {}",
-        bundle.skills.len(),
-        output_path
-    );
+    println!("Exported {} skills to {}", bundle.skills.len(), output_path);
     Ok(())
 }
 
@@ -380,7 +378,11 @@ async fn install_remote(store: &SkillStore, name: &str, registry: Option<String>
         .await
         .context("Failed to import skill")?;
 
-    let status = if result.is_new { "Installed" } else { "Updated" };
+    let status = if result.is_new {
+        "Installed"
+    } else {
+        "Updated"
+    };
     println!("{} skill: {}", status, result.skill.name);
     for warning in &result.warnings {
         println!("  Warning: {}", warning);

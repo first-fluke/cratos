@@ -29,11 +29,15 @@ pub mod embeddings;
 pub mod error;
 pub mod fireworks;
 pub mod gemini;
+/// Gemini CLI credential extraction module.
+pub mod gemini_auth;
 pub mod glm;
 pub mod groq;
 pub mod message;
 pub mod moonshot;
 pub mod novita;
+pub mod oauth;
+pub mod oauth_config;
 pub mod ollama;
 pub mod openai;
 pub mod openrouter;
@@ -41,10 +45,6 @@ pub mod quota;
 pub mod qwen;
 pub mod router;
 pub mod siliconflow;
-pub mod oauth;
-pub mod oauth_config;
-/// Gemini CLI credential extraction module.
-pub mod gemini_auth;
 pub mod token;
 pub mod tools;
 pub mod util;
@@ -54,12 +54,12 @@ pub use cost::{
     UsageStats,
 };
 pub mod gemini_quota;
+pub use error::{Error, Result};
+pub use gemini_quota::start_gemini_quota_poller;
 pub use quota::{
     format_compact_number, format_duration, global_quota_tracker, QuotaSource, QuotaState,
     QuotaTracker,
 };
-pub use gemini_quota::start_gemini_quota_poller;
-pub use error::{Error, Result};
 pub use router::{
     count_message_tokens, count_tokens, CompletionRequest, CompletionResponse, ImageContent,
     LlmProvider, LlmRouter, Message, MessageRole, MockProvider, ModelConfig, ModelRoutingConfig,

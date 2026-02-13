@@ -100,10 +100,9 @@ impl ExternalAuthRegistry {
         provider: &str,
         credential: &str,
     ) -> Result<ExternalAuthResult, ExternalAuthError> {
-        let verifier = self
-            .verifiers
-            .get(provider)
-            .ok_or_else(|| ExternalAuthError::Unavailable(format!("provider '{}' not registered", provider)))?;
+        let verifier = self.verifiers.get(provider).ok_or_else(|| {
+            ExternalAuthError::Unavailable(format!("provider '{}' not registered", provider))
+        })?;
 
         verifier.verify(credential).await
     }
@@ -222,9 +221,9 @@ async fn query_tailscale_whois(
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
 
-    let mut stream = UnixStream::connect(socket_path)
-        .await
-        .map_err(|e| ExternalAuthError::NetworkError(format!("Failed to connect to tailscaled: {}", e)))?;
+    let mut stream = UnixStream::connect(socket_path).await.map_err(|e| {
+        ExternalAuthError::NetworkError(format!("Failed to connect to tailscaled: {}", e))
+    })?;
 
     let request = format!(
         "GET /localapi/v0/whois?addr={} HTTP/1.1\r\nHost: local-tailscaled.sock\r\nConnection: close\r\n\r\n",
@@ -333,7 +332,10 @@ mod tests {
         registry.register(Box::new(mock_failure("failing")));
 
         let result = registry.verify("failing", "cred").await;
-        assert!(matches!(result, Err(ExternalAuthError::VerificationFailed(_))));
+        assert!(matches!(
+            result,
+            Err(ExternalAuthError::VerificationFailed(_))
+        ));
     }
 
     #[tokio::test]

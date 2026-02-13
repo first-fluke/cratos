@@ -19,8 +19,7 @@ impl GraphStore {
     /// Open (or create) a graph store at the given path.
     pub async fn from_path(db_path: &std::path::Path) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| Error::Internal(format!("mkdir: {e}")))?;
+            std::fs::create_dir_all(parent).map_err(|e| Error::Internal(format!("mkdir: {e}")))?;
         }
         let url = format!("sqlite:{}?mode=rwc", db_path.display());
         let pool = SqlitePoolOptions::new()
@@ -88,11 +87,9 @@ impl GraphStore {
         .execute(&self.pool)
         .await?;
 
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name)",
-        )
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name)")
+            .execute(&self.pool)
+            .await?;
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS turn_entity_edges (
@@ -139,11 +136,9 @@ impl GraphStore {
         .execute(&self.pool)
         .await?;
 
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_explicit_name ON explicit_memories(name)",
-        )
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_explicit_name ON explicit_memories(name)")
+            .execute(&self.pool)
+            .await?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_explicit_category ON explicit_memories(category)",
@@ -240,12 +235,10 @@ impl GraphStore {
 
     /// Maximum turn_index for a session (to detect new turns).
     pub async fn max_turn_index(&self, session_id: &str) -> Result<Option<u32>> {
-        let row = sqlx::query(
-            "SELECT MAX(turn_index) as max_idx FROM turns WHERE session_id = ?1",
-        )
-        .bind(session_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let row = sqlx::query("SELECT MAX(turn_index) as max_idx FROM turns WHERE session_id = ?1")
+            .bind(session_id)
+            .fetch_one(&self.pool)
+            .await?;
 
         Ok(row.try_get::<Option<i32>, _>("max_idx")?.map(|v| v as u32))
     }
@@ -350,12 +343,10 @@ impl GraphStore {
 
     /// Get all turn IDs linked to an entity (BFS 1-hop).
     pub async fn get_turn_ids_for_entity(&self, entity_id: &str) -> Result<Vec<String>> {
-        let rows = sqlx::query(
-            "SELECT turn_id FROM turn_entity_edges WHERE entity_id = ?1",
-        )
-        .bind(entity_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = sqlx::query("SELECT turn_id FROM turn_entity_edges WHERE entity_id = ?1")
+            .bind(entity_id)
+            .fetch_all(&self.pool)
+            .await?;
 
         Ok(rows.iter().map(|r| r.get("turn_id")).collect())
     }
@@ -587,12 +578,10 @@ impl GraphStore {
 
     /// Increment the access count for a memory.
     pub async fn increment_access_count(&self, id: &str) -> Result<()> {
-        sqlx::query(
-            "UPDATE explicit_memories SET access_count = access_count + 1 WHERE id = ?1",
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE explicit_memories SET access_count = access_count + 1 WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -714,9 +703,18 @@ mod tests {
     #[tokio::test]
     async fn test_turns_by_session() {
         let store = test_store().await;
-        store.insert_turn(&make_turn("a", "s1", 0, TurnRole::User)).await.unwrap();
-        store.insert_turn(&make_turn("b", "s1", 1, TurnRole::Assistant)).await.unwrap();
-        store.insert_turn(&make_turn("c", "s2", 0, TurnRole::User)).await.unwrap();
+        store
+            .insert_turn(&make_turn("a", "s1", 0, TurnRole::User))
+            .await
+            .unwrap();
+        store
+            .insert_turn(&make_turn("b", "s1", 1, TurnRole::Assistant))
+            .await
+            .unwrap();
+        store
+            .insert_turn(&make_turn("c", "s2", 0, TurnRole::User))
+            .await
+            .unwrap();
 
         let s1 = store.get_turns_by_session("s1").await.unwrap();
         assert_eq!(s1.len(), 2);
@@ -729,8 +727,14 @@ mod tests {
         let store = test_store().await;
         assert_eq!(store.max_turn_index("s1").await.unwrap(), None);
 
-        store.insert_turn(&make_turn("a", "s1", 0, TurnRole::User)).await.unwrap();
-        store.insert_turn(&make_turn("b", "s1", 3, TurnRole::Assistant)).await.unwrap();
+        store
+            .insert_turn(&make_turn("a", "s1", 0, TurnRole::User))
+            .await
+            .unwrap();
+        store
+            .insert_turn(&make_turn("b", "s1", 3, TurnRole::Assistant))
+            .await
+            .unwrap();
         assert_eq!(store.max_turn_index("s1").await.unwrap(), Some(3));
     }
 
@@ -740,14 +744,22 @@ mod tests {
         let ent = make_entity("e1", "orchestrator.rs", EntityKind::File);
         store.upsert_entity(&ent).await.unwrap();
 
-        let got = store.get_entity_by_name("orchestrator.rs").await.unwrap().unwrap();
+        let got = store
+            .get_entity_by_name("orchestrator.rs")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(got.kind, EntityKind::File);
         assert_eq!(got.mention_count, 1);
 
         // Upsert again increments count
         let ent2 = make_entity("e1-dup", "orchestrator.rs", EntityKind::File);
         store.upsert_entity(&ent2).await.unwrap();
-        let got2 = store.get_entity_by_name("orchestrator.rs").await.unwrap().unwrap();
+        let got2 = store
+            .get_entity_by_name("orchestrator.rs")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(got2.mention_count, 2);
     }
 
@@ -780,13 +792,25 @@ mod tests {
     async fn test_cooccurrence() {
         let store = test_store().await;
         // Must insert entities first (FK constraint)
-        store.upsert_entity(&make_entity("e1", "a.rs", EntityKind::File)).await.unwrap();
-        store.upsert_entity(&make_entity("e2", "b.rs", EntityKind::File)).await.unwrap();
-        store.upsert_entity(&make_entity("e3", "c.rs", EntityKind::File)).await.unwrap();
+        store
+            .upsert_entity(&make_entity("e1", "a.rs", EntityKind::File))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&make_entity("e2", "b.rs", EntityKind::File))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&make_entity("e3", "c.rs", EntityKind::File))
+            .await
+            .unwrap();
 
         let ids = vec!["e1".into(), "e2".into(), "e3".into()];
         store.update_cooccurrence(&ids).await.unwrap();
-        store.update_cooccurrence(&["e1".into(), "e2".into()]).await.unwrap();
+        store
+            .update_cooccurrence(&["e1".into(), "e2".into()])
+            .await
+            .unwrap();
 
         let co = store.get_cooccurring_entities("e1", 10).await.unwrap();
         // e2 should have count 2 (appeared with e1 twice)
@@ -800,9 +824,18 @@ mod tests {
     #[tokio::test]
     async fn test_get_turns_by_ids() {
         let store = test_store().await;
-        store.insert_turn(&make_turn("t1", "s1", 0, TurnRole::User)).await.unwrap();
-        store.insert_turn(&make_turn("t2", "s1", 1, TurnRole::Assistant)).await.unwrap();
-        store.insert_turn(&make_turn("t3", "s1", 2, TurnRole::User)).await.unwrap();
+        store
+            .insert_turn(&make_turn("t1", "s1", 0, TurnRole::User))
+            .await
+            .unwrap();
+        store
+            .insert_turn(&make_turn("t2", "s1", 1, TurnRole::Assistant))
+            .await
+            .unwrap();
+        store
+            .insert_turn(&make_turn("t3", "s1", 2, TurnRole::User))
+            .await
+            .unwrap();
 
         let turns = store
             .get_turns_by_ids(&["t1".into(), "t3".into()])
@@ -834,7 +867,11 @@ mod tests {
         let mem = make_explicit("my-note", "Remember to fix the bug");
         store.save_explicit_memory(&mem).await.unwrap();
 
-        let got = store.get_explicit_by_name("my-note").await.unwrap().unwrap();
+        let got = store
+            .get_explicit_by_name("my-note")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(got.name, "my-note");
         assert_eq!(got.content, "Remember to fix the bug");
         assert_eq!(got.category, "general");
@@ -859,23 +896,38 @@ mod tests {
     #[tokio::test]
     async fn test_search_explicit() {
         let store = test_store().await;
-        store.save_explicit_memory(&make_explicit("api-key", "The API key is xyz")).await.unwrap();
-        store.save_explicit_memory(&make_explicit("db-config", "Database on port 5432")).await.unwrap();
+        store
+            .save_explicit_memory(&make_explicit("api-key", "The API key is xyz"))
+            .await
+            .unwrap();
+        store
+            .save_explicit_memory(&make_explicit("db-config", "Database on port 5432"))
+            .await
+            .unwrap();
 
         let results = store.search_explicit("API", None, 10).await.unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "api-key");
 
         // Search by category
-        let results = store.search_explicit("API", Some("knowledge"), 10).await.unwrap();
+        let results = store
+            .search_explicit("API", Some("knowledge"), 10)
+            .await
+            .unwrap();
         assert!(results.is_empty()); // category mismatch
     }
 
     #[tokio::test]
     async fn test_list_explicit() {
         let store = test_store().await;
-        store.save_explicit_memory(&make_explicit("a", "first")).await.unwrap();
-        store.save_explicit_memory(&make_explicit("b", "second")).await.unwrap();
+        store
+            .save_explicit_memory(&make_explicit("a", "first"))
+            .await
+            .unwrap();
+        store
+            .save_explicit_memory(&make_explicit("b", "second"))
+            .await
+            .unwrap();
 
         let all = store.list_explicit(None, 10).await.unwrap();
         assert_eq!(all.len(), 2);
@@ -884,10 +936,17 @@ mod tests {
     #[tokio::test]
     async fn test_delete_explicit() {
         let store = test_store().await;
-        store.save_explicit_memory(&make_explicit("to-delete", "bye")).await.unwrap();
+        store
+            .save_explicit_memory(&make_explicit("to-delete", "bye"))
+            .await
+            .unwrap();
 
         assert!(store.delete_explicit("to-delete").await.unwrap());
-        assert!(store.get_explicit_by_name("to-delete").await.unwrap().is_none());
+        assert!(store
+            .get_explicit_by_name("to-delete")
+            .await
+            .unwrap()
+            .is_none());
         // Deleting again returns false
         assert!(!store.delete_explicit("to-delete").await.unwrap());
     }
@@ -895,22 +954,38 @@ mod tests {
     #[tokio::test]
     async fn test_increment_access_count() {
         let store = test_store().await;
-        store.save_explicit_memory(&make_explicit("counted", "data")).await.unwrap();
+        store
+            .save_explicit_memory(&make_explicit("counted", "data"))
+            .await
+            .unwrap();
 
         store.increment_access_count("em-counted").await.unwrap();
         store.increment_access_count("em-counted").await.unwrap();
 
-        let got = store.get_explicit_by_name("counted").await.unwrap().unwrap();
+        let got = store
+            .get_explicit_by_name("counted")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(got.access_count, 2);
     }
 
     #[tokio::test]
     async fn test_memory_entity_edges() {
         let store = test_store().await;
-        store.save_explicit_memory(&make_explicit("orch-fix", "Fixed orchestrator bug")).await.unwrap();
-        store.upsert_entity(&make_entity("e1", "orchestrator.rs", EntityKind::File)).await.unwrap();
+        store
+            .save_explicit_memory(&make_explicit("orch-fix", "Fixed orchestrator bug"))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&make_entity("e1", "orchestrator.rs", EntityKind::File))
+            .await
+            .unwrap();
 
-        store.insert_memory_entity_edge("em-orch-fix", "e1", 0.9).await.unwrap();
+        store
+            .insert_memory_entity_edge("em-orch-fix", "e1", 0.9)
+            .await
+            .unwrap();
 
         let mems = store.get_explicit_by_entity("e1").await.unwrap();
         assert_eq!(mems.len(), 1);

@@ -166,11 +166,7 @@ impl ExecutionViewer {
     /// In dry-run mode, returns the steps that *would* be executed without side effects.
     /// In live mode, records a new execution with the replayed events.
     #[instrument(skip(self))]
-    pub async fn rerun(
-        &self,
-        execution_id: Uuid,
-        options: ReplayOptions,
-    ) -> Result<ReplayResult> {
+    pub async fn rerun(&self, execution_id: Uuid, options: ReplayOptions) -> Result<ReplayResult> {
         let _execution = self.store.get_execution(execution_id).await?;
         let events = self.store.get_execution_events(execution_id).await?;
 
@@ -194,8 +190,10 @@ impl ExecutionViewer {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            let skipped = matches!(event.event_type, EventType::ToolCall | EventType::ToolResult)
-                && options.skip_tools.iter().any(|s| s == tool_name);
+            let skipped = matches!(
+                event.event_type,
+                EventType::ToolCall | EventType::ToolResult
+            ) && options.skip_tools.iter().any(|s| s == tool_name);
 
             let overridden = matches!(event.event_type, EventType::ToolCall)
                 && options.tool_overrides.contains_key(tool_name);
@@ -712,7 +710,8 @@ fn truncate(s: &str, max_len: usize) -> String {
         s.to_string()
     } else {
         let cut = max_len.saturating_sub(3);
-        let safe_end = s.char_indices()
+        let safe_end = s
+            .char_indices()
             .take_while(|(i, _)| *i < cut)
             .last()
             .map(|(i, c)| i + c.len_utf8())
@@ -799,7 +798,10 @@ mod tests {
     #[test]
     fn test_replay_options_with_overrides() {
         let mut overrides = std::collections::HashMap::new();
-        overrides.insert("http_get".to_string(), serde_json::json!({"url": "http://example.com"}));
+        overrides.insert(
+            "http_get".to_string(),
+            serde_json::json!({"url": "http://example.com"}),
+        );
 
         let opts = ReplayOptions {
             dry_run: false,

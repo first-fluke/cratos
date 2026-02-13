@@ -11,7 +11,7 @@
 #![forbid(unsafe_code)]
 
 use chrono::{DateTime, Utc};
-use ed25519_dalek::{Signature, SigningKey, VerifyingKey, Verifier};
+use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
 use rand::RngCore;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
@@ -196,11 +196,7 @@ mod tests {
         let challenge = generate_challenge();
         let signature = sign_challenge(&signing_key, &challenge);
 
-        let result = verify_signature(
-            verifying_key.as_bytes(),
-            &challenge,
-            &signature,
-        );
+        let result = verify_signature(verifying_key.as_bytes(), &challenge, &signature);
         assert!(result.is_ok());
     }
 
@@ -213,11 +209,7 @@ mod tests {
         let signature = sign_challenge(&signing_key, &challenge);
 
         // Wrong public key
-        let result = verify_signature(
-            other_verifying_key.as_bytes(),
-            &challenge,
-            &signature,
-        );
+        let result = verify_signature(other_verifying_key.as_bytes(), &challenge, &signature);
         assert_eq!(result, Err(DeviceAuthError::VerificationFailed));
     }
 
@@ -229,11 +221,7 @@ mod tests {
 
         // Different message
         let other_challenge = generate_challenge();
-        let result = verify_signature(
-            verifying_key.as_bytes(),
-            &other_challenge,
-            &signature,
-        );
+        let result = verify_signature(verifying_key.as_bytes(), &other_challenge, &signature);
         assert_eq!(result, Err(DeviceAuthError::VerificationFailed));
     }
 
@@ -313,11 +301,7 @@ mod tests {
         let signature = sign_challenge(&node_signing_key, &challenge);
 
         // 4. Server verifies with stored public key
-        let result = verify_signature(
-            node_verifying_key.as_bytes(),
-            &challenge,
-            &signature,
-        );
+        let result = verify_signature(node_verifying_key.as_bytes(), &challenge, &signature);
         assert!(result.is_ok());
     }
 }

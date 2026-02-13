@@ -481,10 +481,7 @@ impl MetricsRegistry {
                     let mut all_labels = labels.clone();
                     all_labels.push(("le".to_string(), format!("{}", bound)));
                     let bucket_label_str = format_labels(&all_labels);
-                    output.push_str(&format!(
-                        "{}_bucket{} {}\n",
-                        name, bucket_label_str, count
-                    ));
+                    output.push_str(&format!("{}_bucket{} {}\n", name, bucket_label_str, count));
                 }
                 let mut inf_labels = labels.clone();
                 inf_labels.push(("le".to_string(), "+Inf".to_string()));
@@ -495,13 +492,12 @@ impl MetricsRegistry {
                     inf_label_str,
                     histogram.count()
                 ));
-                output.push_str(&format!(
-                    "{}_sum{} {}\n",
-                    name, label_str, histogram.sum()
-                ));
+                output.push_str(&format!("{}_sum{} {}\n", name, label_str, histogram.sum()));
                 output.push_str(&format!(
                     "{}_count{} {}\n",
-                    name, label_str, histogram.count()
+                    name,
+                    label_str,
+                    histogram.count()
                 ));
             }
         }

@@ -297,9 +297,7 @@ impl Chronicle {
     #[must_use]
     pub fn rating_gap(&self) -> f32 {
         match self.rating {
-            Some(r) if r < Self::PROMOTION_RATING_THRESHOLD => {
-                Self::PROMOTION_RATING_THRESHOLD - r
-            }
+            Some(r) if r < Self::PROMOTION_RATING_THRESHOLD => Self::PROMOTION_RATING_THRESHOLD - r,
             _ => 0.0,
         }
     }

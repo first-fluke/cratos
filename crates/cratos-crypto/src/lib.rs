@@ -96,8 +96,8 @@ impl SessionCipher {
     /// Each call generates a unique nonce, so encrypting the same plaintext
     /// twice produces different ciphertext (semantic security).
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<EncryptedData> {
-        let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|_| CryptoError::EncryptionFailed)?;
+        let cipher =
+            Aes256Gcm::new_from_slice(&self.key).map_err(|_| CryptoError::EncryptionFailed)?;
 
         // Generate fresh random nonce
         let mut nonce_bytes = [0u8; 12];
@@ -124,8 +124,8 @@ impl SessionCipher {
             )));
         }
 
-        let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|_| CryptoError::DecryptionFailed)?;
+        let cipher =
+            Aes256Gcm::new_from_slice(&self.key).map_err(|_| CryptoError::DecryptionFailed)?;
         let nonce = Nonce::from_slice(&data.nonce);
 
         cipher

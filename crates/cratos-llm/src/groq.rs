@@ -539,7 +539,9 @@ mod tests {
     fn test_model_supports_tools() {
         assert!(GroqProvider::model_supports_tools("openai/gpt-oss-20b"));
         assert!(GroqProvider::model_supports_tools("openai/gpt-oss-120b"));
-        assert!(!GroqProvider::model_supports_tools("llama-3.3-70b-versatile"));
+        assert!(!GroqProvider::model_supports_tools(
+            "llama-3.3-70b-versatile"
+        ));
         assert!(!GroqProvider::model_supports_tools("llama-3.1-8b-instant"));
         assert!(!GroqProvider::model_supports_tools("qwen/qwen3-32b"));
     }

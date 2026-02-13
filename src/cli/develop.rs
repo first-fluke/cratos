@@ -81,7 +81,9 @@ pub async fn run(issue: &str, repo: Option<&str>, dry_run: bool) -> Result<()> {
     }
     println!("---");
 
-    let result = orchestrator.process(input).await
+    let result = orchestrator
+        .process(input)
+        .await
         .map_err(|e| anyhow::anyhow!("Orchestrator execution failed: {}", e))?;
 
     println!("{}", result.response);

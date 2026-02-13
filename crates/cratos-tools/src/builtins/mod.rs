@@ -26,7 +26,9 @@ pub use bash::{BashConfig, BashSecurityMode, BashTool};
 pub use config::{ConfigAction, ConfigInput, ConfigTarget, ConfigTool};
 pub use exec::{ExecConfig, ExecMode, ExecTool};
 pub use file::{FileListTool, FileReadTool, FileWriteTool};
-pub use git::{GitBranchTool, GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPushTool, GitStatusTool};
+pub use git::{
+    GitBranchTool, GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPushTool, GitStatusTool,
+};
 pub use github::GitHubApiTool;
 pub use http::{HttpGetTool, HttpPostTool};
 pub use web_search::WebSearchTool;

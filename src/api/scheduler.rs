@@ -14,9 +14,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use cratos_core::scheduler::{
-    ScheduledTask, SchedulerEngine, TaskAction, TriggerType,
-};
+use cratos_core::scheduler::{ScheduledTask, SchedulerEngine, TaskAction, TriggerType};
 
 use super::config::ApiResponse;
 use crate::middleware::auth::{require_scope, RequireAuth};
@@ -82,10 +80,7 @@ fn task_to_view(task: &ScheduledTask) -> TaskView {
             "interval".to_string(),
             serde_json::json!({ "seconds": i.seconds, "immediate": i.immediate }),
         ),
-        TriggerType::OneTime(o) => (
-            "one_time".to_string(),
-            serde_json::json!({ "at": o.at }),
-        ),
+        TriggerType::OneTime(o) => ("one_time".to_string(), serde_json::json!({ "at": o.at })),
         TriggerType::File(f) => (
             "file".to_string(),
             serde_json::to_value(f).unwrap_or_default(),
@@ -183,7 +178,10 @@ fn parse_action(action_type: &str, config: &serde_json::Value) -> Result<TaskAct
                 .as_str()
                 .ok_or("Missing tool name")?
                 .to_string();
-            let args = config.get("args").cloned().unwrap_or(serde_json::Value::Object(Default::default()));
+            let args = config
+                .get("args")
+                .cloned()
+                .unwrap_or(serde_json::Value::Object(Default::default()));
             Ok(TaskAction::ToolCall { tool, args })
         }
         "notification" => {
@@ -191,10 +189,7 @@ fn parse_action(action_type: &str, config: &serde_json::Value) -> Result<TaskAct
                 .as_str()
                 .ok_or("Missing channel")?
                 .to_string();
-            let channel_id = config["channel_id"]
-                .as_str()
-                .unwrap_or("")
-                .to_string();
+            let channel_id = config["channel_id"].as_str().unwrap_or("").to_string();
             let message = config["message"]
                 .as_str()
                 .ok_or("Missing message")?
@@ -232,7 +227,10 @@ async fn list_tasks(
             let views: Vec<TaskView> = tasks.iter().map(task_to_view).collect();
             Ok(Json(ApiResponse::success(views)))
         }
-        Err(e) => Ok(Json(ApiResponse::error(format!("Failed to list tasks: {}", e)))),
+        Err(e) => Ok(Json(ApiResponse::error(format!(
+            "Failed to list tasks: {}",
+            e
+        )))),
     }
 }
 
@@ -260,8 +258,8 @@ async fn create_task(
     };
 
     // Build task
-    let mut task = ScheduledTask::new(&request.name, trigger, action)
-        .with_priority(request.priority);
+    let mut task =
+        ScheduledTask::new(&request.name, trigger, action).with_priority(request.priority);
     if let Some(desc) = request.description {
         task = task.with_description(desc);
     }
@@ -274,7 +272,10 @@ async fn create_task(
             info!("Created scheduled task: {} ({})", view.name, view.id);
             Ok(Json(ApiResponse::success(view)))
         }
-        Err(e) => Ok(Json(ApiResponse::error(format!("Failed to create task: {}", e)))),
+        Err(e) => Ok(Json(ApiResponse::error(format!(
+            "Failed to create task: {}",
+            e
+        )))),
     }
 }
 
@@ -337,7 +338,10 @@ async fn delete_task(
             info!("Deleted task: {}", id);
             Ok(Json(ApiResponse::success(())))
         }
-        Err(e) => Ok(Json(ApiResponse::error(format!("Failed to delete task: {}", e)))),
+        Err(e) => Ok(Json(ApiResponse::error(format!(
+            "Failed to delete task: {}",
+            e
+        )))),
     }
 }
 

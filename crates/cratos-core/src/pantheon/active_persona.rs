@@ -37,10 +37,7 @@ impl ActivePersonaState {
     pub fn save(&self, name: &str) -> Result<()> {
         if let Some(parent) = self.state_file.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                Error::Internal(format!(
-                    "Failed to create directory {:?}: {}",
-                    parent, e
-                ))
+                Error::Internal(format!("Failed to create directory {:?}: {}", parent, e))
             })?;
         }
 

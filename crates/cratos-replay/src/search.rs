@@ -313,7 +313,8 @@ fn truncate_text(text: &str, max_len: usize) -> String {
     }
 
     // Find a char-boundary-safe cut point
-    let safe_end = text.char_indices()
+    let safe_end = text
+        .char_indices()
         .take_while(|(i, _)| *i < max_len)
         .last()
         .map(|(i, c)| i + c.len_utf8())

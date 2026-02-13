@@ -6,7 +6,7 @@
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::debug;
 use uuid::Uuid;
 
@@ -98,12 +98,7 @@ impl BrowserRelay {
         }
 
         // Await response with timeout
-        match tokio::time::timeout(
-            tokio::time::Duration::from_secs(RELAY_TIMEOUT_SECS),
-            rx,
-        )
-        .await
-        {
+        match tokio::time::timeout(tokio::time::Duration::from_secs(RELAY_TIMEOUT_SECS), rx).await {
             Ok(Ok(Ok(value))) => Ok(value),
             Ok(Ok(Err(gw_err))) => Err(gw_err.message),
             Ok(Err(_)) => {

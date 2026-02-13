@@ -3,8 +3,8 @@
 //! ACP messages map 1:1 to Gateway WS frames, enabling IDE tools
 //! to communicate with Cratos via stdin/stdout instead of WebSocket.
 
-use serde::{Deserialize, Serialize};
 use crate::websocket::protocol::{GatewayError, GatewayFrame};
+use serde::{Deserialize, Serialize};
 
 /// ACP message (stdin/stdout JSON lines).
 ///
@@ -44,9 +44,7 @@ impl From<GatewayFrame> for AcpMessage {
             GatewayFrame::Response { id, result, error } => {
                 AcpMessage::Response { id, result, error }
             }
-            GatewayFrame::Event { event, data } => {
-                AcpMessage::Event { event, data }
-            }
+            GatewayFrame::Event { event, data } => AcpMessage::Event { event, data },
         }
     }
 }
@@ -60,9 +58,7 @@ impl From<AcpMessage> for GatewayFrame {
             AcpMessage::Response { id, result, error } => {
                 GatewayFrame::Response { id, result, error }
             }
-            AcpMessage::Event { event, data } => {
-                GatewayFrame::Event { event, data }
-            }
+            AcpMessage::Event { event, data } => GatewayFrame::Event { event, data },
         }
     }
 }

@@ -8,6 +8,7 @@ use crate::message::{
     OutgoingMessage,
 };
 use crate::util::{markdown_to_html, mask_for_logging, sanitize_error_for_user};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use cratos_core::dev_sessions::DevSessionMonitor;
 use cratos_core::{Orchestrator, OrchestratorInput};
 use cratos_llm::ImageContent;
@@ -17,11 +18,10 @@ use teloxide::{
     payloads::SendMessageSetters,
     prelude::*,
     types::{
-        ChatAction, FileId, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, Message as TelegramMessage,
-        MessageId, ParseMode, ReplyParameters,
+        ChatAction, FileId, InlineKeyboardButton, InlineKeyboardMarkup, InputFile,
+        Message as TelegramMessage, MessageId, ParseMode, ReplyParameters,
     },
 };
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use tracing::{debug, error, info, instrument};
 
 /// DM security policy for Telegram
@@ -356,9 +356,10 @@ impl TelegramAdapter {
         let adapter = self.clone();
 
         // Spawn EventBus notification listener if notify_chat_id is set
-        let _notify_handle = if let (Some(notify_chat_id), Some(bus)) =
-            (self.config.notify_chat_id, orchestrator.event_bus().cloned())
-        {
+        let _notify_handle = if let (Some(notify_chat_id), Some(bus)) = (
+            self.config.notify_chat_id,
+            orchestrator.event_bus().cloned(),
+        ) {
             let notify_bot = self.bot.clone();
             let chat_id = ChatId(notify_chat_id);
             let mut rx = bus.subscribe();
@@ -458,7 +459,9 @@ impl TelegramAdapter {
                         for s in &sessions {
                             lines.push(format!(
                                 "  - {:?} ({:?}) @ {}",
-                                s.tool, s.status, s.project_path.as_deref().unwrap_or("unknown")
+                                s.tool,
+                                s.status,
+                                s.project_path.as_deref().unwrap_or("unknown")
                             ));
                         }
                     }
@@ -479,7 +482,8 @@ impl TelegramAdapter {
                     if sessions.is_empty() {
                         "No active AI development sessions.".to_string()
                     } else {
-                        let mut lines = vec![format!("<b>Active AI Sessions ({})</b>", sessions.len())];
+                        let mut lines =
+                            vec![format!("<b>Active AI Sessions ({})</b>", sessions.len())];
                         for (i, s) in sessions.iter().enumerate() {
                             lines.push(format!(
                                 "{}. <b>{:?}</b> - {:?}\n   Path: <code>{}</code>\n   PID: {:?}",
@@ -515,7 +519,10 @@ impl TelegramAdapter {
                     if orchestrator.cancel_execution(exec_id) {
                         format!("Cancelled execution <code>{}</code>", exec_id)
                     } else {
-                        format!("Execution <code>{}</code> not found or already completed.", exec_id)
+                        format!(
+                            "Execution <code>{}</code> not found or already completed.",
+                            exec_id
+                        )
                     }
                 } else {
                     "Invalid execution ID. Please provide a valid UUID.".to_string()
@@ -573,7 +580,10 @@ impl TelegramAdapter {
                                 crate::util::markdown_to_html(&text)
                             }
                             Err(e) => {
-                                format!("Agent error: {}", crate::util::sanitize_error_for_user(&e.to_string()))
+                                format!(
+                                    "Agent error: {}",
+                                    crate::util::sanitize_error_for_user(&e.to_string())
+                                )
                             }
                         }
                     }
@@ -673,19 +683,25 @@ impl TelegramAdapter {
                 while let Ok(event) = rx.recv().await {
                     match event {
                         cratos_core::event_bus::OrchestratorEvent::ToolStarted {
-                            tool_name, ..
+                            tool_name,
+                            ..
                         } => {
                             tool_count += 1;
                             let now = std::time::Instant::now();
                             if now.duration_since(last_edit) >= min_interval {
-                                let text = format!("처리 중... [{}] 실행 중 ({}번째 도구)", tool_name, tool_count);
+                                let text = format!(
+                                    "처리 중... [{}] 실행 중 ({}번째 도구)",
+                                    tool_name, tool_count
+                                );
                                 let _ = bot_clone
                                     .edit_message_text(chat_id, progress_msg_id, &text)
                                     .await;
                                 last_edit = now;
                             }
                         }
-                        cratos_core::event_bus::OrchestratorEvent::ExecutionCompleted { .. }
+                        cratos_core::event_bus::OrchestratorEvent::ExecutionCompleted {
+                            ..
+                        }
                         | cratos_core::event_bus::OrchestratorEvent::ExecutionFailed { .. } => {
                             break;
                         }
@@ -851,7 +867,9 @@ impl ChannelAdapter for TelegramAdapter {
 
         if message.parse_markdown {
             let html_text = markdown_to_html(&message.text);
-            request = self.bot.send_message(ChatId(chat_id), &html_text)
+            request = self
+                .bot
+                .send_message(ChatId(chat_id), &html_text)
                 .parse_mode(ParseMode::Html);
         }
 
@@ -889,7 +907,9 @@ impl ChannelAdapter for TelegramAdapter {
 
         if message.parse_markdown {
             let html_text = markdown_to_html(&message.text);
-            request = self.bot.edit_message_text(ChatId(chat_id), MessageId(msg_id), &html_text)
+            request = self
+                .bot
+                .edit_message_text(ChatId(chat_id), MessageId(msg_id), &html_text)
                 .parse_mode(ParseMode::Html);
         }
 

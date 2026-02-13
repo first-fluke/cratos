@@ -41,8 +41,7 @@ mod legacy {
     use crate::quota::{global_quota_tracker, QuotaSource, QuotaState};
 
     const POLL_INTERVAL_SECS: u64 = 45;
-    const QUOTA_API_URL: &str =
-        "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota";
+    const QUOTA_API_URL: &str = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota";
 
     #[derive(Debug, Deserialize)]
     struct QuotaResponse {

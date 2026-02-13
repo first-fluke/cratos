@@ -2,7 +2,10 @@
 //!
 //! Provides HTTP endpoints for browser extension status and control.
 
-use axum::{routing::{get, post}, Extension, Json, Router};
+use axum::{
+    routing::{get, post},
+    Extension, Json, Router,
+};
 use serde_json::Value;
 use std::sync::Arc;
 

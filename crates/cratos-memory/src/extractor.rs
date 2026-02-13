@@ -20,17 +20,13 @@ static RE_FILE: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 
-static RE_FUNCTION: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)").unwrap()
-});
+static RE_FUNCTION: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)").unwrap());
 
-static RE_CRATE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\b(cratos-\w+)\b").unwrap()
-});
+static RE_CRATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b(cratos-\w+)\b").unwrap());
 
-static RE_ERROR: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:error\[E\d+\]|Error::\w+|panic!?\b|unwrap\(\))").unwrap()
-});
+static RE_ERROR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:error\[E\d+\]|Error::\w+|panic!?\b|unwrap\(\))").unwrap());
 
 // Config key pattern reserved for future use (too many false positives now)
 // static RE_CONFIG: LazyLock<Regex> = LazyLock::new(|| {
@@ -40,19 +36,61 @@ static RE_ERROR: LazyLock<Regex> = LazyLock::new(|| {
 /// Technical concept keywords.
 static CONCEPT_KEYWORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
-        "graph rag", "embedding", "vector", "hnsw", "cosine",
-        "websocket", "socket mode", "oauth", "jwt", "bearer",
-        "rate limit", "middleware", "auth", "rbac", "scope",
-        "sqlite", "redis", "migration", "wal",
-        "tokio", "async", "spawn", "channel",
-        "onnx", "tract", "silero", "vad", "whisper", "stt", "tts",
-        "llm", "prompt", "completion", "tool call", "function call",
-        "orchestrator", "planner", "session", "context window",
-        "replay", "event sourcing", "audit",
-        "telegram", "slack", "discord", "matrix",
-        "docker", "sandbox", "seccomp",
-        "mcp", "sse", "json-rpc",
-        "ci/cd", "github actions", "pull request",
+        "graph rag",
+        "embedding",
+        "vector",
+        "hnsw",
+        "cosine",
+        "websocket",
+        "socket mode",
+        "oauth",
+        "jwt",
+        "bearer",
+        "rate limit",
+        "middleware",
+        "auth",
+        "rbac",
+        "scope",
+        "sqlite",
+        "redis",
+        "migration",
+        "wal",
+        "tokio",
+        "async",
+        "spawn",
+        "channel",
+        "onnx",
+        "tract",
+        "silero",
+        "vad",
+        "whisper",
+        "stt",
+        "tts",
+        "llm",
+        "prompt",
+        "completion",
+        "tool call",
+        "function call",
+        "orchestrator",
+        "planner",
+        "session",
+        "context window",
+        "replay",
+        "event sourcing",
+        "audit",
+        "telegram",
+        "slack",
+        "discord",
+        "matrix",
+        "docker",
+        "sandbox",
+        "seccomp",
+        "mcp",
+        "sse",
+        "json-rpc",
+        "ci/cd",
+        "github actions",
+        "pull request",
     ]
     .into_iter()
     .collect()
@@ -61,9 +99,20 @@ static CONCEPT_KEYWORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 /// Known tool names (kept short; callers may supply extras).
 static TOOL_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
-        "exec", "web_search", "read_file", "write_file", "list_dir",
-        "http_request", "search", "memory", "calculator", "calendar",
-        "reminder", "note", "code_review", "git",
+        "exec",
+        "web_search",
+        "read_file",
+        "write_file",
+        "list_dir",
+        "http_request",
+        "search",
+        "memory",
+        "calculator",
+        "calendar",
+        "reminder",
+        "note",
+        "code_review",
+        "git",
     ]
     .into_iter()
     .collect()
@@ -157,7 +206,8 @@ pub fn extract(content: &str) -> Vec<ExtractedEntity> {
         let lower = name.to_lowercase();
         // Skip noise words and already-seen entries
         if lower.len() >= 2
-            && !["the", "and", "for", "not", "but", "with", "from", "into"].contains(&lower.as_str())
+            && !["the", "and", "for", "not", "but", "with", "from", "into"]
+                .contains(&lower.as_str())
             && seen.insert(("acronym", lower.clone()))
         {
             entities.push(ExtractedEntity {

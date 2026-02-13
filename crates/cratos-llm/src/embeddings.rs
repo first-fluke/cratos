@@ -180,11 +180,8 @@ impl TractEmbeddingProvider {
             .iter()
             .map(|&x| x as i64)
             .collect();
-        let mut token_type_ids: Vec<i64> = encoding
-            .get_type_ids()
-            .iter()
-            .map(|&x| x as i64)
-            .collect();
+        let mut token_type_ids: Vec<i64> =
+            encoding.get_type_ids().iter().map(|&x| x as i64).collect();
 
         // Truncate if needed
         if input_ids.len() > self.max_length {
@@ -211,14 +208,15 @@ impl TractEmbeddingProvider {
         let token_type_ids_tensor: Tensor =
             tract_ndarray::Array2::from_shape_vec((1, seq_len), token_type_ids)
                 .map_err(|e| {
-                    Error::Provider(format!(
-                        "Failed to create token_type_ids tensor: {}",
-                        e
-                    ))
+                    Error::Provider(format!("Failed to create token_type_ids tensor: {}", e))
                 })?
                 .into();
 
-        Ok((input_ids_tensor, attention_mask_tensor, token_type_ids_tensor))
+        Ok((
+            input_ids_tensor,
+            attention_mask_tensor,
+            token_type_ids_tensor,
+        ))
     }
 
     /// Mean pooling over token embeddings

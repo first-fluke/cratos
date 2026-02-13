@@ -79,14 +79,19 @@ pub async fn run(persona: Option<String>) -> Result<()> {
         .with_planner_config({
             let (prov_name, model_name) = if llm_provider.name() == "router" {
                 let model = llm_provider.default_model();
-                let name = if config.llm.default_provider.is_empty() || config.llm.default_provider == "auto" {
+                let name = if config.llm.default_provider.is_empty()
+                    || config.llm.default_provider == "auto"
+                {
                     "auto-selected"
                 } else {
                     config.llm.default_provider.as_str()
                 };
                 (name.to_string(), model.to_string())
             } else {
-                (llm_provider.name().to_string(), llm_provider.default_model().to_string())
+                (
+                    llm_provider.name().to_string(),
+                    llm_provider.default_model().to_string(),
+                )
             };
             PlannerConfig::default()
                 .with_machine_info()

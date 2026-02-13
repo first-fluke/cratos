@@ -20,7 +20,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // status bar (compact, no border)
-            Constraint::Min(3),   // body (chat + optional sidebar)
+            Constraint::Min(3),    // body (chat + optional sidebar)
             Constraint::Length(1), // input (compact, no border)
         ])
         .split(frame.area());
@@ -37,7 +37,11 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let persona_display = capitalize(&app.persona);
 
     // Left: persona + provider + version + mouse mode
-    let mouse_mode = if app.mouse_captured { "[Scroll]" } else { "[Select]" };
+    let mouse_mode = if app.mouse_captured {
+        "[Scroll]"
+    } else {
+        "[Select]"
+    };
     let left = format!(
         " Cratos \u{00b7} {} \u{00b7} {} v{} {}",
         persona_display, app.provider_name, version, mouse_mode,
@@ -104,16 +108,12 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     if !right.is_empty() {
-        spans.push(Span::styled(
-            right,
-            Style::default().fg(Color::LightCyan),
-        ));
+        spans.push(Span::styled(right, Style::default().fg(Color::LightCyan)));
     }
 
     let line = Line::from(spans);
-    let paragraph = Paragraph::new(line).style(
-        Style::default().bg(Color::DarkGray).fg(Color::White),
-    );
+    let paragraph =
+        Paragraph::new(line).style(Style::default().bg(Color::DarkGray).fg(Color::White));
     frame.render_widget(paragraph, area);
 }
 
@@ -239,14 +239,18 @@ fn draw_chat(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
     // Quota block height: 2 lines per provider + 2 border lines, or 3 for placeholder.
-    let quota_lines = if app.provider_quotas.is_empty() { 1 } else { app.provider_quotas.len() * 2 };
+    let quota_lines = if app.provider_quotas.is_empty() {
+        1
+    } else {
+        app.provider_quotas.len() * 2
+    };
     let quota_height = (quota_lines + 2) as u16; // +2 for border
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(7),            // persona
-            Constraint::Min(4),              // commands
+            Constraint::Min(4),               // commands
             Constraint::Length(quota_height), // quota
         ])
         .split(area);
@@ -280,18 +284,9 @@ fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
             " /persona <n>",
             Style::default().fg(Color::Green),
         )),
-        Line::from(Span::styled(
-            " /clear",
-            Style::default().fg(Color::Green),
-        )),
-        Line::from(Span::styled(
-            " /help",
-            Style::default().fg(Color::Green),
-        )),
-        Line::from(Span::styled(
-            " /quit",
-            Style::default().fg(Color::Green),
-        )),
+        Line::from(Span::styled(" /clear", Style::default().fg(Color::Green))),
+        Line::from(Span::styled(" /help", Style::default().fg(Color::Green))),
+        Line::from(Span::styled(" /quit", Style::default().fg(Color::Green))),
     ];
 
     let cmd_block = Paragraph::new(cmds).block(
@@ -366,7 +361,7 @@ fn draw_input(frame: &mut Frame, app: &App, area: Rect) {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Length(8), // "cratos> " prompt
-            Constraint::Min(1),   // textarea
+            Constraint::Min(1),    // textarea
         ])
         .split(area);
 

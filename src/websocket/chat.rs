@@ -339,9 +339,10 @@ async fn handle_client_message(
             let tx_final = tx.clone();
             let orchestrator = orchestrator.clone();
 
-            let stream_handle = tokio::spawn(async move {
-                stream_events(&mut event_rx, &tx_stream, "cratos").await
-            });
+            let stream_handle =
+                tokio::spawn(
+                    async move { stream_events(&mut event_rx, &tx_stream, "cratos").await },
+                );
 
             tokio::spawn(async move {
                 match orchestrator.process(input).await {
@@ -412,9 +413,7 @@ async fn handle_client_message(
             });
         }
         ClientMessage::Status => {
-            let active = orchestrator
-                .active_execution_count()
-                .unwrap_or(0);
+            let active = orchestrator.active_execution_count().unwrap_or(0);
             let _ = tx.send(ServerMessage::Status {
                 connected: true,
                 active_executions: active,
@@ -426,9 +425,7 @@ async fn handle_client_message(
                 let cancelled = orchestrator.cancel_execution(id);
                 debug!("Cancel execution {}: {}", id, cancelled);
             }
-            let active = orchestrator
-                .active_execution_count()
-                .unwrap_or(0);
+            let active = orchestrator.active_execution_count().unwrap_or(0);
             let _ = tx.send(ServerMessage::Status {
                 connected: true,
                 active_executions: active,

@@ -161,10 +161,7 @@ mod tests {
         let store = GraphStore::in_memory().await.unwrap();
         let indexer = TurnIndexer::new(store.clone());
 
-        let messages1 = vec![
-            Message::user("Hello"),
-            Message::assistant("Hi"),
-        ];
+        let messages1 = vec![Message::user("Hello"), Message::assistant("Hi")];
         let count1 = indexer.index_session("s1", &messages1).await.unwrap();
         assert_eq!(count1, 2);
 
@@ -191,7 +188,11 @@ mod tests {
         ];
         indexer.index_session("s1", &messages).await.unwrap();
 
-        let entity = store.get_entity_by_name("orchestrator.rs").await.unwrap().unwrap();
+        let entity = store
+            .get_entity_by_name("orchestrator.rs")
+            .await
+            .unwrap()
+            .unwrap();
         assert!(entity.mention_count >= 2);
     }
 }

@@ -154,6 +154,9 @@ pub async fn register_mcp_tools(
         info!(tool = %tool_name, "Registered MCP tool");
     }
 
-    info!(count = registered_tool_count, "MCP tool registration complete");
+    info!(
+        count = registered_tool_count,
+        "MCP tool registration complete"
+    );
     Ok(client)
 }

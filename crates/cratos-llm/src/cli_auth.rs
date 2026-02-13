@@ -359,10 +359,13 @@ pub fn get_all_auth_sources() -> HashMap<String, AuthSource> {
 ///
 /// This allows other processes (and future restarts) to pick up the new token
 /// without requiring `gemini auth login`.
-pub fn write_gemini_oauth(access_token: &str, refresh_token: &str, expiry_date: i64) -> crate::Result<()> {
-    let path = gemini_oauth_path().ok_or_else(|| {
-        crate::Error::OAuth("Home directory not found".to_string())
-    })?;
+pub fn write_gemini_oauth(
+    access_token: &str,
+    refresh_token: &str,
+    expiry_date: i64,
+) -> crate::Result<()> {
+    let path = gemini_oauth_path()
+        .ok_or_else(|| crate::Error::OAuth("Home directory not found".to_string()))?;
 
     let creds = serde_json::json!({
         "access_token": access_token,
@@ -384,7 +387,10 @@ pub fn write_gemini_oauth(access_token: &str, refresh_token: &str, expiry_date: 
         std::fs::set_permissions(&path, perms).ok();
     }
 
-    debug!("Wrote refreshed Gemini OAuth credentials to {}", path.display());
+    debug!(
+        "Wrote refreshed Gemini OAuth credentials to {}",
+        path.display()
+    );
     Ok(())
 }
 
@@ -433,9 +439,7 @@ pub async fn refresh_gemini_token() -> crate::Result<GeminiOAuthCreds> {
 
     // CLI succeeded → it internally refreshed the token → re-read from disk
     let new_creds = read_gemini_oauth().ok_or_else(|| {
-        crate::Error::NotConfigured(
-            "Gemini CLI ran but credentials not readable".to_string(),
-        )
+        crate::Error::NotConfigured("Gemini CLI ran but credentials not readable".to_string())
     })?;
 
     // Verify the token actually changed
@@ -466,12 +470,7 @@ pub async fn get_gcloud_access_token() -> crate::Result<String> {
         .args(["auth", "print-access-token"])
         .output()
         .await
-        .map_err(|e| {
-            crate::Error::NotConfigured(format!(
-                "gcloud CLI not found. ({})",
-                e
-            ))
-        })?;
+        .map_err(|e| crate::Error::NotConfigured(format!("gcloud CLI not found. ({})", e)))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -500,12 +499,7 @@ pub fn get_gcloud_access_token_blocking() -> crate::Result<String> {
     let output = Command::new("gcloud")
         .args(["auth", "print-access-token"])
         .output()
-        .map_err(|e| {
-            crate::Error::NotConfigured(format!(
-                "gcloud CLI not found. ({})",
-                e
-            ))
-        })?;
+        .map_err(|e| crate::Error::NotConfigured(format!("gcloud CLI not found. ({})", e)))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -534,12 +528,7 @@ pub fn get_gcloud_project_id_blocking() -> crate::Result<String> {
     let output = Command::new("gcloud")
         .args(["config", "get-value", "project"])
         .output()
-        .map_err(|e| {
-            crate::Error::NotConfigured(format!(
-                "gcloud CLI not found. ({})",
-                e
-            ))
-        })?;
+        .map_err(|e| crate::Error::NotConfigured(format!("gcloud CLI not found. ({})", e)))?;
 
     if !output.status.success() {
         return Err(crate::Error::NotConfigured(
@@ -550,10 +539,11 @@ pub fn get_gcloud_project_id_blocking() -> crate::Result<String> {
     let project = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if project.is_empty() {
         return Err(crate::Error::NotConfigured(
-            "No project set in gcloud config. Run `gcloud config set project <PROJECT_ID>`".to_string(),
+            "No project set in gcloud config. Run `gcloud config set project <PROJECT_ID>`"
+                .to_string(),
         ));
     }
-    
+
     Ok(project)
 }
 
@@ -589,10 +579,7 @@ mod tests {
 
         let creds: CodexAuthCreds = serde_json::from_str(json).unwrap();
         assert!(creds.tokens.access_token.starts_with("eyJ"));
-        assert_eq!(
-            creds.tokens.refresh_token.as_deref(),
-            Some("rt_abc123")
-        );
+        assert_eq!(creds.tokens.refresh_token.as_deref(), Some("rt_abc123"));
     }
 
     #[test]

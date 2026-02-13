@@ -20,7 +20,11 @@ fn test_load_all_real_personas() {
     let personas = loader.load_all().expect("Failed to load personas");
 
     // Verify Core 5 + Extended 9 personas
-    assert_eq!(personas.len(), 14, "Should have 14 personas (5 core + 9 extended)");
+    assert_eq!(
+        personas.len(),
+        14,
+        "Should have 14 personas (5 core + 9 extended)"
+    );
 
     // Verify core names
     let names: Vec<_> = personas.iter().map(|p| p.persona.name.as_str()).collect();

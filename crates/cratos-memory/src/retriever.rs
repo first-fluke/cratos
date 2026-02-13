@@ -52,10 +52,7 @@ impl GraphRagRetriever {
     }
 
     /// Create a retriever with vector search support.
-    pub fn with_vector_search(
-        store: GraphStore,
-        vector_search: Box<dyn VectorSearch>,
-    ) -> Self {
+    pub fn with_vector_search(store: GraphStore, vector_search: Box<dyn VectorSearch>) -> Self {
         Self {
             store,
             weights: ScoringWeights::default(),
@@ -146,8 +143,7 @@ impl GraphRagRetriever {
             let turn_entities = self.store.get_entities_for_turn(&turn.id).await?;
             let turn_entity_names: Vec<String> =
                 turn_entities.iter().map(|e| e.name.clone()).collect();
-            let overlap =
-                scorer::entity_overlap_score(&query_entity_names, &turn_entity_names);
+            let overlap = scorer::entity_overlap_score(&query_entity_names, &turn_entity_names);
 
             let score = scorer::hybrid_score(&self.weights, embedding_sim, proximity, overlap);
 
@@ -159,7 +155,11 @@ impl GraphRagRetriever {
         }
 
         // 5. Sort by score descending, then apply token budget
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut selected = Vec::new();
         let mut token_sum = 0u32;
@@ -239,10 +239,7 @@ mod tests {
 
         let retriever = GraphRagRetriever::new(store);
         // Very tight token budget
-        let results = retriever
-            .retrieve("orchestrator.rs", 10, 5)
-            .await
-            .unwrap();
+        let results = retriever.retrieve("orchestrator.rs", 10, 5).await.unwrap();
         assert!(results.len() <= 2); // budget limits results
     }
 

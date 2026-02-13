@@ -576,7 +576,9 @@ impl CredentialStore {
 
     #[cfg(not(feature = "native-keyring"))]
     fn store_secret_service(&self, service: &str, account: &str, value: &str) -> Result<()> {
-        warn!("Secret Service not available (native-keyring feature disabled), using encrypted file");
+        warn!(
+            "Secret Service not available (native-keyring feature disabled), using encrypted file"
+        );
         self.store_encrypted_file(service, account, value)
     }
 

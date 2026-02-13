@@ -285,10 +285,7 @@ async fn decrypt_message(
 /// Create sessions routes with a shared SessionState.
 pub fn sessions_routes_with_state(state: SessionState) -> Router {
     Router::new()
-        .route(
-            "/api/v1/sessions",
-            get(list_sessions).post(create_session),
-        )
+        .route("/api/v1/sessions", get(list_sessions).post(create_session))
         .route(
             "/api/v1/sessions/:id",
             get(get_session).delete(delete_session),

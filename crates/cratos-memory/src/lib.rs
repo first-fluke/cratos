@@ -125,13 +125,12 @@ impl GraphMemory {
     ///
     /// If a vector bridge is attached, turn summaries are also embedded.
     /// Returns the number of newly indexed turns.
-    pub async fn index_session(
-        &self,
-        session_id: &str,
-        messages: &[Message],
-    ) -> Result<u32> {
+    pub async fn index_session(&self, session_id: &str, messages: &[Message]) -> Result<u32> {
         let indexer = if let Some(bridge) = &self.vector_bridge {
-            TurnIndexer::with_embedder(self.store.clone(), Box::new(BridgeAdapter(Arc::clone(bridge))))
+            TurnIndexer::with_embedder(
+                self.store.clone(),
+                Box::new(BridgeAdapter(Arc::clone(bridge))),
+            )
         } else {
             TurnIndexer::new(self.store.clone())
         };
@@ -390,7 +389,10 @@ impl GraphMemory {
         // Re-embed if content changed
         if content.is_some() {
             if let Some(embedder) = &self.explicit_embed {
-                if let Err(e) = embedder.embed_and_store(&updated.id, &updated.content).await {
+                if let Err(e) = embedder
+                    .embed_and_store(&updated.id, &updated.content)
+                    .await
+                {
                     warn!(error = %e, "Failed to re-embed updated memory");
                 }
             }
@@ -429,7 +431,11 @@ impl GraphMemory {
             }
         }
         if count > 0 {
-            info!(count, total = all.len(), "Re-indexed explicit memories with embeddings");
+            info!(
+                count,
+                total = all.len(),
+                "Re-indexed explicit memories with embeddings"
+            );
         }
         Ok(count)
     }

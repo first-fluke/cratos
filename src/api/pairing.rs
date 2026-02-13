@@ -89,9 +89,7 @@ async fn verify_pairing(
 }
 
 /// List paired devices
-async fn list_devices(
-    Extension(mgr): Extension<Arc<PairingManager>>,
-) -> Json<Vec<DeviceInfo>> {
+async fn list_devices(Extension(mgr): Extension<Arc<PairingManager>>) -> Json<Vec<DeviceInfo>> {
     let devices = mgr.list_devices().await;
     let infos: Vec<DeviceInfo> = devices
         .iter()

@@ -363,8 +363,7 @@ impl SlackAdapter {
         };
 
         let listener_env = Arc::new(
-            SlackClientEventsListenerEnvironment::new(client.clone())
-                .with_user_state(user_state),
+            SlackClientEventsListenerEnvironment::new(client.clone()).with_user_state(user_state),
         );
 
         let listener = SlackClientSocketModeListener::new(
@@ -568,12 +567,7 @@ async fn handle_app_mention_event(
 ) {
     let channel_id = mention.channel.to_string();
     let user_id = mention.user.to_string();
-    let text = mention
-        .content
-        .text
-        .as_ref()
-        .cloned()
-        .unwrap_or_default();
+    let text = mention.content.text.as_ref().cloned().unwrap_or_default();
     let ts = mention.origin.ts.to_string();
     let thread_ts = mention.origin.thread_ts.as_ref().map(|t| t.to_string());
 
@@ -617,10 +611,7 @@ async fn socket_mode_interaction_handler(
 }
 
 /// Handle block action interactions (button clicks).
-async fn handle_block_actions(
-    state: &SocketModeState,
-    event: SlackInteractionBlockActionsEvent,
-) {
+async fn handle_block_actions(state: &SocketModeState, event: SlackInteractionBlockActionsEvent) {
     let actions = match &event.actions {
         Some(actions) if !actions.is_empty() => actions,
         _ => return,
@@ -656,14 +647,7 @@ async fn handle_block_actions(
 
         if let Err(e) = state
             .adapter
-            .process_message(
-                &state.orchestrator,
-                &channel_id,
-                &user_id,
-                &text,
-                &ts,
-                None,
-            )
+            .process_message(&state.orchestrator, &channel_id, &user_id, &text, &ts, None)
             .await
         {
             error!(error = %e, action_id = %action_id, "Failed to process block action");

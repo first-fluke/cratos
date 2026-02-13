@@ -837,7 +837,9 @@ fn is_valid_clone_url(url: &str) -> bool {
     }
 
     // Block shell injection characters
-    let dangerous_chars = ['`', '$', '|', ';', '&', '>', '<', '\n', '\r', '\0', '\'', '"'];
+    let dangerous_chars = [
+        '`', '$', '|', ';', '&', '>', '<', '\n', '\r', '\0', '\'', '"',
+    ];
     if url.chars().any(|c| dangerous_chars.contains(&c)) {
         return false;
     }
@@ -888,22 +890,21 @@ impl Tool for GitCloneTool {
         // SECURITY: Validate URL
         if !is_valid_clone_url(url) {
             return Err(Error::InvalidInput(
-                "Invalid or unsafe repository URL: only https://, git://, ssh:// protocols allowed".to_string()
+                "Invalid or unsafe repository URL: only https://, git://, ssh:// protocols allowed"
+                    .to_string(),
             ));
         }
 
         let path = input.get("path").and_then(|v| v.as_str());
         let branch = input.get("branch").and_then(|v| v.as_str());
-        let depth = input
-            .get("depth")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        let depth = input.get("depth").and_then(|v| v.as_u64()).unwrap_or(0);
 
         // SECURITY: Validate path if provided
         if let Some(p) = path {
             if !is_valid_clone_path(p) {
                 return Err(Error::InvalidInput(
-                    "Invalid clone path: path traversal or special characters not allowed".to_string(),
+                    "Invalid clone path: path traversal or special characters not allowed"
+                        .to_string(),
                 ));
             }
         }
@@ -911,9 +912,7 @@ impl Tool for GitCloneTool {
         // SECURITY: Validate branch name if provided
         if let Some(b) = branch {
             if !is_valid_branch_name(b) {
-                return Err(Error::InvalidInput(format!(
-                    "Invalid branch name: {}", b
-                )));
+                return Err(Error::InvalidInput(format!("Invalid branch name: {}", b)));
             }
         }
 
@@ -1052,9 +1051,7 @@ impl Tool for GitLogTool {
         // SECURITY: Validate branch name if provided
         if let Some(b) = branch {
             if !is_valid_branch_name(b) {
-                return Err(Error::InvalidInput(format!(
-                    "Invalid branch name: {}", b
-                )));
+                return Err(Error::InvalidInput(format!("Invalid branch name: {}", b)));
             }
         }
 

@@ -11,12 +11,7 @@ pub async fn run_audit_cli(json: bool) -> Result<()> {
         auth_enabled: config.server.auth.enabled,
         rate_limit_enabled: config.server.rate_limit.enabled,
         rate_limit_rpm: config.server.rate_limit.requests_per_minute as u64,
-        sandbox_available: config
-            .security
-            .exec
-            .mode
-            .as_str()
-            == "strict"
+        sandbox_available: config.security.exec.mode.as_str() == "strict"
             || std::process::Command::new("docker")
                 .arg("--version")
                 .output()
@@ -24,11 +19,8 @@ pub async fn run_audit_cli(json: bool) -> Result<()> {
         sandbox_image: None,
         blocked_paths: config.security.exec.blocked_paths.clone(),
         credential_backend: config.server.auth.key_storage.clone(),
-        injection_protection: config
-            .security
-            .enable_injection_protection
-            .unwrap_or(false),
-        e2e_available: true, // Always available since Phase 1.1
+        injection_protection: config.security.enable_injection_protection.unwrap_or(false),
+        e2e_available: true,  // Always available since Phase 1.1
         tool_policy_rules: 0, // Would need runtime policy to check
     };
 
@@ -53,7 +45,8 @@ pub async fn run_audit_cli(json: bool) -> Result<()> {
             }
         }
 
-        println!("\nSummary: {} checks, {} pass, {} warnings, {} critical",
+        println!(
+            "\nSummary: {} checks, {} pass, {} warnings, {} critical",
             report.summary.total,
             report.summary.pass,
             report.summary.warnings,

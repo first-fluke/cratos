@@ -284,7 +284,10 @@ mod tests {
         assert_eq!(extract_real_url(raw), "https://example.com");
 
         // Direct URL (no redirect)
-        assert_eq!(extract_real_url("https://example.com"), "https://example.com");
+        assert_eq!(
+            extract_real_url("https://example.com"),
+            "https://example.com"
+        );
     }
 
     #[test]

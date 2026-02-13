@@ -285,8 +285,10 @@ fn truncate_utf8(bytes: &[u8], max_bytes: usize) -> String {
 /// Basic secret masking — replace patterns that look like API keys or tokens.
 fn mask_secrets(text: &str) -> String {
     // Mask strings that look like API keys (sk-..., ghp_..., ghu_..., etc.)
-    let re = regex::Regex::new(r"(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{20,}|ghu_[a-zA-Z0-9]{20,}|xoxb-[a-zA-Z0-9\-]{20,})")
-        .expect("secret mask regex");
+    let re = regex::Regex::new(
+        r"(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{20,}|ghu_[a-zA-Z0-9]{20,}|xoxb-[a-zA-Z0-9\-]{20,})",
+    )
+    .expect("secret mask regex");
     re.replace_all(text, "[REDACTED]").into_owned()
 }
 

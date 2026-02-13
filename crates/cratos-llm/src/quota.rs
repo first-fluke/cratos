@@ -77,14 +77,12 @@ impl QuotaState {
     /// if available, otherwise computed from requests remaining/limit.
     #[must_use]
     pub fn remaining_pct(&self) -> Option<f64> {
-        self.remaining_fraction
-            .map(|f| f * 100.0)
-            .or_else(|| {
-                match (self.requests_remaining, self.requests_limit) {
-                    (Some(r), Some(l)) if l > 0 => Some(r as f64 / l as f64 * 100.0),
-                    _ => None,
-                }
-            })
+        self.remaining_fraction.map(|f| f * 100.0).or_else(|| {
+            match (self.requests_remaining, self.requests_limit) {
+                (Some(r), Some(l)) if l > 0 => Some(r as f64 / l as f64 * 100.0),
+                _ => None,
+            }
+        })
     }
 
     /// Returns `true` when remaining requests or tokens drop below
@@ -163,18 +161,20 @@ impl QuotaTracker {
 
         let now = Utc::now();
         let mut states = self.states.write().await;
-        let state = states.entry(provider.to_string()).or_insert_with(|| QuotaState {
-            provider: provider.to_string(),
-            requests_remaining: None,
-            requests_limit: None,
-            tokens_remaining: None,
-            tokens_limit: None,
-            reset_at: None,
-            updated_at: now,
-            source: QuotaSource::ResponseHeaders,
-            remaining_fraction: None,
-            tier_label: None,
-        });
+        let state = states
+            .entry(provider.to_string())
+            .or_insert_with(|| QuotaState {
+                provider: provider.to_string(),
+                requests_remaining: None,
+                requests_limit: None,
+                tokens_remaining: None,
+                tokens_limit: None,
+                reset_at: None,
+                updated_at: now,
+                source: QuotaSource::ResponseHeaders,
+                remaining_fraction: None,
+                tier_label: None,
+            });
 
         if let Some(v) = partial.requests_remaining {
             state.requests_remaining = Some(v);
@@ -199,18 +199,20 @@ impl QuotaTracker {
         let now = Utc::now();
         let reset_at = now + chrono::Duration::seconds(retry_secs as i64);
         let mut states = self.states.write().await;
-        let state = states.entry(provider.to_string()).or_insert_with(|| QuotaState {
-            provider: provider.to_string(),
-            requests_remaining: None,
-            requests_limit: None,
-            tokens_remaining: None,
-            tokens_limit: None,
-            reset_at: None,
-            updated_at: now,
-            source: QuotaSource::RetryAfter,
-            remaining_fraction: None,
-            tier_label: None,
-        });
+        let state = states
+            .entry(provider.to_string())
+            .or_insert_with(|| QuotaState {
+                provider: provider.to_string(),
+                requests_remaining: None,
+                requests_limit: None,
+                tokens_remaining: None,
+                tokens_limit: None,
+                reset_at: None,
+                updated_at: now,
+                source: QuotaSource::RetryAfter,
+                remaining_fraction: None,
+                tier_label: None,
+            });
         state.requests_remaining = Some(0);
         state.reset_at = Some(reset_at);
         state.source = QuotaSource::RetryAfter;
@@ -415,7 +417,11 @@ fn parse_go_duration(s: &str) -> Option<f64> {
         }
     }
 
-    if parsed_any { Some(total_secs) } else { None }
+    if parsed_any {
+        Some(total_secs)
+    } else {
+        None
+    }
 }
 
 // ============================================================================
@@ -527,10 +533,7 @@ mod tests {
     #[test]
     fn test_parse_openai_headers() {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-ratelimit-limit-requests",
-            HeaderValue::from_static("60"),
-        );
+        headers.insert("x-ratelimit-limit-requests", HeaderValue::from_static("60"));
         headers.insert(
             "x-ratelimit-remaining-requests",
             HeaderValue::from_static("12"),
@@ -622,10 +625,7 @@ mod tests {
         let tracker = QuotaTracker::new();
 
         let mut h = HeaderMap::new();
-        h.insert(
-            "x-ratelimit-limit-requests",
-            HeaderValue::from_static("60"),
-        );
+        h.insert("x-ratelimit-limit-requests", HeaderValue::from_static("60"));
         h.insert(
             "x-ratelimit-remaining-requests",
             HeaderValue::from_static("30"),

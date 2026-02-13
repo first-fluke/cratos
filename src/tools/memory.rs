@@ -197,10 +197,8 @@ impl Tool for MemoryTool {
                 };
                 let content = input.get("content").and_then(|v| v.as_str());
                 let category = input.get("category").and_then(|v| v.as_str());
-                let tags: Option<Vec<String>> = input
-                    .get("tags")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
+                let tags: Option<Vec<String>> =
+                    input.get("tags").and_then(|v| v.as_array()).map(|arr| {
                         arr.iter()
                             .filter_map(|v| v.as_str().map(String::from))
                             .collect()
@@ -381,11 +379,17 @@ mod tests {
         let tool = make_tool().await;
 
         // Save without name
-        let r = tool.execute(json!({"action": "save", "content": "x"})).await.unwrap();
+        let r = tool
+            .execute(json!({"action": "save", "content": "x"}))
+            .await
+            .unwrap();
         assert!(r.output.get("error").is_some());
 
         // Save without content
-        let r = tool.execute(json!({"action": "save", "name": "x"})).await.unwrap();
+        let r = tool
+            .execute(json!({"action": "save", "name": "x"}))
+            .await
+            .unwrap();
         assert!(r.output.get("error").is_some());
 
         // Recall without query
