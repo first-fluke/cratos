@@ -79,7 +79,7 @@ pub use nodes::{
 };
 pub use orchestrator::{
     ExecutionResult, ExecutionStatus, Orchestrator, OrchestratorConfig, OrchestratorInput,
-    SkillRouting, ToolCallRecord,
+    SkillMatch, SkillRouting, ToolCallRecord,
 };
 pub use permissions::{
     ChannelPermissions, ChannelToolConfig, PermissionConfig, PermissionError, PermissionManager,
@@ -122,7 +122,7 @@ pub use telemetry::{
 };
 
 // Re-export Olympus hooks
-pub use olympus_hooks::{OlympusConfig, OlympusHooks, PostExecutionSummary};
+pub use olympus_hooks::{OlympusConfig, OlympusHooks, PostExecutionSummary, SyncSkillProficiencyResult};
 
 // Re-export pantheon module types (Olympus OS)
 pub use pantheon::{

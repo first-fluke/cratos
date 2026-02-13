@@ -156,6 +156,12 @@ pub struct Chronicle {
     /// Average rating
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<f32>,
+    /// Skill proficiency map (skill_name -> success_rate)
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub skill_proficiency: std::collections::HashMap<String, f64>,
+    /// Auto-assigned skills (earned through usage patterns)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auto_assigned_skills: Vec<String>,
     /// Creation timestamp
     pub created_at: DateTime<Utc>,
     /// Last update timestamp
@@ -176,9 +182,44 @@ impl Chronicle {
             log: Vec::new(),
             judgments: Vec::new(),
             rating: None,
+            skill_proficiency: std::collections::HashMap::new(),
+            auto_assigned_skills: Vec::new(),
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// Update skill proficiency for this persona
+    ///
+    /// # Arguments
+    ///
+    /// * `skill_name` - The skill name
+    /// * `success_rate` - The success rate (0.0 - 1.0)
+    pub fn update_skill_proficiency(&mut self, skill_name: &str, success_rate: f64) {
+        self.skill_proficiency
+            .insert(skill_name.to_string(), success_rate);
+        self.updated_at = Utc::now();
+    }
+
+    /// Record that a skill was auto-assigned to this persona
+    pub fn record_auto_assignment(&mut self, skill_name: &str) {
+        if !self.auto_assigned_skills.contains(&skill_name.to_string()) {
+            self.auto_assigned_skills.push(skill_name.to_string());
+            self.add_entry(
+                &format!("Skill '{}' auto-assigned through mastery", skill_name),
+                None,
+            );
+        }
+    }
+
+    /// Get mastered skills (success_rate >= threshold)
+    #[must_use]
+    pub fn mastered_skills(&self, threshold: f64) -> Vec<(&String, f64)> {
+        self.skill_proficiency
+            .iter()
+            .filter(|(_, &rate)| rate >= threshold)
+            .map(|(name, &rate)| (name, rate))
+            .collect()
     }
 
     /// Add chronicle entry

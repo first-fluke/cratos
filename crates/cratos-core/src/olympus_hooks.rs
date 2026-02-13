@@ -4,13 +4,16 @@
 //! - Law enforcement (validate responses)
 //! - Chronicle auto-logging
 //! - Auto-promotion checks
+//! - Skill proficiency synchronization (Phase 7)
 
 use crate::chronicles::ChronicleStore;
 use crate::decrees::{EnforcementAction, EnforcerConfig, LawEnforcer};
 use crate::error::Result;
 use crate::pantheon::ActivePersonaState;
+use cratos_skills::persona_binding::OwnershipType;
+use cratos_skills::PersonaSkillStore;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 /// Configuration for Olympus hooks
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -191,6 +194,95 @@ impl OlympusHooks {
     pub fn active_persona(&self) -> Option<String> {
         self.active_persona.load().unwrap_or(None)
     }
+
+    /// Synchronize skill proficiency from PersonaSkillStore to Chronicle (Phase 7)
+    ///
+    /// This method fetches the persona's skill bindings and updates the Chronicle with:
+    /// - `skill_proficiency`: Map of skill_name -> success_rate
+    /// - `auto_assigned_skills`: List of skills that were auto-assigned
+    ///
+    /// Call this periodically or after significant skill metric changes.
+    pub async fn sync_skill_proficiency(
+        &self,
+        persona: &str,
+        store: &PersonaSkillStore,
+    ) -> Result<SyncSkillProficiencyResult> {
+        let mut result = SyncSkillProficiencyResult::default();
+
+        // Get all persona skills from the store
+        let skills = store.get_persona_skills(persona).await.map_err(|e| {
+            crate::error::Error::Internal(format!("Failed to get persona skills: {e}"))
+        })?;
+
+        if skills.is_empty() {
+            debug!(persona = %persona, "No skills found for persona");
+            return Ok(result);
+        }
+
+        // Load or create chronicle
+        let mut chronicle = match self.chronicle_store.load(persona)? {
+            Some(c) => c,
+            None => {
+                debug!(persona = %persona, "Creating new chronicle for skill sync");
+                crate::chronicles::Chronicle::new(persona)
+            }
+        };
+
+        // Update skill proficiency map
+        for skill in &skills {
+            // Only include skills with meaningful usage (at least 3 uses)
+            if skill.usage_count >= 3 {
+                let old_rate = chronicle.skill_proficiency.get(&skill.skill_name).copied();
+                chronicle.update_skill_proficiency(&skill.skill_name, skill.success_rate);
+
+                if old_rate != Some(skill.success_rate) {
+                    result.skills_updated += 1;
+                }
+            }
+
+            // Track auto-assigned skills
+            if skill.ownership_type == OwnershipType::AutoAssigned
+                && !chronicle.auto_assigned_skills.contains(&skill.skill_name)
+            {
+                chronicle.record_auto_assignment(&skill.skill_name);
+                result.new_auto_assignments += 1;
+                info!(
+                    persona = %persona,
+                    skill = %skill.skill_name,
+                    "Recorded auto-assignment in chronicle"
+                );
+            }
+        }
+
+        // Save chronicle
+        self.chronicle_store.save(&chronicle)?;
+        result.success = true;
+
+        debug!(
+            persona = %persona,
+            skills_updated = %result.skills_updated,
+            new_auto_assignments = %result.new_auto_assignments,
+            "Skill proficiency sync completed"
+        );
+
+        Ok(result)
+    }
+
+    /// Get a reference to the chronicle store
+    pub fn chronicle_store(&self) -> &ChronicleStore {
+        &self.chronicle_store
+    }
+}
+
+/// Result of skill proficiency synchronization
+#[derive(Debug, Default)]
+pub struct SyncSkillProficiencyResult {
+    /// Whether the sync was successful
+    pub success: bool,
+    /// Number of skills whose proficiency was updated
+    pub skills_updated: usize,
+    /// Number of newly recorded auto-assignments
+    pub new_auto_assignments: usize,
 }
 
 /// Truncate a response string for logging
