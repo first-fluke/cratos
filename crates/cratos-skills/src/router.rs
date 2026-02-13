@@ -403,6 +403,85 @@ impl SkillRouter {
     pub fn clear_cache(&mut self) {
         self.compiled_patterns.clear();
     }
+
+    /// Route an input text to matching skills with persona-specific bonuses.
+    ///
+    /// Skills where the persona has high proficiency (success_rate >= threshold) get a bonus.
+    /// This makes personas more likely to use skills they're good at.
+    ///
+    /// # Arguments
+    ///
+    /// * `input_text` - The user input to match against skills
+    /// * `persona_skill_proficiency` - Map of skill_name -> success_rate for the persona
+    /// * `bonus` - Score bonus to add for proficient skills (default: 0.2)
+    /// * `threshold` - Minimum success rate to be considered proficient (default: 0.7)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let proficiency = persona_store.get_skill_proficiency_map("sindri").await?;
+    /// let results = router.route_for_persona(
+    ///     "build the API",
+    ///     &proficiency,
+    ///     0.2,  // bonus
+    ///     0.7,  // threshold
+    /// ).await;
+    /// ```
+    #[instrument(skip(self, persona_skill_proficiency), fields(input_len = input_text.len()))]
+    pub async fn route_for_persona(
+        &mut self,
+        input_text: &str,
+        persona_skill_proficiency: &std::collections::HashMap<String, f64>,
+        bonus: f32,
+        threshold: f64,
+    ) -> Vec<RoutingResult> {
+        // Get base routing results
+        let mut results = self.route(input_text).await;
+
+        // Apply persona skill bonus
+        for result in &mut results {
+            if let Some(&success_rate) = persona_skill_proficiency.get(&result.skill.name) {
+                if success_rate >= threshold {
+                    let old_score = result.score;
+                    result.score = (result.score + bonus).min(1.0);
+                    debug!(
+                        skill = %result.skill.name,
+                        old_score = %old_score,
+                        new_score = %result.score,
+                        success_rate = %success_rate,
+                        "Applied persona skill bonus"
+                    );
+                }
+            }
+        }
+
+        // Re-sort after applying bonuses
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(b.skill.trigger.priority.cmp(&a.skill.trigger.priority))
+        });
+
+        results
+    }
+
+    /// Route and get the best match with persona-specific bonuses
+    #[instrument(skip(self, persona_skill_proficiency))]
+    pub async fn route_best_for_persona(
+        &mut self,
+        input_text: &str,
+        persona_skill_proficiency: &std::collections::HashMap<String, f64>,
+        bonus: f32,
+        threshold: f64,
+    ) -> Option<RoutingResult> {
+        let results = self
+            .route_for_persona(input_text, persona_skill_proficiency, bonus, threshold)
+            .await;
+        results
+            .into_iter()
+            .find(|r| r.score >= self.config.min_score)
+    }
 }
 
 #[cfg(test)]
