@@ -984,8 +984,9 @@ impl ExecutionQuery {
 
 /// Get the default data directory for Cratos
 pub fn default_data_dir() -> std::path::PathBuf {
-    dirs::data_local_dir()
-        .or_else(dirs::home_dir)
+    // Always use ~/.cratos/ for consistency across all components
+    // (config, chronicles, memory, vectors all live here)
+    dirs::home_dir()
         .map(|p| p.join(".cratos"))
         .unwrap_or_else(|| std::path::PathBuf::from(".cratos"))
 }
