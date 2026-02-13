@@ -67,10 +67,9 @@ pub fn google_oauth_config() -> OAuthProviderConfig {
         (default_id, default_google_client_secret(), true)
     };
 
-    // Restricted scopes for internal/CLI IDs (Gemini CLI, gcloud SDK).
-    // These IDs often reject `generative-language` and `userinfo.profile`.
-    // We restrict to `cloud-platform` and `userinfo.email`.
-    let restricted_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email";
+    // Scopes for internal/CLI IDs (Gemini CLI, gcloud SDK).
+    // Include `generative-language` for Standard API compatibility.
+    let restricted_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/userinfo.email";
 
     // Standard scopes for Custom Client IDs (User created).
     let standard_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";

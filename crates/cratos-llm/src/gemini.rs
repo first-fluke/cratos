@@ -541,17 +541,69 @@ impl GeminiProvider {
             .unwrap_or_else(|| self.config.auth.clone())
     }
 
-    /// Try to refresh Gemini CLI OAuth token. Returns true if refreshed.
+    /// Try to refresh/fallback OAuth token. Returns true if refreshed.
     ///
-    /// Strategy (3-tier fallback):
+    /// For GeminiCli auth (3-tier fallback):
     /// 1. Re-read from disk (another process may have refreshed) — skip if same token
     /// 2. Direct OAuth refresh using refresh_token + Gemini CLI's client_id/secret
     /// 3. Invoke Gemini CLI with a minimal query to trigger internal token refresh
+    ///
+    /// For CratosOAuth auth (scope fallback):
+    /// If CratosOAuth fails (e.g. insufficient scopes), fall back to Gemini CLI OAuth.
     async fn try_refresh_cli_token(&self) -> bool {
-        if self.config.auth_source != AuthSource::GeminiCli {
-            return false;
+        match self.config.auth_source {
+            AuthSource::GeminiCli => self.try_refresh_cli_token_inner().await,
+            AuthSource::CratosOAuth => self.try_cratos_to_cli_fallback().await,
+            _ => false,
         }
-        self.try_refresh_cli_token_inner().await
+    }
+
+    /// CratosOAuth → Gemini CLI OAuth fallback.
+    /// Used when CratosOAuth token has insufficient scopes for the standard API.
+    async fn try_cratos_to_cli_fallback(&self) -> bool {
+        tracing::info!("CratosOAuth failed, attempting Gemini CLI OAuth fallback");
+
+        if let Some(creds) = cli_auth::read_gemini_oauth() {
+            // Try using the token directly if not expired
+            if !cli_auth::is_token_expired(creds.expiry_date) && !creds.access_token.is_empty() {
+                tracing::info!("Falling back to valid Gemini CLI OAuth token");
+                if let Ok(mut guard) = self.refreshed_auth.lock() {
+                    *guard = Some(GeminiAuth::OAuth(creds.access_token));
+                }
+                return true;
+            }
+
+            // Token expired — try refreshing via Gemini CLI's refresh_token
+            if !creds.refresh_token.is_empty() {
+                match self.refresh_with_token(&creds.refresh_token).await {
+                    Ok(new_access_token) => {
+                        tracing::info!("Gemini CLI token refreshed (CratosOAuth fallback)");
+                        if let Ok(mut guard) = self.refreshed_auth.lock() {
+                            *guard = Some(GeminiAuth::OAuth(new_access_token));
+                        }
+                        return true;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Gemini CLI OAuth refresh failed: {}", e);
+                    }
+                }
+            }
+        }
+
+        // Last resort: invoke Gemini CLI
+        match cli_auth::refresh_gemini_token().await {
+            Ok(new_creds) => {
+                tracing::info!("Gemini CLI token refreshed via CLI (CratosOAuth fallback)");
+                if let Ok(mut guard) = self.refreshed_auth.lock() {
+                    *guard = Some(GeminiAuth::OAuth(new_creds.access_token));
+                }
+                true
+            }
+            Err(e) => {
+                tracing::error!("CratosOAuth fallback to Gemini CLI failed: {}", e);
+                false
+            }
+        }
     }
 
     /// Inner implementation of CLI token refresh (3-tier).
@@ -985,13 +1037,15 @@ impl GeminiProvider {
                 );
                 if status.as_u16() == 403
                     && error.error.message.contains("insufficient authentication scopes")
-                    && self.config.auth_source == AuthSource::CratosOAuth
                 {
-                    tracing::error!(
-                        "OAuth token missing required scopes. Please re-run `cratos init` to re-authenticate."
+                    tracing::warn!(
+                        auth_source = ?self.config.auth_source,
+                        "OAuth token has insufficient scopes — will attempt authentication fallback"
                     );
+                    // Return error with "authentication" keyword to trigger
+                    // retry+fallback in send_request() (CratosOAuth → Gemini CLI)
                     return Err(Error::Api(
-                        "OAuth token missing required scopes. Please re-run `cratos init` to re-authenticate with Google.".to_string(),
+                        "authentication failed: insufficient scopes for Gemini API".to_string(),
                     ));
                 }
                 if status.as_u16() == 429 {
