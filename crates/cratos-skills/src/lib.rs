@@ -133,6 +133,8 @@ pub mod ecosystem;
 pub mod error;
 pub mod executor;
 pub mod generator;
+pub mod persona_binding;
+pub mod persona_store;
 pub mod protocol;
 pub mod registry;
 #[cfg(feature = "remote")]
@@ -155,6 +157,12 @@ pub use skill::{
     SkillTrigger,
 };
 pub use store::SkillStore;
+
+// Re-export persona binding types
+pub use persona_binding::{
+    AutoAssignmentConfig, OwnershipType, PersonaSkillBinding, PersonaSkillExecution,
+};
+pub use persona_store::PersonaSkillStore;
 
 // Re-export ecosystem types for skill sharing
 pub use ecosystem::{
