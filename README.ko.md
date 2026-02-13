@@ -27,8 +27,13 @@ irm https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.ps
 - **스마트 라우팅**: 작업 유형별 자동 모델 선택으로 비용 70% 절감
 - **무료 모델 지원**: OpenRouter, Novita를 통한 무료 LLM 사용 (Llama, Qwen, GLM)
 - **리플레이 엔진**: 모든 실행 기록을 이벤트로 저장, 타임라인 조회 및 재실행
-- **도구 시스템**: 파일, HTTP, Git, GitHub, 명령 실행, 브라우저, WoL, 설정 등 15개 빌트인 도구
-- **채널 어댑터**: Telegram, Slack, Discord, Matrix 지원
+- **도구 시스템**: 파일, HTTP, Git, GitHub, 명령 실행, PTY bash, 브라우저, 웹 검색, 에이전트 CLI, WoL, 설정 등 20개 빌트인 도구 + MCP 확장
+- **채널 어댑터**: Telegram, Slack, Discord, Matrix, WhatsApp — 슬래시 명령어, DM 정책, EventBus 알림
+- **Chrome Extension**: WebSocket 게이트웨이를 통한 브라우저 원격 제어
+- **Graph RAG 메모리**: 엔티티 그래프 + 하이브리드 벡터 검색으로 세션 간 대화 기억
+- **TUI 채팅**: ratatui 기반 대화형 터미널 (마크다운 렌더링, 마우스 스크롤, 쿼터 표시)
+- **웹 검색**: DuckDuckGo 기반 내장 검색 (API 키 불필요)
+- **MCP 통합**: `.mcp.json`에서 MCP 서버 자동 탐지, SSE/stdio 지원
 - **보안 강화**: Docker 샌드박스, 자격증명 암호화, 프롬프트 인젝션 방어
 - **올림푸스 OS**: 신화 기반 3-레이어 에이전트 조직 체계 (Pantheon/Decrees/Chronicles)
 
@@ -132,12 +137,14 @@ cratos/
 │   ├── cratos-core/      # 오케스트레이션 엔진, 보안, 자격증명
 │   ├── cratos-channels/  # 채널 어댑터 (Telegram, Slack, Discord, Matrix)
 │   ├── cratos-tools/     # 도구 레지스트리, 샌드박스
-│   ├── cratos-llm/       # LLM 프로바이더, 토큰 카운팅, 임베딩
+│   ├── cratos-llm/       # LLM 프로바이더, 토큰 카운팅, ONNX 임베딩, 쿼터 추적
 │   ├── cratos-replay/    # 이벤트 로깅 및 리플레이 (SQLite)
 │   ├── cratos-skills/    # 자동 스킬 생성 시스템
-│   ├── cratos-search/    # 벡터 검색, 시맨틱 인덱싱
+│   ├── cratos-search/    # 벡터 검색 (usearch), 시맨틱 인덱싱
+│   ├── cratos-memory/    # Graph RAG 대화 메모리 (엔티티 그래프 + 하이브리드 검색)
+│   ├── cratos-crypto/    # 암호화 유틸리티
 │   ├── cratos-audio/     # 음성 제어 (STT/TTS, 선택적)
-│   └── cratos-canvas/    # 캔버스 (future)
+│   └── cratos-canvas/    # Live Canvas (future)
 ├── config/
 │   ├── default.toml      # 기본 설정
 │   ├── pantheon/         # 페르소나 TOML 파일 (14개: 5 코어 + 9 확장)
@@ -167,7 +174,8 @@ cratos/
 | **LLM API 키 (하나 이상)** | | |
 | `OPENAI_API_KEY` | OpenAI API 키 | |
 | `ANTHROPIC_API_KEY` | Anthropic API 키 | |
-| `GOOGLE_API_KEY` | Google Gemini API 키 | |
+| `GEMINI_API_KEY` | Google Gemini API 키 (권장) | |
+| `GOOGLE_API_KEY` | Google Gemini API 키 (별칭) | |
 | `ZHIPU_API_KEY` | ZhipuAI GLM API 키 | |
 | `DASHSCOPE_API_KEY` | Alibaba Qwen API 키 | |
 | `OPENROUTER_API_KEY` | OpenRouter API 키 | |
@@ -187,7 +195,7 @@ cratos/
 |-----------|------|------|
 | **OpenAI** | GPT-5.2, GPT-5.1, GPT-5 | 최신 세대, 코딩 |
 | **Anthropic** | Claude Sonnet 4.5, Claude Haiku 4.5, Claude Opus 4.5 | 코드 생성 우수 |
-| **Gemini** | Gemini 3 Pro, Gemini 3 Flash, Gemini 2.5 Pro | 긴 컨텍스트, 멀티모달 |
+| **Gemini** | Gemini 3 Pro, Gemini 3 Flash, Gemini 2.5 Pro | 긴 컨텍스트, 멀티모달, Standard API only (안전) |
 | **GLM** | GLM-4.7, GLM-4-Flash | ZhipuAI 모델 |
 | **Qwen** | Qwen3-Max, Qwen3-Plus, Qwen3-Flash, Qwen3-Coder | 다국어, 코딩, 추론 |
 | **DeepSeek** | DeepSeek-V3.2, DeepSeek-R1 | 초저가, 추론 |
@@ -207,11 +215,11 @@ cratos/
 
 | 작업 유형 | 모델 티어 | 예시 모델 |
 |----------|-----------|-----------|
-| Classification | Fast | GPT-5.2-mini, Claude Haiku |
-| Summarization | Fast | GPT-5.2-mini, Gemini Flash |
-| Conversation | Standard | GPT-5.2, Claude Sonnet |
-| CodeGeneration | Standard | GPT-5.2, Claude Sonnet |
-| Planning | Premium | GPT-5.2-turbo, Claude Opus |
+| Classification | Fast | GPT-5.2-mini, Claude Haiku 4.5 |
+| Summarization | Fast | GPT-5.2-mini, Gemini 3 Flash |
+| Conversation | Standard | GPT-5.2, Claude Sonnet 4.5 |
+| CodeGeneration | Standard | GPT-5.2, Claude Sonnet 4.5 |
+| Planning | Premium | GPT-5.2-turbo, Claude Opus 4.6 |
 
 ## 올림푸스 OS (에이전트 조직 체계)
 
@@ -343,16 +351,21 @@ API 키를 OS 키체인에 안전하게 저장합니다:
 | `file_list` | 디렉토리 목록 | Low |
 | `http_get` | HTTP GET 요청 | Low |
 | `http_post` | HTTP POST 요청 | Medium |
-| `exec` | 명령 실행 (샌드박스) | High |
+| `exec` | 명령 실행 (샌드박스/Docker) | High |
+| `bash` | Bash 쉘 실행 (exit code 1 허용) | High |
 | `git_status` | Git 상태 조회 | Low |
 | `git_commit` | Git 커밋 생성 | Medium |
 | `git_branch` | Git 브랜치 관리 | Medium |
 | `git_diff` | Git diff 조회 | Low |
 | `git_push` | Git 원격 푸시 | High |
+| `git_clone` | Git 저장소 클론 | Medium |
+| `git_log` | Git 커밋 로그 조회 | Low |
 | `github_api` | GitHub API 연동 | Medium |
-| `browser` | 브라우저 자동화 | Medium |
+| `browser` | 브라우저 자동화 (MCP) | Medium |
 | `wol` | Wake-on-LAN | Medium |
 | `config` | 자연어 설정 변경 | Medium |
+| `web_search` | DuckDuckGo 웹 검색 (API 키 불필요) | Low |
+| `agent_cli` | 외부 AI 에이전트 CLI 실행 | High |
 
 ## 테스트
 

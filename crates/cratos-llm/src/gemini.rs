@@ -93,12 +93,8 @@ fn downgrade_model(model: &str) -> Option<&'static str> {
     }
 }
 
-/// Default API base URL (for API key auth)
+/// Default API base URL (for all auth methods — API key and OAuth Bearer)
 const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
-
-/// Code Assist endpoint (for OAuth Bearer token auth — same as Gemini CLI)
-const CODE_ASSIST_BASE_URL: &str = "https://cloudcode-pa.googleapis.com";
-const CODE_ASSIST_API_VERSION: &str = "v1internal";
 
 // ============================================================================
 // API Types
@@ -291,7 +287,7 @@ fn strip_unsupported_schema_fields(value: &mut serde_json::Value) {
 pub enum GeminiAuth {
     /// Standard API key (appended as `?key=` in URL)
     ApiKey(String),
-    /// OAuth Bearer token from Gemini CLI (Antigravity Pro)
+    /// OAuth Bearer token (Cratos OAuth, Gemini CLI, or gcloud)
     OAuth(String),
 }
 
@@ -381,25 +377,9 @@ impl GeminiConfig {
                 info!("Cratos Google OAuth token expired, attempting refresh...");
                 tokens = Self::try_refresh_blocking(tokens);
             }
-            // Determine the source of the token based on configuration.
-            // If CRATOS_GOOGLE_CLIENT_ID is set AND distinct from the default (restricted) ID,
-            // we assume a custom client ID (standard API).
-            // Otherwise, we assume the token was obtained using the default/extracted Gemini CLI ID (Code Assist API).
-            let is_custom_client = if let Ok(id) = std::env::var("CRATOS_GOOGLE_CLIENT_ID") {
-                id != crate::oauth_config::default_google_client_id()
-            } else {
-                false
-            };
-
-            let auth_source = if is_custom_client {
-                AuthSource::CratosOAuth
-            } else {
-                AuthSource::GeminiCli
-            };
-
             return Ok(Self {
                 auth: GeminiAuth::OAuth(tokens.access_token),
-                auth_source,
+                auth_source: AuthSource::CratosOAuth,
                 base_url,
                 default_model,
                 default_max_tokens: 8192,
@@ -408,11 +388,15 @@ impl GeminiConfig {
             });
         }
 
-        // 3. Try Gemini CLI OAuth credentials
+        // 3. Try Gemini CLI OAuth credentials → routed to Standard API (safe)
         if let Some(creds) = cli_auth::read_gemini_oauth() {
             if cli_auth::is_token_expired(creds.expiry_date) {
                 info!("Gemini CLI token expired — run `gemini auth login` to refresh");
             }
+            tracing::warn!(
+                "Gemini CLI OAuth detected — routing to Standard API (safe mode). \
+                 For higher quotas: set GEMINI_API_KEY (https://aistudio.google.com/apikey)"
+            );
             return Ok(Self {
                 auth: GeminiAuth::OAuth(creds.access_token),
                 auth_source: AuthSource::GeminiCli,
@@ -525,59 +509,11 @@ impl GeminiConfig {
 pub struct GeminiProvider {
     client: Client,
     config: GeminiConfig,
-    /// Lazily resolved Code Assist project ID (for OAuth auth).
-    /// Uses RwLock instead of OnceCell so it can be reset after token refresh.
-    code_assist_project: tokio::sync::RwLock<Option<String>>,
     /// Last retry-after delay reported by Gemini (seconds), used for smart backoff.
     last_retry_after: std::sync::atomic::AtomicU64,
     /// Dynamically refreshed auth token (overrides config.auth when set).
     /// Used to pick up refreshed Gemini CLI tokens without restarting.
     refreshed_auth: std::sync::Mutex<Option<GeminiAuth>>,
-}
-
-// Code Assist API types for OAuth auth (same API as Gemini CLI)
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LoadCodeAssistResponse {
-    #[serde(default)]
-    cloudaicompanion_project: Option<String>,
-    #[serde(default)]
-    current_tier: Option<CodeAssistTier>,
-    #[serde(default)]
-    allowed_tiers: Option<Vec<CodeAssistTier>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CodeAssistTier {
-    #[allow(dead_code)]
-    id: Option<String>,
-    #[serde(default)]
-    is_default: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OnboardResponse {
-    #[serde(default)]
-    done: bool,
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    response: Option<OnboardResult>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OnboardResult {
-    #[serde(default)]
-    cloudaicompanion_project: Option<CloudAiProject>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CloudAiProject {
-    #[serde(default)]
-    id: Option<String>,
 }
 
 impl GeminiProvider {
@@ -591,7 +527,6 @@ impl GeminiProvider {
         Ok(Self {
             client,
             config,
-            code_assist_project: tokio::sync::RwLock::new(None),
             last_retry_after: std::sync::atomic::AtomicU64::new(0),
             refreshed_auth: std::sync::Mutex::new(None),
         })
@@ -612,22 +547,11 @@ impl GeminiProvider {
     /// 1. Re-read from disk (another process may have refreshed) — skip if same token
     /// 2. Direct OAuth refresh using refresh_token + Gemini CLI's client_id/secret
     /// 3. Invoke Gemini CLI with a minimal query to trigger internal token refresh
-    ///
-    /// On success, also invalidates the Code Assist project cache so the next
-    /// request calls `loadCodeAssist` with the new token.
     async fn try_refresh_cli_token(&self) -> bool {
         if self.config.auth_source != AuthSource::GeminiCli {
             return false;
         }
-
-        let refreshed = self.try_refresh_cli_token_inner().await;
-        if refreshed {
-            // Invalidate Code Assist project cache → next request will
-            // call loadCodeAssist with the refreshed token.
-            *self.code_assist_project.write().await = None;
-            tracing::debug!("Code Assist project cache invalidated after token refresh");
-        }
-        refreshed
+        self.try_refresh_cli_token_inner().await
     }
 
     /// Inner implementation of CLI token refresh (3-tier).
@@ -721,152 +645,6 @@ impl GeminiProvider {
     pub fn from_env() -> Result<Self> {
         let config = GeminiConfig::from_env()?;
         Self::new(config)
-    }
-
-    /// Resolve Code Assist project ID.
-    ///
-    /// Uses `current_auth()` (which includes refreshed tokens) instead of
-    /// `config.auth` so that after token refresh the new token is used
-    /// for the `loadCodeAssist` call that activates the Code Assist session.
-    async fn resolve_code_assist_project(&self) -> Result<String> {
-        let token = match self.current_auth() {
-            GeminiAuth::OAuth(t) => t,
-            _ => return Ok(String::new()),
-        };
-
-        if let Ok(project) = std::env::var("GOOGLE_CLOUD_PROJECT")
-            .or_else(|_| std::env::var("GOOGLE_CLOUD_PROJECT_ID"))
-        {
-            return Ok(project);
-        }
-
-        let base = format!("{}/{}", CODE_ASSIST_BASE_URL, CODE_ASSIST_API_VERSION);
-
-        let load_body = serde_json::json!({
-            "metadata": {
-                "ideType": "IDE_UNSPECIFIED",
-                "platform": "PLATFORM_UNSPECIFIED",
-                "pluginType": "GEMINI",
-            }
-        });
-
-        let resp = self
-            .client
-            .post(format!("{}:loadCodeAssist", base))
-            .header("Authorization", format!("Bearer {}", token))
-            .json(&load_body)
-            .send()
-            .await
-            .map_err(|e| Error::Network(e.to_string()))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            debug!("Code Assist loadCodeAssist failed: HTTP {} body={}", status, body);
-            return Ok(String::new());
-        }
-
-        let body_text = resp.text().await.map_err(|e| Error::InvalidResponse(e.to_string()))?;
-        debug!("Code Assist loadCodeAssist response: {}", &body_text[..body_text.len().min(500)]);
-
-        let load: LoadCodeAssistResponse = serde_json::from_str(&body_text)
-            .map_err(|e| Error::InvalidResponse(format!("{}: {}", e, &body_text[..body_text.len().min(200)])))?;
-
-        if let Some(ref project) = load.cloudaicompanion_project {
-            debug!("Code Assist project resolved: {}", project);
-            return Ok(project.clone());
-        }
-
-        if load.current_tier.is_some() {
-            debug!("Code Assist: has current_tier but no project, returning empty");
-            return Ok(String::new());
-        }
-
-        // Onboard user (free tier)
-        let tier_id = load
-            .allowed_tiers
-            .as_ref()
-            .and_then(|tiers| tiers.iter().find(|t| t.is_default))
-            .and_then(|t| t.id.clone())
-            .unwrap_or_else(|| "FREE".to_string());
-
-        let onboard_body = serde_json::json!({
-            "tierId": tier_id,
-            "metadata": {
-                "ideType": "IDE_UNSPECIFIED",
-                "platform": "PLATFORM_UNSPECIFIED",
-                "pluginType": "GEMINI",
-            }
-        });
-
-        let onboard_resp = self
-            .client
-            .post(format!("{}:onboardUser", base))
-            .header("Authorization", format!("Bearer {}", token))
-            .json(&onboard_body)
-            .send()
-            .await
-            .map_err(|e| Error::Network(e.to_string()))?;
-
-        if !onboard_resp.status().is_success() {
-            return Ok(String::new());
-        }
-
-        let mut onboard: OnboardResponse = onboard_resp
-            .json()
-            .await
-            .map_err(|e| Error::InvalidResponse(e.to_string()))?;
-
-        // Poll LRO if needed
-        if !onboard.done {
-            if let Some(ref op_name) = onboard.name.clone() {
-                for _ in 0..12 {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    let poll_resp = self
-                        .client
-                        .get(format!("{}/{}", base, op_name))
-                        .header("Authorization", format!("Bearer {}", token))
-                        .send()
-                        .await
-                        .map_err(|e| Error::Network(e.to_string()))?;
-                    if poll_resp.status().is_success() {
-                        onboard = poll_resp
-                            .json()
-                            .await
-                            .map_err(|e| Error::InvalidResponse(e.to_string()))?;
-                        if onboard.done {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(result) = onboard.response {
-            if let Some(project) = result.cloudaicompanion_project {
-                if let Some(id) = project.id {
-                    return Ok(id);
-                }
-            }
-        }
-
-        Ok(String::new())
-    }
-
-    /// Get or lazily resolve the Code Assist project ID.
-    ///
-    /// Returns a cached value if available; otherwise resolves and caches.
-    /// The cache is invalidated after token refresh so `loadCodeAssist`
-    /// is called again with the new token.
-    async fn get_code_assist_project(&self) -> Result<String> {
-        // Fast path: return cached value
-        if let Some(ref project) = *self.code_assist_project.read().await {
-            return Ok(project.clone());
-        }
-        // Slow path: resolve and cache
-        let project = self.resolve_code_assist_project().await?;
-        *self.code_assist_project.write().await = Some(project.clone());
-        Ok(project)
     }
 
     /// Convert messages to Gemini format, returning system instruction separately
@@ -1137,13 +915,15 @@ impl GeminiProvider {
         }
     }
 
-    /// Single attempt to send request to Gemini API
+    /// Single attempt to send request to Gemini API.
+    ///
+    /// All auth methods (API key, OAuth) route through the standard Gemini API
+    /// (`generativelanguage.googleapis.com`). The Code Assist internal API
+    /// (`cloudcode-pa.googleapis.com`) is intentionally NOT used — Google bans
+    /// accounts that use it from third-party tools (since Jan 2026).
     async fn send_request_once(&self, model: &str, request: &GeminiRequest) -> Result<GeminiResponse> {
         // SECURITY: Don't log the full URL (may contain API key)
         debug!("Sending request to Gemini model: {} (auth_source={:?})", model, self.config.auth_source);
-
-        // Only GeminiCli auth uses Code Assist API; all others use standard API
-        let is_code_assist = self.config.auth_source == AuthSource::GeminiCli;
 
         let current_auth = self.current_auth();
         let mut request_builder = match &current_auth {
@@ -1154,19 +934,7 @@ impl GeminiProvider {
                 );
                 self.client.post(&url)
             }
-            GeminiAuth::OAuth(token) if is_code_assist => {
-                // GeminiCli OAuth uses Code Assist endpoint
-                let url = format!(
-                    "{}/{}:generateContent",
-                    CODE_ASSIST_BASE_URL, CODE_ASSIST_API_VERSION
-                );
-                self.client
-                    .post(&url)
-                    .header("Authorization", format!("Bearer {}", token))
-            }
             GeminiAuth::OAuth(token) => {
-                // CratosOAuth uses standard Gemini API with Bearer token
-                // GcloudCli uses standard API but helps to identify project for quota
                 let url = format!(
                     "{}/models/{}:generateContent",
                     self.config.base_url, model
@@ -1174,11 +942,9 @@ impl GeminiProvider {
                 let mut rb = self.client
                     .post(&url)
                     .header("Authorization", format!("Bearer {}", token));
-                
-                if self.config.auth_source == AuthSource::GcloudCli {
-                    if let Some(ref project_id) = self.config.project_id {
-                        rb = rb.header("x-goog-user-project", project_id);
-                    }
+
+                if let Some(ref project_id) = self.config.project_id {
+                    rb = rb.header("x-goog-user-project", project_id);
                 }
                 rb
             }
@@ -1186,27 +952,11 @@ impl GeminiProvider {
 
         request_builder = request_builder.header("content-type", "application/json");
 
-        // Code Assist wraps request: {model, project, request: {...}}
-        let response = if is_code_assist {
-            let project_id = self.get_code_assist_project().await?;
-            debug!("Code Assist: model={}, project_id={:?}", model, if project_id.is_empty() { "<EMPTY>" } else { project_id.as_str() });
-            let wrapped = serde_json::json!({
-                "model": model,
-                "project": project_id,
-                "request": &request,
-            });
-            request_builder
-                .json(&wrapped)
-                .send()
-                .await
-                .map_err(|e| Error::Network(e.to_string()))?
-        } else {
-            request_builder
-                .json(&request)
-                .send()
-                .await
-                .map_err(|e| Error::Network(e.to_string()))?
-        };
+        let response = request_builder
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
 
         // Gemini doesn't send standard rate limit headers, but capture any present
         crate::quota::global_quota_tracker()
@@ -1304,15 +1054,6 @@ impl GeminiProvider {
             ))));
         }
 
-        // Code Assist wraps response: {"response": {...}, "traceId": "..."}
-        if is_code_assist {
-            if let Ok(wrapped) = serde_json::from_str::<serde_json::Value>(&body) {
-                if let Some(inner) = wrapped.get("response") {
-                    return serde_json::from_value(inner.clone())
-                        .map_err(|e| Error::InvalidResponse(format!("{}: {}", e, body)));
-                }
-            }
-        }
         serde_json::from_str(&body).map_err(|e| Error::InvalidResponse(format!("{}: {}", e, body)))
     }
 }

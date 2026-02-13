@@ -168,7 +168,8 @@ async fn check_cli_auth() -> bool {
     let gemini_status = cli_auth::check_gemini_cli_status();
     match gemini_status {
         cli_auth::GeminiCliStatus::Valid => {
-            println!("  ✅ Gemini CLI: {} (Antigravity Pro)", gemini_status);
+            println!("  ✅ Gemini CLI: {} (routed to Standard API — safe)", gemini_status);
+            println!("     Tip: For higher quotas, set GEMINI_API_KEY (https://aistudio.google.com/apikey)");
         }
         cli_auth::GeminiCliStatus::Expired => {
             println!("  ⚠️  Gemini CLI: {}", gemini_status);

@@ -72,7 +72,7 @@ npx @anthropic-ai/mcp-server-playwright
 ### 2. MCP 설정 파일
 
 ```json
-// ~/.cratos/mcp.json
+// .mcp.json (프로젝트 루트)
 {
   "mcpServers": {
     "playwright": {

@@ -441,6 +441,13 @@ pub(crate) fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<LlmRout
                     if default_provider.is_none() {
                         default_provider = Some("gemini".to_string());
                     }
+                    if auth_source == cratos_llm::cli_auth::AuthSource::GeminiCli {
+                        warn!(
+                            "Gemini CLI OAuth detected — routed to Standard API (safe). \
+                             For higher quotas (2,000 RPD Flash): set GEMINI_API_KEY \
+                             (https://aistudio.google.com/apikey)"
+                        );
+                    }
                     info!("Registered Gemini provider ({})", auth_source);
                 }
                 Err(e) => debug!("Gemini provider init failed: {}", e),

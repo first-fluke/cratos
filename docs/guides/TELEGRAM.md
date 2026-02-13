@@ -15,7 +15,10 @@ Cratos를 Telegram 봇으로 연동하여 개인 채팅 또는 그룹에서 AI �
 | **타이핑 표시** | 응답 중 타이핑 인디케이터 |
 | **첨부 파일** | 이미지, 문서 첨부 지원 |
 | **인라인 키보드** | 버튼 기반 인터랙션 |
-| **마크다운** | MarkdownV2 형식 응답 |
+| **마크다운** | HTML 형식 응답 (MarkdownV2에서 마이그레이션) |
+| **슬래시 명령어** | /status, /sessions, /tools, /cancel, /approve |
+| **DM 정책** | Pairing/Allowlist/Open/Disabled 모드 |
+| **시스템 알림** | notify_chat_id로 승인 요청/에러 알림 |
 
 ## 아키텍처
 
@@ -193,6 +196,27 @@ pub struct TelegramConfig {
 
     /// 그룹에서 @멘션/답글에만 응답 (기본: true)
     pub groups_mention_only: bool,
+
+    /// DM 보안 정책 (Pairing/Allowlist/Open/Disabled)
+    pub dm_policy: DmPolicy,
+
+    /// 시스템 알림용 채팅 ID (승인 요청, 에러 등)
+    pub notify_chat_id: Option<i64>,
+}
+```
+
+### DmPolicy
+
+```rust
+pub enum DmPolicy {
+    /// 알 수 없는 사용자에게 페어링 코드 요구
+    Pairing,
+    /// allowed_users 목록에 있는 사용자만 DM 허용
+    Allowlist,
+    /// 모든 사용자 DM 허용 (최소 보안)
+    Open,
+    /// DM 처리 완전 비활성화
+    Disabled,
 }
 ```
 
@@ -224,6 +248,29 @@ let adapter = TelegramAdapter::from_env()?;
 | `TELEGRAM_ALLOWED_USERS` | ❌ | 빈 값 | 쉼표로 구분된 사용자 ID |
 | `TELEGRAM_ALLOWED_GROUPS` | ❌ | 빈 값 | 쉼표로 구분된 그룹 ID |
 | `TELEGRAM_GROUPS_MENTION_ONLY` | ❌ | true | false면 그룹의 모든 메시지에 응답 |
+| `TELEGRAM_DM_POLICY` | ❌ | `allowlist` | DM 정책 (pairing/allowlist/open/disabled) |
+| `TELEGRAM_NOTIFY_CHAT_ID` | ❌ | - | 시스템 알림 수신 채팅 ID |
+
+## 슬래시 명령어
+
+Telegram에서 사용 가능한 슬래시 명령어:
+
+| 명령어 | 설명 |
+|--------|------|
+| `/status` | 시스템 상태 (활성 실행 수, 등록 도구 수, 업타임) |
+| `/sessions` | 활성 개발 세션 목록 (DevSessionMonitor 필요) |
+| `/tools` | 등록된 도구 목록 |
+| `/cancel <execution_id>` | 실행 중인 작업 취소 |
+| `/approve <request_id>` | 승인 대기 중인 도구 실행 승인 |
+
+BotFather에서 명령어 등록:
+```
+status - 시스템 상태 확인
+sessions - 활성 개발 세션 목록
+tools - 등록된 도구 목록
+cancel - 실행 취소
+approve - 도구 실행 승인
+```
 
 ## 보안
 
@@ -316,7 +363,8 @@ impl TelegramAdapter {
     /// 봇 실행
     pub async fn run(
         self: Arc<Self>,
-        orchestrator: Arc<Orchestrator>
+        orchestrator: Arc<Orchestrator>,
+        dev_monitor: Option<Arc<DevSessionMonitor>>,
     ) -> Result<()>;
 }
 ```
@@ -339,6 +387,12 @@ impl TelegramConfig {
 
     /// 그룹 멘션 전용 모드 설정 (빌더 패턴)
     pub fn with_groups_mention_only(self, enabled: bool) -> Self;
+
+    /// DM 정책 설정 (빌더 패턴)
+    pub fn with_dm_policy(self, policy: DmPolicy) -> Self;
+
+    /// 알림 채팅 ID 설정 (빌더 패턴)
+    pub fn with_notify_chat_id(self, chat_id: i64) -> Self;
 }
 ```
 
@@ -450,22 +504,21 @@ adapter.send_message("123456789", message).await?;
 # BotFather에서 /token으로 새 토큰 발급
 ```
 
-### 마크다운 파싱 실패
+### 마크다운 렌더링
 
-MarkdownV2는 특수 문자 이스케이프 필요:
+Cratos는 MarkdownV2 대신 **HTML 파싱 모드**를 사용합니다 (특수 문자 이스케이프 문제 방지):
 
 ```rust
-// 이스케이프 필요 문자: _ * [ ] ( ) ~ ` > # + - = | { } . !
-let escaped = text
-    .replace("_", "\\_")
-    .replace("*", "\\*")
-    .replace("[", "\\[")
-    // ...
+// 응답은 markdown_to_html()로 변환 후 ParseMode::Html로 전송
+// bold, italic, code, codeblock, strikethrough, link 변환 지원
+bot.send_message(chat_id, &markdown_to_html(&response_text))
+    .parse_mode(ParseMode::Html)
+    .await;
 ```
 
-일반 텍스트로 폴백:
+HTML 파싱 실패 시 일반 텍스트로 자동 폴백:
 ```rust
-// 마크다운 실패 시 자동으로 일반 텍스트로 재전송
+// HTML 파싱 실패 시 자동으로 일반 텍스트로 재전송
 if send_result.is_err() {
     bot.send_message(chat_id, &response_text).await;
 }

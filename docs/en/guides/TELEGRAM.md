@@ -15,7 +15,10 @@ Integrate Cratos as a Telegram bot to use the AI assistant in private chats or g
 | **Typing Indicator** | Show typing while responding |
 | **Attachments** | Support for images and documents |
 | **Inline Keyboard** | Button-based interactions |
-| **Markdown** | MarkdownV2 formatted responses |
+| **Markdown** | HTML formatted responses (migrated from MarkdownV2) |
+| **Slash Commands** | /status, /sessions, /tools, /cancel, /approve |
+| **DM Policy** | Pairing/Allowlist/Open/Disabled modes |
+| **System Notifications** | Approval requests/errors via notify_chat_id |
 
 ## Architecture
 
@@ -193,6 +196,27 @@ pub struct TelegramConfig {
 
     /// Respond only to @mentions/replies in groups (default: true)
     pub groups_mention_only: bool,
+
+    /// DM security policy (Pairing/Allowlist/Open/Disabled)
+    pub dm_policy: DmPolicy,
+
+    /// Chat ID for system notifications (approval requests, errors, etc.)
+    pub notify_chat_id: Option<i64>,
+}
+```
+
+### DmPolicy
+
+```rust
+pub enum DmPolicy {
+    /// Require pairing code before accepting DMs from unknown users
+    Pairing,
+    /// Only accept DMs from users in the allowed_users list
+    Allowlist,
+    /// Accept DMs from any user (least secure)
+    Open,
+    /// Disable DM handling entirely
+    Disabled,
 }
 ```
 
@@ -224,6 +248,29 @@ let adapter = TelegramAdapter::from_env()?;
 | `TELEGRAM_ALLOWED_USERS` | No | empty | Comma-separated user IDs |
 | `TELEGRAM_ALLOWED_GROUPS` | No | empty | Comma-separated group IDs |
 | `TELEGRAM_GROUPS_MENTION_ONLY` | No | true | If false, respond to all messages in groups |
+| `TELEGRAM_DM_POLICY` | No | `allowlist` | DM policy (pairing/allowlist/open/disabled) |
+| `TELEGRAM_NOTIFY_CHAT_ID` | No | - | Chat ID for system notifications |
+
+## Slash Commands
+
+Available Telegram slash commands:
+
+| Command | Description |
+|---------|-------------|
+| `/status` | System status (active executions, registered tools, uptime) |
+| `/sessions` | Active dev sessions (requires DevSessionMonitor) |
+| `/tools` | List registered tools |
+| `/cancel <execution_id>` | Cancel a running execution |
+| `/approve <request_id>` | Approve a pending tool execution |
+
+Register commands with BotFather:
+```
+status - System status
+sessions - Active dev sessions
+tools - List registered tools
+cancel - Cancel execution
+approve - Approve tool execution
+```
 
 ## Security
 
@@ -316,7 +363,8 @@ impl TelegramAdapter {
     /// Run the bot
     pub async fn run(
         self: Arc<Self>,
-        orchestrator: Arc<Orchestrator>
+        orchestrator: Arc<Orchestrator>,
+        dev_monitor: Option<Arc<DevSessionMonitor>>,
     ) -> Result<()>;
 }
 ```
@@ -339,6 +387,12 @@ impl TelegramConfig {
 
     /// Set groups mention-only mode (builder pattern)
     pub fn with_groups_mention_only(self, enabled: bool) -> Self;
+
+    /// Set DM policy (builder pattern)
+    pub fn with_dm_policy(self, policy: DmPolicy) -> Self;
+
+    /// Set notification chat ID (builder pattern)
+    pub fn with_notify_chat_id(self, chat_id: i64) -> Self;
 }
 ```
 
@@ -450,22 +504,21 @@ adapter.send_message("123456789", message).await?;
 # Issue new token via BotFather: /token
 ```
 
-### Markdown Parsing Failures
+### Markdown Rendering
 
-MarkdownV2 requires escaping special characters:
+Cratos uses **HTML parse mode** instead of MarkdownV2 (avoids special character escaping issues):
 
 ```rust
-// Characters that need escaping: _ * [ ] ( ) ~ ` > # + - = | { } . !
-let escaped = text
-    .replace("_", "\\_")
-    .replace("*", "\\*")
-    .replace("[", "\\[")
-    // ...
+// Responses are converted via markdown_to_html() and sent with ParseMode::Html
+// Supports bold, italic, code, codeblock, strikethrough, link conversion
+bot.send_message(chat_id, &markdown_to_html(&response_text))
+    .parse_mode(ParseMode::Html)
+    .await;
 ```
 
-Fallback to plain text:
+Fallback to plain text if HTML parsing fails:
 ```rust
-// Automatically resend as plain text if markdown fails
+// Automatically resend as plain text if HTML fails
 if send_result.is_err() {
     bot.send_message(chat_id, &response_text).await;
 }

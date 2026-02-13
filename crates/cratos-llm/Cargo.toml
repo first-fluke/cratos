@@ -39,6 +39,7 @@ hf-hub = { workspace = true, optional = true }
 [features]
 default = []
 embeddings = ["tract-onnx", "tokenizers", "hf-hub"]
+code-assist-legacy = []  # Enables legacy Code Assist quota poller (banned by Google since Jan 2026)
 
 [dev-dependencies]
 mockall.workspace = true

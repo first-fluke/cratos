@@ -44,13 +44,13 @@ irm https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.ps
 
 ```bash
 # 한국어 마법사
-cargo run -- wizard --lang ko
+cargo run -- init --lang ko
 
 # 또는 영어 마법사
-cargo run -- wizard --lang en
+cargo run -- init --lang en
 
 # 또는 시스템 언어 자동 감지
-cargo run -- wizard
+cargo run -- init
 ```
 
 ---

@@ -371,10 +371,10 @@ Automatically selects appropriate model based on task:
 
 | Task Type | Selected Model |
 |-----------|----------------|
-| Simple questions | GPT-5.2-mini, Qwen-Turbo |
-| Conversation | GPT-5.2, Claude Sonnet |
-| Code writing | Claude 3.5 Sonnet |
-| Complex planning | GPT-5.2-turbo, Claude Opus |
+| Simple questions | GPT-5.2-mini, Claude Haiku 4.5 |
+| Conversation | GPT-5.2, Claude Sonnet 4.5 |
+| Code writing | Claude Sonnet 4.5, Gemini 3 Flash |
+| Complex planning | GPT-5.2-turbo, Claude Opus 4.6 |
 
 ### Specify Model
 
@@ -419,7 +419,7 @@ Bot: LLM Model → gpt-4o
 
 You: What's the current model?
 Bot: LLM Model: claude-sonnet-4
-    Available: gpt-4o, claude-sonnet-4, deepseek-chat, llama-3.3-70b, gemini-2.0-flash
+    Available: gpt-5.2, claude-sonnet-4.5, deepseek-v3.2, llama-3.3-70b, gemini-3-flash-preview
 ```
 
 ### Language Settings

@@ -54,14 +54,16 @@ Cratos is an AI assistant that runs on **your computer**, allowing you to remote
 
 ## 2. System Requirements
 
-| Item | Minimum | Recommended |
-|------|---------|-------------|
-| **OS** | macOS 10.15+, Windows 10+, Ubuntu 20.04+ | Latest version |
-| **CPU** | 2 cores | 4+ cores |
-| **RAM** | 4GB (runtime) / 8GB (build) | 8GB+ |
-| **Disk** | 5GB | 10GB+ |
-| **Rust** | 1.88+ | Latest stable |
-| **Network** | Internet connection | Static IP or DDNS |
+| Item | Minimum¹ | Recommended | Optimal |
+|------|----------|-------------|---------|
+| **OS** | macOS 11+, Windows 10, Ubuntu 20.04+ | macOS 12+, Windows 10+, Ubuntu 22.04+ | Latest |
+| **CPU** | 1 core | 1 core | 2+ cores |
+| **RAM** | 256MB (runtime) / 2GB (build) | 1GB (runtime) / 4GB (build) | 4GB+ |
+| **Disk** | 100MB | 1GB | 5GB+ |
+| **Rust** | 1.88+ | 1.88+ | Latest stable |
+| **Network** | Internet connection | Internet connection | Static IP or DDNS |
+
+> ¹ **Minimum**: With embeddings disabled (`cargo build --no-default-features`). Semantic search unavailable.
 
 > **Note**: No Docker or PostgreSQL required! Data is automatically stored in `~/.cratos/cratos.db` (SQLite).
 
@@ -251,8 +253,8 @@ OPENAI_API_KEY=sk-proj-your-key-here
 # Paid: Anthropic
 ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 
-# Paid: Google Gemini
-GOOGLE_API_KEY=your-gemini-key-here
+# Paid: Google Gemini (GEMINI_API_KEY recommended)
+GEMINI_API_KEY=your-gemini-key-here
 
 # Paid: ZhipuAI GLM
 ZHIPU_API_KEY=your-bigmodel-key-here
@@ -314,9 +316,9 @@ Configuration loaded
 Data directory: /Users/yourname/.cratos
 SQLite event store initialized at /Users/yourname/.cratos/cratos.db
 LLM provider initialized: anthropic
-Tool registry initialized with 11 tools
+Tool registry initialized with 20 tools
 Telegram adapter started
-HTTP server listening on http://127.0.0.1:9742
+HTTP server listening on http://127.0.0.1:8090
 ```
 
 > **Note**: Database file (`~/.cratos/cratos.db`) is created automatically.
@@ -328,12 +330,12 @@ HTTP server listening on http://127.0.0.1:9742
 ### 7.1 Health Check
 
 ```bash
-curl http://localhost:9742/health
+curl http://localhost:8090/health
 ```
 
 Response:
 ```json
-{"status":"healthy","version":"0.1.0"}
+{"status":"healthy","version":"0.1.4"}
 ```
 
 ### 7.2 Test via Telegram
@@ -417,7 +419,11 @@ ps aux | grep cratos
 # 3. Health check
 curl http://localhost:8090/health
 
-# 4. Restart
+# 4. Gemini auth check (for OAuth users)
+# Gemini CLI OAuth is safely routed to Standard API.
+# For higher quotas, set GEMINI_API_KEY instead.
+
+# 5. Restart
 pkill -f cratos && cargo run --release
 ```
 

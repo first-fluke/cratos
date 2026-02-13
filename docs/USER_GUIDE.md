@@ -371,10 +371,10 @@ Cratos는 13개 LLM 프로바이더를 지원합니다.
 
 | 작업 유형 | 선택 모델 |
 |----------|-----------|
-| 간단한 질문 | GPT-5.2-mini, Qwen-Turbo |
-| 대화 | GPT-5.2, Claude Sonnet |
-| 코드 작성 | Claude 3.5 Sonnet |
-| 복잡한 계획 | GPT-5.2-turbo, Claude Opus |
+| 간단한 질문 | GPT-5.2-mini, Claude Haiku 4.5 |
+| 대화 | GPT-5.2, Claude Sonnet 4.5 |
+| 코드 작성 | Claude Sonnet 4.5, Gemini 3 Flash |
+| 복잡한 계획 | GPT-5.2-turbo, Claude Opus 4.6 |
 
 ### 특정 모델 지정
 
@@ -419,7 +419,7 @@ Cratos 설정을 자연어로 변경할 수 있습니다.
 
 나: 현재 모델 뭐야?
 봇: LLM Model: claude-sonnet-4
-    사용 가능: gpt-4o, claude-sonnet-4, deepseek-chat, llama-3.3-70b, gemini-2.0-flash
+    사용 가능: gpt-5.2, claude-sonnet-4.5, deepseek-v3.2, llama-3.3-70b, gemini-3-flash-preview
 ```
 
 ### 언어 설정

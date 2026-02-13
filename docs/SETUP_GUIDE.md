@@ -253,8 +253,8 @@ OPENAI_API_KEY=sk-proj-your-key-here
 # 유료: Anthropic
 ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 
-# 유료: Google Gemini
-GOOGLE_API_KEY=your-gemini-key-here
+# 유료: Google Gemini (GEMINI_API_KEY 권장)
+GEMINI_API_KEY=your-gemini-key-here
 
 # 유료: ZhipuAI GLM
 ZHIPU_API_KEY=your-bigmodel-key-here
@@ -316,9 +316,9 @@ Configuration loaded
 Data directory: /Users/yourname/.cratos
 SQLite event store initialized at /Users/yourname/.cratos/cratos.db
 LLM provider initialized: anthropic
-Tool registry initialized with 11 tools
+Tool registry initialized with 20 tools
 Telegram adapter started
-HTTP server listening on http://127.0.0.1:9742
+HTTP server listening on http://127.0.0.1:8090
 ```
 
 > **참고**: 데이터베이스 파일(`~/.cratos/cratos.db`)은 자동으로 생성됩니다.
@@ -330,12 +330,12 @@ HTTP server listening on http://127.0.0.1:9742
 ### 7.1 헬스체크
 
 ```bash
-curl http://localhost:9742/health
+curl http://localhost:8090/health
 ```
 
 응답:
 ```json
-{"status":"healthy","version":"0.1.0"}
+{"status":"healthy","version":"0.1.4"}
 ```
 
 ### 7.2 Telegram에서 테스트
@@ -419,7 +419,11 @@ ps aux | grep cratos
 # 3. 헬스체크
 curl http://localhost:8090/health
 
-# 4. 재시작
+# 4. Gemini 인증 확인 (OAuth 사용자)
+# Gemini CLI OAuth는 Standard API로 안전하게 라우팅됩니다.
+# 더 높은 쿼터가 필요하면 GEMINI_API_KEY 설정 권장.
+
+# 5. 재시작
 pkill -f cratos && cargo run --release
 ```
 

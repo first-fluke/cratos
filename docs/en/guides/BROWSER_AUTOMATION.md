@@ -72,7 +72,7 @@ npx @anthropic-ai/mcp-server-playwright
 ### 2. MCP Configuration File
 
 ```json
-// ~/.cratos/mcp.json
+// .mcp.json (project root)
 {
   "mcpServers": {
     "playwright": {

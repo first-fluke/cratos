@@ -2,7 +2,7 @@
 
 ## 테스트 목표
 
-1. wizard 명령어가 정상 동작하는지 확인
+1. init 명령어가 정상 동작하는지 확인
 2. 다국어 지원이 제대로 되는지 확인
 3. 설치 스크립트 검증
 4. release.yml 워크플로우 검증
@@ -20,13 +20,13 @@ cargo build --release
 
 # CLI 도움말 확인
 cargo run -- --help
-cargo run -- wizard --help
+cargo run -- init --help
 ```
 
 **확인 항목:**
 - [ ] 테스트 전체 통과
 - [ ] 릴리스 빌드 성공
-- [ ] wizard 명령어가 help에 표시됨
+- [ ] init 명령어가 help에 표시됨
 - [ ] `--lang` 옵션이 표시됨
 
 ---
@@ -37,14 +37,14 @@ cargo run -- wizard --help
 
 ```bash
 # 영어 강제
-cargo run -- wizard --lang en
+cargo run -- init --lang en
 
 # 한국어 강제
-cargo run -- wizard --lang ko
+cargo run -- init --lang ko
 
 # 시스템 언어 감지 (LANG 환경변수 기반)
-LANG=ko_KR.UTF-8 cargo run -- wizard
-LANG=en_US.UTF-8 cargo run -- wizard
+LANG=ko_KR.UTF-8 cargo run -- init
+LANG=en_US.UTF-8 cargo run -- init
 ```
 
 **확인 항목:**
@@ -58,7 +58,7 @@ LANG=en_US.UTF-8 cargo run -- wizard
 ```bash
 # .env 파일이 있는 상태에서 실행
 echo "TEST=1" > .env
-cargo run -- wizard --lang en
+cargo run -- init --lang en
 # "Overwrite?" 프롬프트가 나와야 함
 ```
 
@@ -70,7 +70,7 @@ cargo run -- wizard --lang en
 ### 2.3 Telegram 건너뛰기
 
 ```bash
-cargo run -- wizard --lang en
+cargo run -- init --lang en
 # Step 1에서 "Skip Telegram setup?" → Yes
 ```
 
@@ -86,7 +86,7 @@ cargo run -- wizard --lang en
 |-----------|-------------|------|
 | OpenRouter | `OPENROUTER_API_KEY` | [ ] |
 | Groq | `GROQ_API_KEY` | [ ] |
-| Google AI | `GOOGLE_API_KEY` | [ ] |
+| Google AI | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | [ ] |
 | OpenAI | `OPENAI_API_KEY` | [ ] |
 | Anthropic | `ANTHROPIC_API_KEY` | [ ] |
 | DeepSeek | `DEEPSEEK_API_KEY` | [ ] |
@@ -97,12 +97,12 @@ cargo run -- wizard --lang en
 ```bash
 # Ollama 테스트 (Ollama 실행 중일 때)
 ollama serve &
-cargo run -- wizard --lang en
+cargo run -- init --lang en
 # Ollama 선택 → 연결 성공해야 함
 
 # Ollama 테스트 (Ollama 미실행)
 pkill ollama
-cargo run -- wizard --lang en
+cargo run -- init --lang en
 # Ollama 선택 → 연결 실패 + "Continue anyway?" 프롬프트
 ```
 
@@ -113,7 +113,7 @@ cargo run -- wizard --lang en
 ### 2.6 Telegram 토큰 검증
 
 ```bash
-cargo run -- wizard --lang en
+cargo run -- init --lang en
 # 유효한 토큰 입력 → 성공
 # 잘못된 토큰 입력 → 실패 + "Continue anyway?"
 ```
@@ -196,7 +196,7 @@ cargo build --release --target aarch64-apple-darwin
 ## 5. 생성된 .env 파일 검증
 
 ```bash
-# wizard 완료 후
+# init 완료 후
 cat .env
 
 # 예상 구조:
@@ -221,8 +221,8 @@ cat .env
 # 1. 깨끗한 상태에서 시작
 rm -f .env
 
-# 2. wizard로 설정
-cargo run -- wizard --lang ko
+# 2. init로 설정
+cargo run -- init --lang ko
 
 # 3. doctor로 검증
 cargo run -- doctor
@@ -232,7 +232,7 @@ cargo run -- serve
 ```
 
 **확인 항목:**
-- [ ] wizard → .env 생성
+- [ ] init → .env 생성
 - [ ] doctor → 설정 검증 통과
 - [ ] serve → 서버 시작 성공
 
@@ -243,21 +243,21 @@ cargo run -- serve
 ### 7.1 빈 입력 처리
 
 ```bash
-cargo run -- wizard --lang en
+cargo run -- init --lang en
 # API 키 입력에서 빈 값 입력 시 → 재입력 요청
 ```
 
 ### 7.2 Ctrl+C 처리
 
 ```bash
-cargo run -- wizard --lang en
+cargo run -- init --lang en
 # 중간에 Ctrl+C → 깔끔하게 종료
 ```
 
 ### 7.3 잘못된 언어 코드
 
 ```bash
-cargo run -- wizard --lang fr
+cargo run -- init --lang fr
 # → 영어로 폴백 (기본값)
 ```
 

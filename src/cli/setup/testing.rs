@@ -204,50 +204,12 @@ async fn test_gemini(api_key: &str) -> bool {
     }
 }
 
-/// Test a Google OAuth Bearer token via Code Assist endpoint.
+/// Test a Google OAuth Bearer token via Standard Gemini API.
 ///
-/// The standard `generativelanguage.googleapis.com` doesn't accept OAuth Bearer
-/// tokens. Gemini CLI uses Code Assist (`cloudcode-pa.googleapis.com`), so we test there.
+/// Uses `generativelanguage.googleapis.com` with Bearer auth — the safe endpoint
+/// that doesn't risk account bans (unlike the Code Assist internal API).
 pub async fn test_google_oauth_token(access_token: &str) -> bool {
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::debug!("Failed to build HTTP client: {}", e);
-            return false;
-        }
-    };
-
-    let body = serde_json::json!({
-        "metadata": {
-            "ideType": "IDE_UNSPECIFIED",
-            "platform": "PLATFORM_UNSPECIFIED",
-            "pluginType": "GEMINI",
-        }
-    });
-
-    match client
-        .post("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist")
-        .header("Authorization", format!("Bearer {}", access_token))
-        .json(&body)
-        .send()
-        .await
-    {
-        Ok(resp) => {
-            let status = resp.status();
-            if !status.is_success() {
-                let body = resp.text().await.unwrap_or_default();
-                tracing::debug!("Google OAuth test failed (HTTP {}): {}", status, body);
-            }
-            status.is_success()
-        }
-        Err(e) => {
-            tracing::debug!("Google OAuth test network error: {}", e);
-            false
-        }
-    }
+    test_gemini_bearer(access_token, None).await
 }
 
 /// Test Google Gemini with OAuth token (Cratos OAuth → gcloud → Gemini CLI fallback).
@@ -274,15 +236,11 @@ async fn test_gemini_oauth() -> bool {
         if test_gemini_bearer(&token, project_id.as_deref()).await {
              return true;
         }
-        // Fallback: try Code Assist endpoint if Gemini API fails (just in case)
-        if test_google_oauth_token(&token).await {
-             return true;
-        }
     }
 
-    // 3. Fallback: try Gemini CLI tokens (read-only, no subprocess)
+    // 3. Fallback: try Gemini CLI tokens via Standard API
     if let Some(creds) = cratos_llm::cli_auth::read_gemini_oauth() {
-        if test_google_oauth_token(&creds.access_token).await {
+        if test_gemini_bearer(&creds.access_token, None).await {
             return true;
         }
     }
