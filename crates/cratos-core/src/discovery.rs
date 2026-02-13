@@ -4,6 +4,7 @@
 //! can discover the server automatically on the local network.
 
 use std::sync::Arc;
+#[cfg(feature = "mdns")]
 use tracing::info;
 #[cfg(not(feature = "mdns"))]
 use tracing::warn;
@@ -41,6 +42,7 @@ impl Default for DiscoveryConfig {
 /// Registers the Cratos server on the local network so that clients
 /// (mobile apps, CLI on other machines) can discover it automatically.
 pub struct DiscoveryService {
+    #[allow(dead_code)] // Used only when mdns feature is enabled
     config: DiscoveryConfig,
     #[cfg(feature = "mdns")]
     daemon: std::sync::Mutex<Option<mdns_sd::ServiceDaemon>>,

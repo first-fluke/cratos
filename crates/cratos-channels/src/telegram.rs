@@ -22,7 +22,7 @@ use teloxide::{
         Message as TelegramMessage, MessageId, ParseMode, ReplyParameters,
     },
 };
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 /// DM security policy for Telegram
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -426,7 +426,10 @@ impl TelegramAdapter {
             async move { Self::handle_message(adapter, orchestrator, dev_monitor, bot, msg).await }
         });
 
+        // Use unique distribution key per message to allow concurrent handling.
+        // This ensures /cancel can be processed while another command is running.
         Dispatcher::builder(bot, handler)
+            .distribution_function(|_| None::<std::convert::Infallible>)
             .enable_ctrlc_handler()
             .build()
             .dispatch()
@@ -445,6 +448,12 @@ impl TelegramAdapter {
         chat_id: ChatId,
         reply_to: MessageId,
     ) -> Option<ResponseResult<()>> {
+        info!(
+            %command,
+            %args,
+            %chat_id,
+            "Processing slash command"
+        );
         let response = match command {
             "/status" => {
                 let mut lines = vec!["<b>System Status</b>".to_string()];
@@ -799,11 +808,43 @@ impl TelegramAdapter {
                     .await;
 
                 // Fall back to plain text if HTML parsing fails
-                if send_result.is_err() {
-                    let _ = bot
-                        .send_message(msg.chat.id, &response_text)
-                        .reply_parameters(ReplyParameters::new(msg.id))
-                        .await;
+                match &send_result {
+                    Ok(sent_msg) => {
+                        info!(
+                            chat_id = %msg.chat.id,
+                            message_id = %sent_msg.id,
+                            response_len = response_text.len(),
+                            "Sent response message (HTML)"
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            chat_id = %msg.chat.id,
+                            error = %e,
+                            "HTML send failed, falling back to plain text"
+                        );
+                        match bot
+                            .send_message(msg.chat.id, &response_text)
+                            .reply_parameters(ReplyParameters::new(msg.id))
+                            .await
+                        {
+                            Ok(sent_msg) => {
+                                info!(
+                                    chat_id = %msg.chat.id,
+                                    message_id = %sent_msg.id,
+                                    response_len = response_text.len(),
+                                    "Sent response message (plain text fallback)"
+                                );
+                            }
+                            Err(e2) => {
+                                error!(
+                                    chat_id = %msg.chat.id,
+                                    error = %e2,
+                                    "Failed to send response message"
+                                );
+                            }
+                        }
+                    }
                 }
 
                 // Handle artifacts (e.g. screenshots)
