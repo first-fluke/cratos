@@ -41,6 +41,7 @@ hex = "0.4"
 # Matrix support (no sqlite to avoid libsqlite3-sys conflict with sqlx)
 matrix-sdk = { version = "0.16", default-features = false, features = ["rustls-tls", "markdown"] }
 url = "2.5"
+mime = "0.3"
 
 [dev-dependencies]
 mockall.workspace = true

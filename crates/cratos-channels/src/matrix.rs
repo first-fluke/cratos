@@ -29,10 +29,11 @@ use matrix_sdk::{
     room::Room,
     ruma::{
         events::room::message::{
+            AudioMessageEventContent, FileMessageEventContent, ImageMessageEventContent,
             MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent,
-            TextMessageEventContent,
+            TextMessageEventContent, VideoMessageEventContent,
         },
-        OwnedEventId, RoomId,
+        OwnedEventId, OwnedMxcUri, RoomId,
     },
     Client,
 };
@@ -436,6 +437,95 @@ impl ChannelAdapter for MatrixAdapter {
         debug!("Matrix: Sent typing indicator to {}", channel_id);
         Ok(())
     }
+
+    async fn send_attachment(
+        &self,
+        channel_id: &str,
+        attachment: crate::message::OutgoingAttachment,
+        _reply_to: Option<&str>,
+    ) -> Result<String> {
+        use base64::Engine as _;
+
+        let room = self.get_room(channel_id).await?;
+
+        // Decode base64 attachment data
+        let file_data = base64::engine::general_purpose::STANDARD
+            .decode(&attachment.data)
+            .map_err(|e| Error::Network(format!("Invalid base64 attachment data: {}", e)))?;
+
+        // Upload media to Matrix homeserver
+        let client = self.client.read().await;
+        let client = client.as_ref().ok_or_else(|| Error::Network("Not connected".to_string()))?;
+
+        // Parse MIME type or default to application/octet-stream
+        let mime_type: mime::Mime = attachment
+            .mime_type
+            .parse()
+            .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+        let media_response = client
+            .media()
+            .upload(&mime_type, file_data, None)
+            .await
+            .map_err(|e| Error::Network(format!("Failed to upload media: {e}")))?;
+
+        let mxc_uri: OwnedMxcUri = media_response.content_uri;
+
+        // Create appropriate message content based on MIME type
+        let content = match attachment.mime_type.split('/').next().unwrap_or("application") {
+            "image" => {
+                let mut img_content = ImageMessageEventContent::plain(
+                    attachment.filename.clone(),
+                    mxc_uri,
+                );
+                if let Some(caption) = &attachment.caption {
+                    img_content.body = format!("{} - {}", attachment.filename, caption);
+                }
+                RoomMessageEventContent::new(MessageType::Image(img_content))
+            }
+            "video" => {
+                let mut vid_content = VideoMessageEventContent::plain(
+                    attachment.filename.clone(),
+                    mxc_uri,
+                );
+                if let Some(caption) = &attachment.caption {
+                    vid_content.body = format!("{} - {}", attachment.filename, caption);
+                }
+                RoomMessageEventContent::new(MessageType::Video(vid_content))
+            }
+            "audio" => {
+                let mut audio_content = AudioMessageEventContent::plain(
+                    attachment.filename.clone(),
+                    mxc_uri,
+                );
+                if let Some(caption) = &attachment.caption {
+                    audio_content.body = format!("{} - {}", attachment.filename, caption);
+                }
+                RoomMessageEventContent::new(MessageType::Audio(audio_content))
+            }
+            _ => {
+                let mut file_content = FileMessageEventContent::plain(
+                    attachment.filename.clone(),
+                    mxc_uri,
+                );
+                if let Some(caption) = &attachment.caption {
+                    file_content.body = format!("{} - {}", attachment.filename, caption);
+                }
+                RoomMessageEventContent::new(MessageType::File(file_content))
+            }
+        };
+
+        // Send the message
+        let response = room
+            .send(content)
+            .await
+            .map_err(|e| Error::Network(format!("Failed to send attachment: {e}")))?;
+
+        let message_id = response.event_id.to_string();
+        debug!("Matrix: Sent attachment {} -> {}", attachment.filename, message_id);
+
+        Ok(message_id)
+    }
 }
 
 #[cfg(test)]
@@ -480,5 +570,71 @@ mod tests {
     #[test]
     fn test_default_device_name() {
         assert_eq!(default_device_name(), DEFAULT_DEVICE_NAME);
+    }
+
+    #[test]
+    fn test_mime_type_parsing() {
+        // Test MIME type parsing used in send_attachment
+        let valid_mime: std::result::Result<mime::Mime, _> = "image/png".parse();
+        assert!(valid_mime.is_ok());
+
+        let invalid_mime: std::result::Result<mime::Mime, _> = "not-a-mime".parse();
+        // Falls back to APPLICATION_OCTET_STREAM
+        let fallback = invalid_mime.unwrap_or(mime::APPLICATION_OCTET_STREAM);
+        assert_eq!(fallback, mime::APPLICATION_OCTET_STREAM);
+    }
+
+    #[test]
+    fn test_media_type_classification() {
+        // Test media type classification for message content type selection
+        let test_cases = [
+            ("image/jpeg", "image"),
+            ("image/png", "image"),
+            ("image/gif", "image"),
+            ("video/mp4", "video"),
+            ("video/webm", "video"),
+            ("audio/mpeg", "audio"),
+            ("audio/ogg", "audio"),
+            ("application/pdf", "application"),
+            ("text/plain", "text"),
+        ];
+
+        for (mime_type, expected_category) in test_cases {
+            let category = mime_type.split('/').next().unwrap_or("application");
+            assert_eq!(category, expected_category);
+        }
+    }
+
+    #[test]
+    fn test_attachment_body_with_caption() {
+        let filename = "test.png";
+        let caption = "Test caption";
+
+        let body_with_caption = format!("{} - {}", filename, caption);
+        assert_eq!(body_with_caption, "test.png - Test caption");
+    }
+
+    #[test]
+    fn test_base64_decode_for_matrix_upload() {
+        use base64::Engine as _;
+
+        let test_data = b"Matrix file upload test data";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(test_data);
+        let decoded = base64::engine::general_purpose::STANDARD.decode(&encoded);
+
+        assert!(decoded.is_ok());
+        assert_eq!(decoded.unwrap(), test_data);
+    }
+
+    #[test]
+    fn test_user_id_parsing() {
+        // Matrix user ID format: @localpart:domain
+        let user_id = "@bot:matrix.org";
+        let localpart = user_id
+            .strip_prefix('@')
+            .and_then(|s| s.split(':').next())
+            .unwrap_or("unknown");
+
+        assert_eq!(localpart, "bot");
     }
 }
