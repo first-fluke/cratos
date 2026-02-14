@@ -745,6 +745,16 @@ impl Orchestrator {
         )
         .await;
 
+        // Update persona chronicle with the final response/result
+        if !final_response.is_empty() {
+            self.update_persona_chronicle(
+                &effective_persona,
+                &final_response,
+                execution_id,
+            )
+            .await;
+        }
+
         // Sanitize response: strip leaked XML tags from weak models
         let final_response = sanitize_response(&final_response);
 

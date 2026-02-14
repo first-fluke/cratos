@@ -425,6 +425,60 @@ impl GraphStore {
         Ok(row.try_get::<i32, _>("cnt")? as u32)
     }
 
+    // ── Graph Data Export ─────────────────────────────────────
+
+    /// List all entities (for graph visualization).
+    pub async fn list_all_entities(&self, limit: u32) -> Result<Vec<Entity>> {
+        let rows = sqlx::query(
+            "SELECT id, name, kind, first_seen, mention_count
+             FROM entities
+             ORDER BY mention_count DESC
+             LIMIT ?1",
+        )
+        .bind(limit as i32)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.iter()
+            .map(|r| {
+                let kind_str: String = r.try_get("kind")?;
+                let first_seen_str: String = r.try_get("first_seen")?;
+                Ok(Entity {
+                    id: r.try_get("id")?,
+                    name: r.try_get("name")?,
+                    kind: EntityKind::from_str_lossy(&kind_str),
+                    first_seen: DateTime::parse_from_rfc3339(&first_seen_str)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                    mention_count: r.try_get::<i32, _>("mention_count")? as u32,
+                })
+            })
+            .collect()
+    }
+
+    /// Get all co-occurrence edges (for graph visualization).
+    pub async fn list_all_cooccurrences(&self, limit: u32) -> Result<Vec<(String, String, u32)>> {
+        let rows = sqlx::query(
+            "SELECT entity_a, entity_b, cooccurrence_count
+             FROM entity_cooccurrence
+             ORDER BY cooccurrence_count DESC
+             LIMIT ?1",
+        )
+        .bind(limit as i32)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let a: String = r.get("entity_a");
+                let b: String = r.get("entity_b");
+                let count: i32 = r.get("cooccurrence_count");
+                (a, b, count as u32)
+            })
+            .collect())
+    }
+
     // ── Explicit Memories ─────────────────────────────────────
 
     /// Save an explicit memory (INSERT OR REPLACE).

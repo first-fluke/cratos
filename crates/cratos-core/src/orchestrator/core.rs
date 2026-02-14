@@ -38,6 +38,8 @@ pub struct Orchestrator {
     pub(crate) security_policy: Option<ToolSecurityPolicy>,
     /// Persona-skill binding store for tracking persona-specific skill metrics
     pub(crate) persona_skill_store: Option<Arc<cratos_skills::PersonaSkillStore>>,
+    /// Chronicle store for tracking persona quests and history
+    pub(crate) chronicle_store: Option<Arc<crate::chronicles::ChronicleStore>>,
     pub(crate) doctor: ToolDoctor,
     pub(crate) config: OrchestratorConfig,
     /// Active executions with cancellation tokens for chat.cancel support
@@ -69,6 +71,7 @@ impl Orchestrator {
             skill_router: None,
             security_policy: None,
             persona_skill_store: None,
+            chronicle_store: None,
             doctor: ToolDoctor::new(),
             config,
             active_executions: Arc::new(DashMap::new()),
@@ -148,6 +151,12 @@ impl Orchestrator {
         store: Arc<cratos_skills::PersonaSkillStore>,
     ) -> Self {
         self.persona_skill_store = Some(store);
+        self
+    }
+
+    /// Set the chronicle store for tracking persona quests
+    pub fn with_chronicle_store(mut self, store: Arc<crate::chronicles::ChronicleStore>) -> Self {
+        self.chronicle_store = Some(store);
         self
     }
 

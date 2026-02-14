@@ -183,6 +183,19 @@ impl GraphMemory {
         self.store.entity_count().await
     }
 
+    // ── Graph Data Export API ────────────────────────────────────
+
+    /// List all entities (for graph visualization).
+    pub async fn list_entities(&self, limit: u32) -> Result<Vec<Entity>> {
+        self.store.list_all_entities(limit).await
+    }
+
+    /// List all co-occurrence edges (for graph visualization).
+    /// Returns tuples of (entity_id_a, entity_id_b, cooccurrence_count).
+    pub async fn list_cooccurrences(&self, limit: u32) -> Result<Vec<(String, String, u32)>> {
+        self.store.list_all_cooccurrences(limit).await
+    }
+
     // ── Explicit Memory API ──────────────────────────────────────
 
     /// Save an explicit memory with entity extraction and optional embedding.
