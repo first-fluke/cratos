@@ -25,7 +25,7 @@ pub use error::{Error, Result};
 // Re-export message types
 pub use message::{
     Attachment, AttachmentType, ChannelAdapter, ChannelType, MessageButton, NormalizedMessage,
-    OutgoingMessage,
+    OutgoingAttachment, OutgoingMessage,
 };
 
 // Re-export Telegram adapter
@@ -39,7 +39,7 @@ pub use discord::{DiscordAdapter, DiscordConfig};
 
 // Re-export WhatsApp adapters
 pub use whatsapp::{WhatsAppAdapter, WhatsAppConfig};
-pub use whatsapp_business::{WhatsAppBusinessAdapter, WhatsAppBusinessConfig};
+pub use whatsapp_business::{WhatsAppBusinessAdapter, WhatsAppBusinessConfig, WhatsAppBusinessWebhook};
 
 // Re-export Matrix adapter
 pub use matrix::{MatrixAdapter, MatrixConfig};

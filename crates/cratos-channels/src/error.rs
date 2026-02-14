@@ -25,6 +25,10 @@ pub enum Error {
     #[error("voice error: {0}")]
     Voice(String),
 
+    /// Audio conversion error
+    #[error("audio error: {0}")]
+    Audio(String),
+
     /// Message parsing error
     #[error("message parsing error: {0}")]
     Parse(String),

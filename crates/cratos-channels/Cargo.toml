@@ -7,11 +7,17 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[features]
+default = []
+audio = ["cratos-audio"]
+
 [dependencies]
 cratos-core.workspace = true
 cratos-llm.workspace = true
+cratos-audio = { workspace = true, optional = true }
 
 tokio.workspace = true
+tokio-util.workspace = true
 teloxide.workspace = true
 slack-morphism.workspace = true
 serenity.workspace = true

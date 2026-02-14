@@ -317,6 +317,94 @@ impl OutgoingMessage {
     }
 }
 
+/// Outgoing attachment for sending files/media through channels
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutgoingAttachment {
+    /// File name
+    pub filename: String,
+    /// MIME type
+    pub mime_type: String,
+    /// Base64-encoded data
+    pub data: String,
+    /// Attachment type (image, document, audio, etc.)
+    pub attachment_type: AttachmentType,
+    /// Optional caption/description
+    pub caption: Option<String>,
+}
+
+impl OutgoingAttachment {
+    /// Create from raw bytes
+    #[must_use]
+    pub fn from_bytes(
+        filename: impl Into<String>,
+        mime_type: impl Into<String>,
+        data: &[u8],
+    ) -> Self {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let mime = mime_type.into();
+        let attachment_type = Self::infer_type(&mime);
+        Self {
+            filename: filename.into(),
+            mime_type: mime,
+            data: STANDARD.encode(data),
+            attachment_type,
+            caption: None,
+        }
+    }
+
+    /// Create an image attachment
+    #[must_use]
+    pub fn image(filename: impl Into<String>, mime_type: impl Into<String>, data: &[u8]) -> Self {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        Self {
+            filename: filename.into(),
+            mime_type: mime_type.into(),
+            data: STANDARD.encode(data),
+            attachment_type: AttachmentType::Image,
+            caption: None,
+        }
+    }
+
+    /// Create a document attachment
+    #[must_use]
+    pub fn document(filename: impl Into<String>, mime_type: impl Into<String>, data: &[u8]) -> Self {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        Self {
+            filename: filename.into(),
+            mime_type: mime_type.into(),
+            data: STANDARD.encode(data),
+            attachment_type: AttachmentType::Document,
+            caption: None,
+        }
+    }
+
+    /// Set caption
+    #[must_use]
+    pub fn with_caption(mut self, caption: impl Into<String>) -> Self {
+        self.caption = Some(caption.into());
+        self
+    }
+
+    /// Decode the base64 data to bytes
+    pub fn decode_data(&self) -> Result<Vec<u8>, base64::DecodeError> {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        STANDARD.decode(&self.data)
+    }
+
+    /// Infer attachment type from MIME type
+    fn infer_type(mime: &str) -> AttachmentType {
+        if mime.starts_with("image/") {
+            AttachmentType::Image
+        } else if mime.starts_with("audio/") {
+            AttachmentType::Audio
+        } else if mime.starts_with("video/") {
+            AttachmentType::Video
+        } else {
+            AttachmentType::Document
+        }
+    }
+}
+
 /// A button in a message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageButton {
@@ -376,6 +464,34 @@ pub trait ChannelAdapter: Send + Sync {
 
     /// Send a typing indicator
     async fn send_typing(&self, channel_id: &str) -> crate::Result<()>;
+
+    /// Send a file/attachment to a channel
+    ///
+    /// Default implementation sends a text fallback message.
+    /// Channels should override this to send actual files.
+    async fn send_attachment(
+        &self,
+        channel_id: &str,
+        attachment: OutgoingAttachment,
+        reply_to: Option<&str>,
+    ) -> crate::Result<String> {
+        // Default: send text fallback
+        let caption = attachment
+            .caption
+            .as_deref()
+            .unwrap_or("")
+            .to_string();
+        let text = if caption.is_empty() {
+            format!("[Attachment: {}]", attachment.filename)
+        } else {
+            format!("[Attachment: {}] {}", attachment.filename, caption)
+        };
+        let mut msg = OutgoingMessage::text(text);
+        if let Some(reply) = reply_to {
+            msg = msg.reply_to(reply);
+        }
+        self.send_message(channel_id, msg).await
+    }
 }
 
 #[cfg(test)]
@@ -422,5 +538,38 @@ mod tests {
     fn test_channel_type_display() {
         assert_eq!(ChannelType::Telegram.to_string(), "telegram");
         assert_eq!(ChannelType::Slack.to_string(), "slack");
+    }
+
+    #[test]
+    fn test_outgoing_attachment() {
+        let data = b"test image data";
+        let att = OutgoingAttachment::image("test.png", "image/png", data)
+            .with_caption("Test caption");
+
+        assert_eq!(att.filename, "test.png");
+        assert_eq!(att.mime_type, "image/png");
+        assert_eq!(att.attachment_type, AttachmentType::Image);
+        assert_eq!(att.caption, Some("Test caption".to_string()));
+
+        // Verify base64 encoding/decoding round-trip
+        let decoded = att.decode_data().unwrap();
+        assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn test_outgoing_attachment_type_inference() {
+        let data = b"test";
+
+        let img = OutgoingAttachment::from_bytes("test.png", "image/png", data);
+        assert_eq!(img.attachment_type, AttachmentType::Image);
+
+        let audio = OutgoingAttachment::from_bytes("test.mp3", "audio/mpeg", data);
+        assert_eq!(audio.attachment_type, AttachmentType::Audio);
+
+        let video = OutgoingAttachment::from_bytes("test.mp4", "video/mp4", data);
+        assert_eq!(video.attachment_type, AttachmentType::Video);
+
+        let doc = OutgoingAttachment::from_bytes("test.pdf", "application/pdf", data);
+        assert_eq!(doc.attachment_type, AttachmentType::Document);
     }
 }
