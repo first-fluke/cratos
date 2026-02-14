@@ -940,6 +940,21 @@ impl Orchestrator {
                     data: image.to_string(),
                 });
             }
+
+            // Check for send_file artifact (structured artifact object)
+            if let Some(artifact_obj) = record.output.get("artifact") {
+                if let (Some(name), Some(mime_type), Some(data)) = (
+                    artifact_obj.get("name").and_then(|v| v.as_str()),
+                    artifact_obj.get("mime_type").and_then(|v| v.as_str()),
+                    artifact_obj.get("data").and_then(|v| v.as_str()),
+                ) {
+                    artifacts.push(ExecutionArtifact {
+                        name: name.to_string(),
+                        mime_type: mime_type.to_string(),
+                        data: data.to_string(),
+                    });
+                }
+            }
         }
 
         // Record execution metrics

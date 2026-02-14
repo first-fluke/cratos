@@ -95,10 +95,23 @@ pub enum OrchestratorEvent {
         /// Message ID
         message_id: Uuid,
     },
+    /// Provider quota approaching limit
+    ///
+    /// Emitted when a provider's remaining quota falls below threshold (default 20%).
+    QuotaWarning {
+        /// Provider name (e.g., "openai", "anthropic", "gemini")
+        provider: String,
+        /// Remaining percentage (0.0 - 100.0)
+        remaining_pct: f64,
+        /// Seconds until quota resets (if known)
+        reset_in_secs: Option<i64>,
+    },
 }
 
 impl OrchestratorEvent {
     /// Get the execution_id from any event variant.
+    ///
+    /// Returns a placeholder UUID for events without execution context.
     #[must_use]
     pub fn execution_id(&self) -> Uuid {
         match self {
@@ -112,6 +125,8 @@ impl OrchestratorEvent {
             | Self::ExecutionFailed { execution_id, .. }
             | Self::ExecutionCancelled { execution_id } => *execution_id,
             Self::A2aMessageSent { message_id, .. } => *message_id,
+            // QuotaWarning has no execution context
+            Self::QuotaWarning { .. } => Uuid::nil(),
         }
     }
 }
