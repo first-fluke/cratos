@@ -3,8 +3,8 @@
 use super::adapter::TelegramAdapter;
 use super::commands::handle_slash_command;
 use crate::error::Result;
+use crate::message::{ChannelAdapter, OutgoingAttachment};
 use crate::util::{markdown_to_html, mask_for_logging, sanitize_error_for_user};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use cratos_core::dev_sessions::DevSessionMonitor;
 use cratos_core::{Orchestrator, OrchestratorInput};
 use cratos_llm::ImageContent;
@@ -14,7 +14,7 @@ use teloxide::{
     payloads::SendMessageSetters,
     prelude::*,
     types::{
-        ChatAction, ChatId, FileId, InlineKeyboardButton, InlineKeyboardMarkup, InputFile,
+        ChatAction, ChatId, FileId, InlineKeyboardButton, InlineKeyboardMarkup,
         Message as TelegramMessage, ParseMode, ReplyParameters,
     },
 };
@@ -84,6 +84,39 @@ impl TelegramAdapter {
                                 .send_message(chat_id, &text)
                                 .parse_mode(ParseMode::Html)
                                 .await;
+                        }
+                        Ok(cratos_core::event_bus::OrchestratorEvent::QuotaWarning {
+                            provider,
+                            remaining_pct,
+                            reset_in_secs,
+                        }) => {
+                            let reset_info = reset_in_secs
+                                .filter(|&s| s > 0)
+                                .map(|s| {
+                                    let mins = s / 60;
+                                    if mins > 0 {
+                                        format!(", resets in {}m", mins)
+                                    } else {
+                                        format!(", resets in {}s", s)
+                                    }
+                                })
+                                .unwrap_or_default();
+
+                            let emoji = if remaining_pct < 10.0 { "🔴" } else { "⚠️" };
+                            let text = format!(
+                                "{} <b>Quota Warning</b>\n\
+                                Provider: <code>{}</code>\n\
+                                Remaining: {:.1}%{}",
+                                emoji, provider, remaining_pct, reset_info
+                            );
+
+                            if let Err(e) = notify_bot
+                                .send_message(chat_id, &text)
+                                .parse_mode(ParseMode::Html)
+                                .await
+                            {
+                                warn!(error = %e, "Failed to send quota warning");
+                            }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -345,19 +378,31 @@ impl TelegramAdapter {
                     }
                 }
 
-                // Handle artifacts (e.g. screenshots)
+                // Handle artifacts (e.g. screenshots, files)
                 for artifact in &result.artifacts {
-                    if artifact.mime_type.starts_with("image/") {
-                        if let Ok(data) = BASE64.decode(&artifact.data) {
-                            let _ = bot
-                                .send_photo(msg.chat.id, InputFile::memory(data))
-                                .caption(format!("Artifact: {}", artifact.name))
-                                .reply_parameters(ReplyParameters::new(msg.id))
-                                .await
-                                .map_err(|e| error!(error = %e, artifact = %artifact.name, "Failed to send photo artifact"));
+                    let attachment = OutgoingAttachment {
+                        filename: artifact.name.clone(),
+                        mime_type: artifact.mime_type.clone(),
+                        data: artifact.data.clone(),
+                        attachment_type: if artifact.mime_type.starts_with("image/") {
+                            crate::message::AttachmentType::Image
+                        } else if artifact.mime_type.starts_with("audio/") {
+                            crate::message::AttachmentType::Audio
+                        } else if artifact.mime_type.starts_with("video/") {
+                            crate::message::AttachmentType::Video
                         } else {
-                            error!(artifact = %artifact.name, "Failed to decode base64 data for artifact");
-                        }
+                            crate::message::AttachmentType::Document
+                        },
+                        caption: Some(format!("Artifact: {}", artifact.name)),
+                    };
+
+                    let channel_id = msg.chat.id.0.to_string();
+                    let reply_to = Some(msg.id.0.to_string());
+                    if let Err(e) = adapter
+                        .send_attachment(&channel_id, attachment, reply_to.as_deref())
+                        .await
+                    {
+                        error!(error = %e, artifact = %artifact.name, "Failed to send artifact");
                     }
                 }
             }

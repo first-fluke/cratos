@@ -166,6 +166,48 @@ impl TelegramAdapter {
             });
         }
 
+        // Handle voice messages
+        if let Some(voice) = msg.voice() {
+            normalized = normalized.with_attachment(Attachment {
+                attachment_type: AttachmentType::Voice,
+                file_name: None, // Telegram voice messages have no filename
+                mime_type: Some(
+                    voice
+                        .mime_type
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_else(|| "audio/ogg".to_string()),
+                ),
+                file_size: Some(voice.file.size as u64),
+                url: None,
+                file_id: Some(voice.file.id.to_string()),
+            });
+        }
+
+        // Handle audio files (different from voice messages)
+        if let Some(audio) = msg.audio() {
+            normalized = normalized.with_attachment(Attachment {
+                attachment_type: AttachmentType::Audio,
+                file_name: audio.file_name.clone(),
+                mime_type: audio.mime_type.as_ref().map(|m| m.to_string()),
+                file_size: Some(audio.file.size as u64),
+                url: None,
+                file_id: Some(audio.file.id.to_string()),
+            });
+        }
+
+        // Handle video messages
+        if let Some(video) = msg.video() {
+            normalized = normalized.with_attachment(Attachment {
+                attachment_type: AttachmentType::Video,
+                file_name: video.file_name.clone(),
+                mime_type: video.mime_type.as_ref().map(|m| m.to_string()),
+                file_size: Some(video.file.size as u64),
+                url: None,
+                file_id: Some(video.file.id.to_string()),
+            });
+        }
+
         Some(normalized)
     }
 
