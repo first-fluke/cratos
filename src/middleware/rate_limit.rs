@@ -23,8 +23,7 @@ use tracing::warn;
 // ============================================================================
 
 /// Rate limit configuration (deserializable from TOML)
-#[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RateLimitSettings {
     /// Enable rate limiting
     #[serde(default = "default_true")]

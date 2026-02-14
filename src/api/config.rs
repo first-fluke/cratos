@@ -8,29 +8,39 @@ use cratos_core::auth::Scope;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use utoipa::ToSchema;
 
 use crate::middleware::auth::{require_scope, RequireAuth};
+
+use crate::server::config::{AnthropicLlmConfig, AppConfig, OpenAiLlmConfig};
 
 /// Configuration state shared across API handlers
 #[derive(Clone)]
 pub struct ConfigState {
-    config: Arc<RwLock<AppConfigView>>,
+    config: Arc<RwLock<AppConfig>>,
 }
 
 impl ConfigState {
     /// Create a new config state with defaults
     pub fn new() -> Self {
         Self {
-            config: Arc::new(RwLock::new(AppConfigView::default())),
+            config: Arc::new(RwLock::new(AppConfig::default())),
         }
     }
 
-    /// Create from existing config
-    #[allow(dead_code)]
-    pub fn from_config(config: AppConfigView) -> Self {
+    /// Create from application configuration
+    pub fn with_config(config: &AppConfig) -> Self {
         Self {
-            config: Arc::new(RwLock::new(config)),
+            config: Arc::new(RwLock::new(config.clone())),
         }
+    }
+
+    /// Create from existing config view (Compatibility - not recommended)
+    #[allow(dead_code)]
+    pub fn from_config(_config: AppConfigView) -> Self {
+        // This is tricky because we can't easily go View -> Config without defaults
+        // For now, use default and warn
+        Self::new()
     }
 }
 
@@ -40,8 +50,34 @@ impl Default for ConfigState {
     }
 }
 
+impl From<AppConfig> for AppConfigView {
+    fn from(config: AppConfig) -> Self {
+        // Determine default model based on provider
+        let llm_model = match config.llm.default_provider.as_str() {
+            "openai" => config.llm.openai.map(|c| c.default_model).unwrap_or_else(|| "gpt-4o".to_string()),
+            "anthropic" => config.llm.anthropic.map(|c| c.default_model).unwrap_or_else(|| "claude-3-sonnet-20240229".to_string()),
+            _ => "auto".to_string(),
+        };
+
+        Self {
+            llm_provider: config.llm.default_provider,
+            llm_model,
+            language: config.language,
+            persona: config.persona,
+            approval_mode: config.approval.default_mode,
+            scheduler_enabled: config.scheduler.enabled,
+            vector_search_enabled: config.vector_search.enabled,
+            channels: ChannelsView {
+                telegram_enabled: config.channels.telegram.enabled,
+                slack_enabled: config.channels.slack.enabled,
+                discord_enabled: config.channels.discord.enabled,
+            },
+        }
+    }
+}
+
 /// User-facing configuration view (excludes sensitive data)
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, ToSchema)]
 pub struct AppConfigView {
     /// Current LLM provider
     pub llm_provider: String,
@@ -62,7 +98,7 @@ pub struct AppConfigView {
 }
 
 /// Channel configuration view
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, ToSchema)]
 pub struct ChannelsView {
     pub telegram_enabled: bool,
     pub slack_enabled: bool,
@@ -70,7 +106,7 @@ pub struct ChannelsView {
 }
 
 /// Configuration update request
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ConfigUpdateRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_provider: Option<String>,
@@ -84,10 +120,25 @@ pub struct ConfigUpdateRequest {
     pub approval_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scheduler_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_search_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channels: Option<ChannelsUpdate>,
+}
+
+/// Channels update request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ChannelsUpdate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub telegram_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slack_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discord_enabled: Option<bool>,
 }
 
 /// API response wrapper
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponse<T> {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -115,19 +166,43 @@ impl<T> ApiResponse<T> {
 }
 
 /// Get current configuration (requires ConfigRead scope)
-async fn get_config(
+#[utoipa::path(
+    get,
+    path = "/api/v1/config",
+    tag = "config",
+    responses(
+        (status = 200, description = "Current configuration", body = AppConfigView),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - missing ConfigRead scope")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn get_config(
     RequireAuth(auth): RequireAuth,
     State(state): State<ConfigState>,
 ) -> impl IntoResponse {
     if let Err(rejection) = require_scope(&auth, &Scope::ConfigRead) {
         return rejection.into_response();
     }
-    let config = state.config.read().await.clone();
-    Json(ApiResponse::success(config)).into_response()
+    let config = state.config.read().await;
+    let view = AppConfigView::from(config.clone());
+    Json(ApiResponse::success(view)).into_response()
 }
 
 /// Update configuration (requires ConfigWrite scope)
-async fn update_config(
+#[utoipa::path(
+    put,
+    path = "/api/v1/config",
+    tag = "config",
+    request_body = ConfigUpdateRequest,
+    responses(
+        (status = 200, description = "Updated configuration", body = AppConfigView),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - missing ConfigWrite scope")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn update_config(
     RequireAuth(auth): RequireAuth,
     State(state): State<ConfigState>,
     Json(request): Json<ConfigUpdateRequest>,
@@ -144,11 +219,30 @@ async fn update_config(
                 provider
             ))));
         }
-        config.llm_provider = provider;
+        config.llm.default_provider = provider;
     }
 
+    // For LLM model, we try to update the default model for the *current* provider if set,
+    // or just assume we should update OpenAI/Anthropic based on simple heuristic or provider setting.
+    // Given AppConfig structure is complex, we'll just try to ensure common providers are updated.
     if let Some(model) = request.llm_model {
-        config.llm_model = model;
+        match config.llm.default_provider.as_str() {
+            "openai" => {
+                let mut c = config.llm.openai.clone().unwrap_or(OpenAiLlmConfig { default_model: "gpt-4o".to_string() });
+                c.default_model = model.clone();
+                config.llm.openai = Some(c);
+            }
+            "anthropic" => {
+                let mut c = config.llm.anthropic.clone().unwrap_or(AnthropicLlmConfig { default_model: "claude-3-sonnet-20240229".to_string() });
+                c.default_model = model.clone();
+                config.llm.anthropic = Some(c);
+            }
+            _ => {
+                // For other providers or auto, we might not have a specific config struct to update easily here
+                // without refactoring LlmConfig.
+                // Log warning or ignored for now.
+            }
+        }
     }
 
     if let Some(language) = request.language {
@@ -178,14 +272,38 @@ async fn update_config(
                 mode
             ))));
         }
-        config.approval_mode = mode;
+        config.approval.default_mode = mode;
     }
 
     if let Some(enabled) = request.scheduler_enabled {
-        config.scheduler_enabled = enabled;
+        config.scheduler.enabled = enabled;
     }
 
-    Ok(Json(ApiResponse::success(config.clone())))
+    if let Some(enabled) = request.vector_search_enabled {
+        config.vector_search.enabled = enabled;
+    }
+
+    if let Some(channels_update) = request.channels {
+        if let Some(enabled) = channels_update.telegram_enabled {
+            config.channels.telegram.enabled = enabled;
+        }
+        if let Some(enabled) = channels_update.slack_enabled {
+            config.channels.slack.enabled = enabled;
+        }
+        if let Some(enabled) = channels_update.discord_enabled {
+            config.channels.discord.enabled = enabled;
+        }
+    }
+
+    // Persist changes
+    if let Err(e) = config.save("config/local.json") {
+        tracing::error!("Failed to save configuration: {}", e);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    
+    // Return the updated view
+    let view = AppConfigView::from(config.clone());
+    Ok(Json(ApiResponse::success(view)))
 }
 
 fn is_valid_provider(provider: &str) -> bool {
@@ -222,10 +340,16 @@ fn is_valid_approval_mode(mode: &str) -> bool {
 }
 
 /// Create configuration routes
+/// Create configuration routes
 pub fn config_routes() -> Router {
+    config_routes_with_state(ConfigState::new())
+}
+
+/// Create configuration routes with explicit state
+pub fn config_routes_with_state(state: ConfigState) -> Router {
     Router::new()
         .route("/api/v1/config", get(get_config).put(update_config))
-        .with_state(ConfigState::new())
+        .with_state(state)
 }
 
 #[cfg(test)]

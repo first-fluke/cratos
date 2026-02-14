@@ -10,7 +10,7 @@ use super::validation::validate_production_config;
 use crate::middleware::rate_limit::RateLimitLayer;
 use anyhow::{Context, Result};
 use axum::{routing::get, Extension, Router};
-use tower_http::services::ServeDir;
+use tower_http::{cors::CorsLayer, services::ServeDir};
 use cratos_channels::{DiscordAdapter, DiscordConfig, TelegramAdapter, TelegramConfig};
 use cratos_core::{
     admin_scopes, shutdown_signal_with_controller, ApprovalManager, AuthStore, EventBus,
@@ -21,7 +21,10 @@ use cratos_llm::{EmbeddingProvider, LlmProvider, SharedEmbeddingProvider, TractE
 use cratos_memory::{GraphMemory, VectorBridge};
 use cratos_replay::EventStore;
 use cratos_search::{IndexConfig, VectorIndex};
-use cratos_skills::{SemanticSkillRouter, SkillRegistry, SkillStore};
+use cratos_skills::{
+    SemanticSkillRouter, Skill, SkillCategory, SkillOrigin, SkillRegistry, SkillStatus,
+    SkillStore, SkillTrigger,
+};
 use cratos_tools::{
     register_builtins_with_config, BuiltinsConfig, ExecConfig, ExecMode, RunnerConfig, ToolRegistry,
 };
@@ -56,6 +59,11 @@ pub async fn run() -> Result<()> {
             .context("Failed to initialize SQLite event store")?,
     );
     info!("SQLite event store initialized at {}", db_path.display());
+
+    let chronicle_store = Arc::new(
+        cratos_core::chronicles::ChronicleStore::with_path(&data_dir)
+    );
+    info!("Chronicle store initialized at {}", data_dir.display());
 
     let skill_db_path = data_dir.join("skills.db");
     let skill_store = Arc::new(
@@ -251,6 +259,8 @@ pub async fn run() -> Result<()> {
     .with_olympus_hooks(olympus_hooks)
     .with_persona_mapping(cratos_core::PersonaMapping::default_mapping());
 
+    // Clone graph_memory for Extension before moving it to orchestrator
+    let graph_memory_ext = graph_memory.clone();
     if let Some(gm) = graph_memory {
         orchestrator = orchestrator.with_graph_memory(gm);
     }
@@ -303,6 +313,10 @@ pub async fn run() -> Result<()> {
     // Connect persona-skill store to orchestrator
     orchestrator = orchestrator.with_persona_skill_store(persona_skill_store.clone());
     info!("Persona skill store connected to orchestrator");
+
+    // Connect chronicle store to orchestrator
+    orchestrator = orchestrator.with_chronicle_store(chronicle_store.clone());
+    info!("Chronicle store connected to orchestrator");
 
     let orchestrator = Arc::new(orchestrator);
     info!("Orchestrator initialized");
@@ -456,11 +470,12 @@ pub async fn run() -> Result<()> {
     }
 
     // Build the main router with all endpoints
+    let config_state = crate::api::config::ConfigState::with_config(&config);
     let app = Router::new()
         // Health endpoints (/health public for LB, /health/detailed and /metrics require auth)
         .merge(crate::api::health_routes())
         // API routes (auth applied per-handler via RequireAuth extractor)
-        .merge(crate::api::api_router_with_session_state(session_state))
+        .merge(crate::api::api_router_with_state(session_state, config_state))
         // WebSocket routes
         .merge(crate::websocket::websocket_router())
         // Layers (applied to all routes)
@@ -475,10 +490,13 @@ pub async fn run() -> Result<()> {
         .layer(Extension(dev_monitor.clone()))
         .layer(Extension(event_store.clone()))
         .layer(Extension(skill_store.clone()))
+        .layer(Extension(persona_skill_store.clone()))
+        .layer(Extension(graph_memory_ext))
         .layer(Extension(e2e_ciphers))
         .layer(Extension(pairing_manager))
         .layer(Extension(challenge_store))
-        .layer(rate_limit_layer);
+        .layer(rate_limit_layer)
+        .layer(CorsLayer::permissive());
 
     // Conditionally add scheduler engine Extension
     let app = if let Some(sched_engine) = scheduler_engine_ext {
@@ -564,6 +582,7 @@ async fn init_default_skills(
     let persona_loader = cratos_core::pantheon::PersonaLoader::new();
     let persona_mapping = cratos_core::PersonaMapping::from_loader(&persona_loader);
     let mut default_skills_registered = 0usize;
+    let mut skills_created = 0usize;
 
     for persona_name in persona_mapping.persona_names() {
         if let Some(preset) = persona_mapping.get_preset(persona_name) {
@@ -586,31 +605,156 @@ async fn init_default_skills(
                     }
                 }
 
-                // Find skill by name and create default binding
-                if let Ok(Some(skill)) = skill_store.get_skill_by_name(skill_name).await {
-                    if let Err(e) = persona_skill_store
-                        .create_default_binding(persona_name, skill.id, skill_name)
-                        .await
-                    {
+                // Find skill by name, or create if it doesn't exist
+                let skill = match skill_store.get_skill_by_name(skill_name).await {
+                    Ok(Some(s)) => s,
+                    Ok(None) => {
+                        // Create the skill automatically
+                        let description = generate_skill_description(skill_name, persona_name);
+                        let mut new_skill = Skill::new(skill_name, &description, SkillCategory::System);
+                        new_skill.origin = SkillOrigin::Builtin;
+                        new_skill.status = SkillStatus::Active;
+                        new_skill.trigger = SkillTrigger::with_keywords(vec![skill_name.to_string()]);
+
+                        if let Err(e) = skill_store.save_skill(&new_skill).await {
+                            warn!(
+                                skill = %skill_name,
+                                error = %e,
+                                "Failed to create default skill"
+                            );
+                            continue;
+                        }
+                        skills_created += 1;
+                        debug!(skill = %skill_name, "Created default skill");
+                        new_skill
+                    }
+                    Err(e) => {
                         warn!(
-                            persona = %persona_name,
                             skill = %skill_name,
                             error = %e,
-                            "Failed to create default skill binding"
+                            "Failed to lookup skill"
                         );
-                    } else {
-                        default_skills_registered += 1;
+                        continue;
                     }
+                };
+
+                // Create the binding
+                if let Err(e) = persona_skill_store
+                    .create_default_binding(persona_name, skill.id, skill_name)
+                    .await
+                {
+                    warn!(
+                        persona = %persona_name,
+                        skill = %skill_name,
+                        error = %e,
+                        "Failed to create default skill binding"
+                    );
+                } else {
+                    default_skills_registered += 1;
                 }
             }
         }
     }
 
+    if skills_created > 0 {
+        info!("Created {} default skills from persona TOML files", skills_created);
+    }
     if default_skills_registered > 0 {
         info!(
             "Registered {} default persona-skill bindings from TOML",
             default_skills_registered
         );
+    }
+}
+
+/// Generate a description for a default skill based on its name
+fn generate_skill_description(skill_name: &str, persona_name: &str) -> String {
+    match skill_name {
+        // Cratos skills
+        "delegation" => "Delegate tasks to appropriate personas based on domain expertise".to_string(),
+        "orchestration" => "Coordinate multi-persona tasks and synthesize results".to_string(),
+        "judgment" => "Make final decisions when domains overlap or conflict".to_string(),
+
+        // Athena skills
+        "sprint_planning" => "Plan and organize sprint tasks with clear objectives".to_string(),
+        "roadmap_gen" => "Generate project roadmaps with milestones and timelines".to_string(),
+        "risk_analysis" => "Identify and assess project risks with mitigation strategies".to_string(),
+
+        // Sindri skills
+        "api_builder" => "Design and implement REST/GraphQL API endpoints".to_string(),
+        "db_schema" => "Design database schemas with proper indexes and constraints".to_string(),
+        "auth_module" => "Implement authentication and authorization modules".to_string(),
+
+        // Brok skills
+        "rapid_prototyping" => "Quickly build prototypes to validate ideas".to_string(),
+        "scripting" => "Write automation scripts and utilities".to_string(),
+        "debugging" => "Debug and fix code issues efficiently".to_string(),
+
+        // Heimdall skills
+        "security_review" => "Review code for security vulnerabilities".to_string(),
+        "test_coverage" => "Analyze and improve test coverage".to_string(),
+        "bug_triage" => "Triage and prioritize bug reports".to_string(),
+
+        // Mimir skills
+        "research" => "Research topics and synthesize information from multiple sources".to_string(),
+        "analysis" => "Analyze data and provide insights".to_string(),
+        "documentation" => "Create and maintain technical documentation".to_string(),
+
+        // Thor skills
+        "ci_cd" => "Configure and maintain CI/CD pipelines".to_string(),
+        "container_orchestration" => "Manage container orchestration with Kubernetes/Docker".to_string(),
+        "monitoring" => "Set up monitoring and alerting systems".to_string(),
+        "incident_response" => "Handle incidents and implement recovery procedures".to_string(),
+
+        // Odin skills
+        "roadmap_planning" => "Create strategic product roadmaps".to_string(),
+        "stakeholder_management" => "Manage stakeholder expectations and communication".to_string(),
+        "prioritization" => "Prioritize features and tasks based on impact".to_string(),
+        "okr_tracking" => "Track and manage OKRs (Objectives and Key Results)".to_string(),
+
+        // Hestia skills
+        "team_management" => "Manage team dynamics and performance".to_string(),
+        "conflict_resolution" => "Resolve team conflicts constructively".to_string(),
+        "onboarding" => "Onboard new team members effectively".to_string(),
+        "culture_building" => "Build and maintain team culture".to_string(),
+
+        // Norns skills
+        "requirements_analysis" => "Analyze and document business requirements".to_string(),
+        "process_mapping" => "Map and optimize business processes".to_string(),
+        "data_modeling" => "Design data models for business domains".to_string(),
+        "gap_analysis" => "Identify gaps between current and desired states".to_string(),
+
+        // Apollo skills
+        "ui_design" => "Design user interfaces with accessibility in mind".to_string(),
+        "ux_research" => "Conduct user experience research".to_string(),
+        "prototyping" => "Create interactive prototypes".to_string(),
+        "design_systems" => "Build and maintain design systems".to_string(),
+
+        // Freya skills
+        "issue_triage" => "Triage and categorize customer issues".to_string(),
+        "user_communication" => "Communicate effectively with users".to_string(),
+        "knowledge_base" => "Create and maintain knowledge base articles".to_string(),
+        "escalation_management" => "Manage issue escalations appropriately".to_string(),
+
+        // Tyr skills
+        "license_review" => "Review software licenses for compliance".to_string(),
+        "compliance_check" => "Verify compliance with regulations".to_string(),
+        "privacy_audit" => "Audit privacy practices and policies".to_string(),
+        "policy_drafting" => "Draft legal and compliance policies".to_string(),
+
+        // Nike skills
+        "content_strategy" => "Develop content marketing strategies".to_string(),
+        "growth_marketing" => "Execute growth marketing initiatives".to_string(),
+        "brand_management" => "Manage brand identity and messaging".to_string(),
+        "analytics" => "Analyze marketing metrics and KPIs".to_string(),
+        "sns_automation" => "Automate social media workflows".to_string(),
+
+        // Default fallback
+        _ => format!(
+            "Default skill '{}' for {} persona",
+            skill_name.replace('_', " "),
+            persona_name
+        ),
     }
 }
 

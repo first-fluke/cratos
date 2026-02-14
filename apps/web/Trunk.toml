@@ -19,8 +19,19 @@ ignore = ["target"]
 port = 19528
 # Open browser automatically
 open = false
-# Proxy API requests to backend
-proxy_backend = "http://127.0.0.1:19527/api"
+
+[[proxy]]
+rewrite = "/api/"
+backend = "http://127.0.0.1:19527/api/"
+
+[[proxy]]
+rewrite = "/health/"
+backend = "http://127.0.0.1:19527/health/"
+
+[[proxy]]
+rewrite = "/ws/"
+backend = "ws://127.0.0.1:19527/ws/"
+ws = true
 
 [[hooks]]
 # Run Tailwind CSS build before trunk
