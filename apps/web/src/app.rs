@@ -12,7 +12,6 @@ pub fn App() -> impl IntoView {
     provide_meta_context();
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/cratos-web.css" />
         <Title text="Cratos Dashboard" />
         <Meta name="description" content="Cratos AI Assistant Dashboard" />
         <Meta name="viewport" content="width=device-width, initial-scale=1" />
