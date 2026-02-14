@@ -18,6 +18,7 @@ mod file;
 mod git;
 mod github;
 mod http;
+mod send_file;
 mod web_search;
 mod wol;
 
@@ -25,7 +26,8 @@ pub use agent_cli::AgentCliTool;
 pub use bash::{BashConfig, BashSecurityMode, BashTool};
 pub use config::{ConfigAction, ConfigInput, ConfigTarget, ConfigTool};
 pub use exec::{ExecConfig, ExecMode, ExecTool};
-pub use file::{FileListTool, FileReadTool, FileWriteTool};
+pub use file::{FileListTool, FileReadTool, FileWriteTool, is_sensitive_file, validate_path};
+pub use send_file::SendFileTool;
 pub use git::{
     GitBranchTool, GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPushTool, GitStatusTool,
 };
@@ -100,6 +102,9 @@ pub fn register_builtins_with_config(registry: &mut ToolRegistry, config: &Built
 
     // Bash tool (PTY-based, full shell support)
     registry.register(Arc::new(BashTool::with_config(config.bash.clone())));
+
+    // Send file tool (prepares files as artifacts for channel delivery)
+    registry.register(Arc::new(SendFileTool::new()));
 }
 
 #[cfg(test)]
@@ -131,6 +136,7 @@ mod tests {
         assert!(registry.has("git_clone"));
         assert!(registry.has("git_log"));
         assert!(registry.has("agent_cli"));
-        assert_eq!(registry.len(), 20);
+        assert!(registry.has("send_file"));
+        assert_eq!(registry.len(), 21);
     }
 }

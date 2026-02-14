@@ -2,6 +2,7 @@
 
 use crate::error::{Error, Result};
 use crate::registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolResult};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -67,7 +68,7 @@ static BLOCKED_DIRECTORIES: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
 /// 1. Path traversal attacks using ".."
 /// 2. Symlink attacks by canonicalizing paths
 /// 3. Access to sensitive system directories
-fn validate_path(path: &str) -> Result<PathBuf> {
+pub fn validate_path(path: &str) -> Result<PathBuf> {
     let path_buf = PathBuf::from(path);
 
     // Check for path traversal attempts in original path
@@ -155,7 +156,7 @@ fn validate_path(path: &str) -> Result<PathBuf> {
 }
 
 /// Check if a file appears to be sensitive
-fn is_sensitive_file(path: &Path) -> bool {
+pub fn is_sensitive_file(path: &Path) -> bool {
     let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -215,7 +216,8 @@ impl FileReadTool {
                     },
                     "encoding": {
                         "type": "string",
-                        "description": "File encoding (default: utf-8)",
+                        "description": "File encoding: 'utf-8' (default) for text, 'binary' for base64-encoded binary",
+                        "enum": ["utf-8", "binary"],
                         "default": "utf-8"
                     },
                     "max_bytes": {
@@ -228,6 +230,33 @@ impl FileReadTool {
             }));
 
         Self { definition }
+    }
+
+    /// Infer MIME type from file extension
+    fn infer_mime_type(path: &Path) -> String {
+        let extension = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        match extension.as_str() {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            "svg" => "image/svg+xml",
+            "pdf" => "application/pdf",
+            "zip" => "application/zip",
+            "tar" => "application/x-tar",
+            "gz" => "application/gzip",
+            "mp3" => "audio/mpeg",
+            "wav" => "audio/wav",
+            "mp4" => "video/mp4",
+            "webm" => "video/webm",
+            _ => "application/octet-stream",
+        }
+        .to_string()
     }
 }
 
@@ -263,12 +292,17 @@ impl Tool for FileReadTool {
             )));
         }
 
+        let encoding = input
+            .get("encoding")
+            .and_then(|v| v.as_str())
+            .unwrap_or("utf-8");
+
         let max_bytes = input
             .get("max_bytes")
             .and_then(|v| v.as_u64())
             .unwrap_or(1_048_576) as usize;
 
-        debug!(path = %path, max_bytes = %max_bytes, "Reading file");
+        debug!(path = %path, encoding = %encoding, max_bytes = %max_bytes, "Reading file");
 
         // Read file
         let file = tokio::fs::File::open(&file_path).await.map_err(Error::Io)?;
@@ -277,10 +311,29 @@ impl Tool for FileReadTool {
         let mut take = file.take(max_bytes as u64);
         take.read_to_end(&mut contents).await.map_err(Error::Io)?;
 
-        let content = String::from_utf8_lossy(&contents).to_string();
         let truncated = contents.len() >= max_bytes;
-
         let duration = start.elapsed().as_millis() as u64;
+
+        // Handle binary mode
+        if encoding == "binary" {
+            let mime_type = Self::infer_mime_type(&file_path);
+            let base64_data = BASE64.encode(&contents);
+
+            return Ok(ToolResult::success(
+                serde_json::json!({
+                    "encoding": "binary",
+                    "mime_type": mime_type,
+                    "data": base64_data,
+                    "path": path,
+                    "size": contents.len(),
+                    "truncated": truncated
+                }),
+                duration,
+            ));
+        }
+
+        // Default: UTF-8 text mode
+        let content = String::from_utf8_lossy(&contents).to_string();
 
         Ok(ToolResult::success(
             serde_json::json!({

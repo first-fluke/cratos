@@ -27,6 +27,9 @@ futures.workspace = true
 url = "2.5"
 urlencoding = "2.1"
 
+# Base64 encoding for binary file handling
+base64.workspace = true
+
 # HTML parsing for web search
 regex.workspace = true
 

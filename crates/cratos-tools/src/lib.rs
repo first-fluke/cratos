@@ -21,7 +21,7 @@ pub mod sandbox;
 
 pub use builtins::{
     register_builtins, register_builtins_with_config, BashConfig, BashSecurityMode, BashTool,
-    BuiltinsConfig, ExecConfig, ExecMode, WebSearchTool,
+    BuiltinsConfig, ExecConfig, ExecMode, SendFileTool, WebSearchTool,
 };
 pub use doctor::{ChecklistItem, Diagnosis, FailureCategory, ProbableCause, ToolDoctor};
 pub use error::{Error, Result};
