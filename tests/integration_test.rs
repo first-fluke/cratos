@@ -127,6 +127,7 @@ fn test_tool_registry_with_builtins() {
         "config",
         "web_search",
         "agent_cli",
+        "send_file",
     ];
 
     for tool_name in expected_tools {
