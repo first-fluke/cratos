@@ -16,11 +16,11 @@ ignore = ["target"]
 
 [serve]
 # Dev server port
-port = 3000
+port = 19528
 # Open browser automatically
 open = false
 # Proxy API requests to backend
-proxy_backend = "http://127.0.0.1:8080/api"
+proxy_backend = "http://127.0.0.1:19527/api"
 
 [[hooks]]
 # Run Tailwind CSS build before trunk

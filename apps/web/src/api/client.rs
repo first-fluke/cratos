@@ -14,7 +14,7 @@ impl ApiClient {
         // Get base URL from window location or use default
         let base_url = web_sys::window()
             .and_then(|w| w.location().origin().ok())
-            .unwrap_or_else(|| "http://localhost:8080".to_string());
+            .unwrap_or_else(|| "http://localhost:19527".to_string());
 
         Self { base_url }
     }

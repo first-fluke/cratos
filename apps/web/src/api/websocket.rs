@@ -185,7 +185,7 @@ fn get_chat_websocket_url() -> String {
         "ws:"
     };
 
-    let host = location.host().unwrap_or_else(|_| "localhost:8080".to_string());
+    let host = location.host().unwrap_or_else(|_| "localhost:19527".to_string());
 
     format!("{}//{}/ws/chat", protocol, host)
 }
@@ -302,7 +302,7 @@ fn get_canvas_websocket_url(session_id: &Uuid) -> String {
         "ws:"
     };
 
-    let host = location.host().unwrap_or_else(|_| "localhost:8080".to_string());
+    let host = location.host().unwrap_or_else(|_| "localhost:19527".to_string());
 
     // Fixed: use /ws/canvas/ instead of /api/v1/canvas/ws/
     format!("{}//{}/ws/canvas/{}", protocol, host, session_id)

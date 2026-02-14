@@ -18,7 +18,7 @@
 [server]
 # SECURITY: In production, consider binding to 127.0.0.1 and using a reverse proxy
 host = "127.0.0.1"
-port = 8090
+port = 19527
 
 # Data directory for SQLite database and other local storage
 # Default: ~/.cratos (or platform-specific data directory)

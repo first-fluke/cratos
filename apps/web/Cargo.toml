@@ -106,7 +106,7 @@ watch = true
 # Build command
 browserquery = "defaults"
 # Server info (for SSR mode, optional)
-site-addr = "127.0.0.1:3000"
-reload-port = 3001
+site-addr = "127.0.0.1:19528"
+reload-port = 19529
 # Env
 env = "DEV"
