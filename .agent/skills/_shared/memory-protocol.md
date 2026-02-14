@@ -1,59 +1,79 @@
-# 메모리 프로토콜
+# Memory Protocol (CLI Mode)
 
-## Serena 메모리 사용 규칙
+When running as a CLI subagent via `gemini -p "..." --approval-mode=yolo`, follow this protocol.
 
-### 읽기 (read_memory)
-```
-언제: 작업 시작 전, 관련 컨텍스트 필요 시
-도구: mcp__serena__read_memory
-파일: .serena/memories/{task}-context.md
-```
+## Tool Reference
 
-### 쓰기 (write_memory)
-```
-언제: 작업 완료 후, 중요 정보 발견 시
-도구: mcp__serena__write_memory
-형식: 마크다운 + YAML 프론트매터
-```
+Tool names are configurable via `mcp.json → memoryConfig.tools`:
+- `[READ]` → default: `read_memory`
+- `[WRITE]` → default: `write_memory`
+- `[EDIT]` → default: `edit_memory`
+- `[LIST]` → default: `list_memories`
+- `[DELETE]` → default: `delete_memory`
 
-### 수정 (edit_memory)
-```
-언제: 기존 정보 업데이트 시
-도구: mcp__serena__edit_memory
-모드: literal | regex
-```
+Memory base path is configurable via `memoryConfig.basePath` (default: `.serena/memories`).
 
-## 메모리 파일 명명 규칙
-
-| 유형 | 패턴 | 예시 |
-|------|------|------|
-| 작업 컨텍스트 | `{task}-context.md` | `develop-context.md` |
-| 에이전트 상태 | `{agent}-state.md` | `rust-agent-state.md` |
-| 세션 요약 | `session-{id}.md` | `session-abc123.md` |
-| 교훈 | `lessons-{domain}.md` | `lessons-rust.md` |
-
-## 메모리 구조 템플릿
-
-```markdown
----
-type: context | state | summary | lesson
-agent: rust-agent
-created: 2024-01-01T00:00:00Z
-updated: 2024-01-01T00:00:00Z
 ---
 
-# {제목}
+## On Start
 
-## 요약
-{1-2줄 요약}
+1. `[READ]("task-board.md")` to confirm your assigned task
+2. `[WRITE]("progress-{agent-id}.md", initial progress entry)` with Turn 1 status
 
-## 상세
-{상세 내용}
+## During Execution
 
-## 관련 파일
-- path/to/file.rs
+- Every 3-5 turns: `[EDIT]("progress-{agent-id}.md")` to append a new turn entry
+- Include: action taken, current status, files created/modified
 
-## 다음 단계
-- [ ] 할 일 1
-- [ ] 할 일 2
+## On Completion
+
+- `[WRITE]("result-{agent-id}.md")` with final result including:
+  - Status: `completed` or `failed`
+  - Summary of work done
+  - Files created/modified
+  - Acceptance criteria checklist
+
+## On Failure
+
+- Still create `result-{agent-id}.md` with Status: `failed`
+- Include detailed error description and what remains incomplete
+
+---
+
+## Example with Default Tools (Serena)
+
+```python
+# On Start
+read_memory("task-board.md")
+write_memory("progress-backend.md", initial_content)
+
+# During Execution
+edit_memory("progress-backend.md", turn_update)
+
+# On Completion
+write_memory("result-backend.md", final_result)
+```
+
+## Example with Custom Tools
+
+If `memoryConfig.tools` is configured differently:
+
+```json
+{
+  "memoryConfig": {
+    "tools": {
+      "read": "fs_read",
+      "write": "fs_write",
+      "edit": "fs_patch"
+    }
+  }
+}
+```
+
+Then use:
+```python
+fs_read("task-board.md")
+fs_write("progress-backend.md", initial_content)
+fs_patch("progress-backend.md", turn_update)
+fs_write("result-backend.md", final_result)
 ```

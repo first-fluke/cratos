@@ -1,154 +1,238 @@
 ---
-name: setup
-description: 초기 설정 워크플로우
-triggers:
-  - "/setup"
-  - "프로젝트 설정"
-  - "초기화"
+description: Initial setup workflow — verify CLI installations, check MCP connections, configure language and agent-CLI mapping
 ---
 
-# /setup - 초기 설정
+# MANDATORY RULES — VIOLATION IS FORBIDDEN
 
-## Cratos 프로젝트 초기 설정
+- **Response language follows `language` setting in `.agent/config/user-preferences.yaml` if configured.**
+- **NEVER skip steps.** Execute from Step 1 in order.
+- **Read configuration files BEFORE making changes.**
 
-### Step 1: Cargo Workspace
+---
+
+## Step 1: Language Settings
+
+1. Check if `.agent/config/user-preferences.yaml` exists
+2. If not:
+   - Ask user for preferred language (ko, en, ja, zh, ...)
+   - Create default configuration file
+3. If exists:
+   - Display current language setting
+   - Ask if user wants to change
+
+---
+
+## Step 2: CLI Installation Status
+
+Check each CLI installation:
 
 ```bash
-# workspace 생성
-cargo new cratos --name cratos
-cd cratos
-
-# Cargo.toml 설정
-cat > Cargo.toml << 'EOF'
-[workspace]
-members = [
-    "crates/cratos-core",
-    "crates/cratos-channels",
-    "crates/cratos-tools",
-    "crates/cratos-llm",
-    "crates/cratos-replay",
-]
-resolver = "2"
-
-[workspace.package]
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.88"
-license = "MIT"
-
-[workspace.dependencies]
-tokio = { version = "1", features = ["full"] }
-axum = "0.7"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
-tracing = "0.1"
-thiserror = "1"
-anyhow = "1"
-uuid = { version = "1", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-EOF
+which gemini && gemini --version
+which claude && claude --version
+which codex && codex --version
 ```
 
-### Step 2: 크레이트 생성
+Display results:
 
-```bash
-mkdir -p crates
-cargo new crates/cratos-core --lib
-cargo new crates/cratos-channels --lib
-cargo new crates/cratos-tools --lib
-cargo new crates/cratos-llm --lib
-cargo new crates/cratos-replay --lib
+```
+🔍 CLI Installation Status
+┌─────────┬───────────┬─────────────┐
+│ CLI     │ Status    │ Version     │
+├─────────┼───────────┼─────────────┤
+│ gemini  │ ✅ Installed │ v2.1.0   │
+│ claude  │ ✅ Installed │ v1.0.30  │
+│ codex   │ ❌ Not Found │ -        │
+└─────────┴───────────┴─────────────┘
 ```
 
-### Step 3: 설정 파일
+Provide installation guide for missing CLIs:
 
-```bash
-# .env.example
-cat > .env.example << 'EOF'
-DATABASE_URL=postgres://cratos:cratos@localhost:5432/cratos
-REDIS_URL=redis://localhost:6379
-OPENAI_API_KEY=sk-your-key
-ANTHROPIC_API_KEY=sk-ant-your-key
-TELOXIDE_TOKEN=your-telegram-token
-SLACK_BOT_TOKEN=xoxb-your-token
-SLACK_SIGNING_SECRET=your-secret
-EOF
+- **gemini**: `npm install -g @google/gemini-cli`
+- **claude**: `npm install -g @anthropic-ai/claude-code`
+- **codex**: `npm install -g @openai/codex-cli`
 
-# config/default.toml
-mkdir -p config
-cat > config/default.toml << 'EOF'
-[server]
-host = "0.0.0.0"
-port = 8080
+---
 
-[database]
-max_connections = 10
+## Step 3: MCP Connection Status
 
-[llm]
-default_provider = "anthropic"
-model_routing = true
+1. Check `.agent/mcp.json` existence and configuration
+2. Check MCP settings for each CLI:
+   - Gemini CLI: `~/.gemini/settings.json`
+   - Claude CLI: `~/.claude.json` or `--mcp-config`
+   - Codex CLI: `~/.codex/config.toml`
+   - Antigravity IDE: `~/.gemini/antigravity/mcp_config.json`
+3. Test Serena MCP connection
 
-[approval]
-default_mode = "risky_only"
-EOF
+Display results:
+
+```
+🔗 MCP Connection Status
+┌─────────────────┬────────────┬─────────────────────┐
+│ Environment     │ MCP Config │ Server              │
+├─────────────────┼────────────┼─────────────────────┤
+│ gemini CLI      │ ✅ Set     │ serena              │
+│ claude CLI      │ ✅ Set     │ serena              │
+│ Antigravity IDE │ ⚠️ Check   │ see Step 3.1        │
+│ codex CLI       │ ❌ Not Set │ -                   │
+└─────────────────┴────────────┴─────────────────────┘
 ```
 
-### Step 4: Docker 설정
+For missing MCP settings:
 
-```bash
-# Dockerfile
-cat > Dockerfile << 'EOF'
-FROM rust:1.93 AS builder
-WORKDIR /app
-COPY . .
-RUN cargo build --release
+- Display configuration instructions
+- Offer automatic setup option
 
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/cratos /usr/local/bin/
-CMD ["cratos", "serve"]
-EOF
+---
 
-# docker-compose.yml
-cat > docker-compose.yml << 'EOF'
-version: "3.8"
-services:
-  cratos:
-    build: .
-    ports:
-      - "8080:8080"
-    env_file: .env
-    depends_on:
-      - db
-      - redis
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: cratos
-      POSTGRES_PASSWORD: cratos
-      POSTGRES_DB: cratos
-  redis:
-    image: redis:7-alpine
-EOF
+## Step 3.1: Serena MCP Configuration (Optional)
+
+> **Ask the user**: "Do you use Serena MCP server? (y/n)"
+> Skip this step if user answers "no".
+
+### Option A: Command Mode (Simple)
+
+Serena runs as a subprocess for each session. No separate server needed.
+
+**Gemini CLI** (`~/.gemini/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "serena": {
+      "command": "uv",
+      "args": ["run", "serena", "--project", "/path/to/your/project"]
+    }
+  }
+}
 ```
 
-### Step 5: GitHub Actions
+**Antigravity IDE** (`~/.gemini/antigravity/mcp_config.json`):
 
-```bash
-mkdir -p .github/workflows
-# CI 워크플로우 생성 (infra-agent 참조)
+```json
+{
+  "mcpServers": {
+    "serena": {
+      "command": "uv",
+      "args": ["run", "serena", "--project", "/path/to/your/project"],
+      "disabled": false
+    }
+  }
+}
 ```
 
-## 검증
+### Option B: SSE Mode (Shared Server)
+
+Serena runs as a shared SSE server. Multiple sessions can share one server instance.
+
+**1. Start Serena server:**
 
 ```bash
-# 빌드 확인
-cargo build
+serena-mcp-server --port 12341
+```
 
-# 테스트 확인
-cargo test
+**2. Gemini CLI** (`~/.gemini/settings.json`):
 
-# Docker 빌드
-docker-compose build
+```json
+{
+  "mcpServers": {
+    "serena": {
+      "url": "http://localhost:12341/sse"
+    }
+  }
+}
+```
+
+**3. Antigravity IDE** — requires bridge:
+
+> **Important**: Antigravity IDE doesn't support SSE directly.
+> You need the `bridge` command to connect.
+
+**Configure** (`~/.gemini/antigravity/mcp_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "serena": {
+      "command": "npx",
+      "args": ["-y", "oh-my-ag@latest", "bridge", "http://localhost:12341/sse"],
+      "disabled": false
+    }
+  }
+}
+```
+
+**Bridge Architecture:**
+
+```
+┌─────────────────┐     stdio      ┌──────────────────┐     HTTP/SSE     ┌─────────────────┐
+│ Antigravity IDE │ ◄────────────► │  oh-my-ag bridge │ ◄──────────────► │ Serena SSE      │
+└─────────────────┘                └──────────────────┘                  └─────────────────┘
+                                                                          (localhost:12341)
+```
+
+### Comparison
+
+| Mode    | Memory Usage | Setup Complexity | Multiple Sessions |
+|---------|--------------|------------------|-------------------|
+| Command | Higher       | Simple           | Each has own process |
+| SSE     | Lower        | Requires server  | Share one server |
+
+---
+
+## Step 4: Agent-CLI Mapping
+
+1. Display current mapping
+2. Ask if user wants to change:
+
+   ```
+   Current Agent-CLI Mapping:
+   ┌──────────┬─────────┐
+   │ Agent    │ CLI     │
+   ├──────────┼─────────┤
+   │ frontend │ gemini  │
+   │ backend  │ gemini  │
+   │ mobile   │ gemini  │
+   │ pm       │ gemini  │
+   │ qa       │ gemini  │
+   │ debug    │ gemini  │
+   └──────────┴─────────┘
+
+   Do you want to change? (e.g., "backend to codex", "pm to claude")
+   ```
+
+3. Update `.agent/config/user-preferences.yaml` if changes requested
+
+---
+
+## Step 5: Setup Complete Summary
+
+```
+✅ Setup Complete!
+
+📝 Configuration Summary:
+- Response Language: English (en)
+- Timezone: UTC
+- Installed CLIs: gemini ✅, claude ✅, codex ❌
+- MCP Status: Configured
+
+📋 Agent-CLI Mapping:
+- frontend → gemini
+- backend  → gemini
+- mobile   → gemini
+- pm       → gemini
+- qa       → gemini
+- debug    → gemini
+
+🚀 Get Started:
+- /plan: Create project plan
+- /orchestrate: Automated multi-agent execution
+- /coordinate: Interactive multi-agent coordination
+```
+
+If Antigravity IDE with SSE mode:
+
+```
+💡 For Antigravity IDE (SSE mode):
+- Start Serena server: serena-mcp-server --port 12341
+- Restart IDE to apply changes
 ```

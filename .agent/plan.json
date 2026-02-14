@@ -1,0 +1,32 @@
+{
+    "goal": "Modern UI Overhaul for Dashboard, Memory, and Personas pages",
+    "priority": "P0",
+    "tasks": [
+        {
+            "id": "ui-dashboard",
+            "priority": "P0",
+            "description": "Redesign Dashboard with glassmorphism, better widgets, and improved layout. Use 'theme' tokens.",
+            "agent_type": "frontend",
+            "dependencies": []
+        },
+        {
+            "id": "ui-personas",
+            "priority": "P0",
+            "description": "Redesign Personas page. Create a 'Hero' style card for each persona, visualize stats better.",
+            "agent_type": "frontend",
+            "dependencies": []
+        },
+        {
+            "id": "ui-memory",
+            "priority": "P0",
+            "description": "Redesign Memory Graph. Make it intuitive. Improve visualization of connections. Use 'Serena Bridge' data effectively.",
+            "agent_type": "frontend",
+            "dependencies": []
+        }
+    ],
+    "constraints": [
+        "Use semantic theme colors (theme-info, etc.)",
+        "Ensure responsive design",
+        "Maintain existing functionality"
+    ]
+}

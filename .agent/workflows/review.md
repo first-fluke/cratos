@@ -1,90 +1,86 @@
 ---
-name: review
-description: QA 검토 워크플로우
-triggers:
-  - "/review"
-  - "코드 리뷰"
-  - "보안 검사"
+description: Full QA review pipeline — security audit (OWASP Top 10), performance analysis, accessibility check (WCAG 2.1 AA), and code quality review
 ---
 
-# /review - QA 검토
+# MANDATORY RULES — VIOLATION IS FORBIDDEN
 
-## 검토 유형
+- **Response language follows `language` setting in `.agent/config/user-preferences.yaml` if configured.**
+- **NEVER skip steps.** Execute from Step 1 in order.
+- **You MUST use MCP tools throughout the workflow.**
+  - Use code analysis tools (`get_symbols_overview`, `find_symbol`, `find_referencing_symbols`, `search_for_pattern`) for code analysis and review.
+  - Use memory write tool to record review results.
+  - Memory path: configurable via `memoryConfig.basePath` (default: `.serena/memories`)
+  - Tool names: configurable via `memoryConfig.tools` in `mcp.json`
+  - Do NOT use raw file reads or grep as substitutes.
 
-### 코드 리뷰
+---
 
-```
-트리거: "/review", "코드 리뷰해줘"
+## Step 1: Identify Review Scope
 
-검토 항목:
-1. 코드 품질
-   - 명명 규칙
-   - 함수 길이
-   - 중복 코드
+Ask the user what to review: specific files, a feature branch, or the entire project.
+If a PR or branch is provided, diff against the base branch to scope the review.
 
-2. Rust 규칙
-   - unsafe 사용 여부
-   - 에러 처리
-   - 라이프타임
+---
 
-3. 테스트
-   - 테스트 존재 여부
-   - 커버리지
+## Step 2: Run Automated Security Checks
 
-4. 문서화
-   - rustdoc 주석
-   - README 업데이트 필요 여부
-```
+// turbo
+Run available security tools: `npm audit` (Node.js), `bandit` (Python), or equivalent.
+Check for known vulnerabilities in dependencies. Flag any CRITICAL or HIGH findings.
 
-### 보안 검사
+---
 
-```
-트리거: "보안 검사", "취약점 확인"
+## Step 3: Manual Security Review (OWASP Top 10)
 
-검사 항목:
-1. 의존성 취약점
-   - cargo audit
+Use MCP code analysis tools (`search_for_pattern` and `find_symbol`) to review code for:
+- Injection (SQL, XSS, command)
+- Broken auth, sensitive data exposure
+- Broken access control, security misconfig
+- Insecure deserialization
+- Known vulnerable components
+- Insufficient logging
 
-2. 코드 취약점
-   - SQL 인젝션
-   - XSS
-   - 하드코딩된 시크릿
+---
 
-3. 설정 취약점
-   - 약한 암호화
-   - 안전하지 않은 기본값
-```
+## Step 4: Performance Analysis
 
-### 성능 검토
+Use MCP tools to check for:
+- N+1 queries, missing indexes
+- Unbounded pagination, memory leaks
+- Unnecessary re-renders (React)
+- Missing lazy loading
+- Large bundle sizes, unoptimized images
 
-```
-트리거: "성능 검토", "최적화 제안"
+---
 
-검토 항목:
-1. 알고리즘 복잡도
-2. 불필요한 할당
-3. 동시성 이슈
-4. 데이터베이스 쿼리
-```
+## Step 5: Accessibility Review (WCAG 2.1 AA)
 
-## 출력 포맷
+Check for:
+- Semantic HTML, ARIA labels
+- Keyboard navigation, color contrast
+- Focus management, screen reader compatibility
+- Image alt text
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 📝 코드 리뷰 결과                                           │
-├─────────────────────────────────────────────────────────────┤
-│ 파일: src/handler.rs                                        │
-├─────────────────────────────────────────────────────────────┤
-│ ✅ 통과 항목:                                               │
-│ - unsafe 코드 없음                                          │
-│ - 에러 처리 적절함                                          │
-│ - 테스트 존재                                               │
-├─────────────────────────────────────────────────────────────┤
-│ ⚠️ 개선 제안:                                               │
-│ - Line 42: 함수가 50줄 초과 (분리 권장)                     │
-│ - Line 78: unwrap() 사용 → Result 처리 권장                 │
-├─────────────────────────────────────────────────────────────┤
-│ 🔴 수정 필요:                                               │
-│ - Line 15: 하드코딩된 API 키 발견                           │
-└─────────────────────────────────────────────────────────────┘
-```
+---
+
+## Step 6: Code Quality Review
+
+Use MCP code analysis tools (`get_symbols_overview` and `find_referencing_symbols`) to check for:
+- Consistent naming, proper error handling
+- Test coverage, TypeScript strict mode compliance
+- Unused imports/variables
+- Proper async/await usage
+- Public API documentation
+
+---
+
+## Step 7: Generate QA Report
+
+Compile all findings into a prioritized report:
+- **CRITICAL**: Security breaches, data loss risks
+- **HIGH**: Blocks launch
+- **MEDIUM**: Fix this sprint
+- **LOW**: Backlog
+
+Each finding must include: `file:line`, description, and remediation code.
+Use memory write tool to record the final report.

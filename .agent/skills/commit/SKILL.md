@@ -1,72 +1,121 @@
 ---
 name: commit
-version: 1.0.0
-triggers:
-  - "커밋", "commit", "git"
-  - "PR", "pull request"
-  - "푸시", "push"
-model: haiku
-max_turns: 10
+description: Create git commits following Conventional Commits specification with project-specific branch naming rules
 ---
 
-# Commit Agent
+# Commit Skill - Conventional Commits
 
-Git 커밋 및 PR 생성 전문 에이전트.
+## When to use
+- When user requests "commit this", "commit", "save changes"
+- When `/commit` command is invoked
 
-## 역할
+## Configuration
+Project-specific settings: `.agent/skills/commit/config/commit-config.yaml`
 
-- Git 커밋 메시지 작성
-- PR 생성 및 설명 작성
-- Conventional Commits 규칙 적용
-- 변경 사항 요약
+## Commit Types
+| Type | Description | Branch Prefix |
+|------|-------------|---------------|
+| feat | New feature | feature/ |
+| fix | Bug fix | fix/ |
+| refactor | Code improvement | refactor/ |
+| docs | Documentation changes | docs/ |
+| test | Test additions/modifications | test/ |
+| chore | Build, configuration, etc. | chore/ |
+| style | Code style changes | style/ |
+| perf | Performance improvements | perf/ |
 
-## 핵심 규칙
-
-1. Conventional Commits 형식 준수
-2. Co-Authored-By 헤더 추가
-3. PR 설명에 변경점 명시
-4. force push 금지 (명시적 요청 제외)
-
-## Conventional Commits
-
+## Commit Format
 ```
 <type>(<scope>): <description>
 
 [optional body]
 
-[optional footer]
-Co-Authored-By: Claude <noreply@anthropic.com>
+Co-Authored-By: First Fluke <our.first.fluke@gmail.com>
 ```
 
-### Type
+## Workflow
 
-- `feat`: 새 기능
-- `fix`: 버그 수정
-- `docs`: 문서 변경
-- `style`: 코드 스타일 (포맷팅)
-- `refactor`: 리팩터링
-- `test`: 테스트 추가/수정
-- `chore`: 빌드, 설정 변경
-
-## PR 템플릿
-
-```markdown
-## Summary
-{1-3 bullet points}
-
-## Changes
-- {변경 파일 1}
-- {변경 파일 2}
-
-## Test Plan
-- [ ] 테스트 항목 1
-- [ ] 테스트 항목 2
-
----
-🤖 Generated with Cratos AI Assistant
+### Step 1: Analyze Changes
+```bash
+git status
+git diff --staged
+git log --oneline -5
 ```
 
-## 리소스 로드 조건
+### Step 1.5: Split by Feature (if needed)
+If changed files span multiple features/domains, **split commits by feature**.
 
-- PR 생성 → pr-template.md
-- 커밋 규칙 → commit-conventions.md
+**Split criteria:**
+- Different scopes (e.g., workflows vs skills vs docs)
+- Different types (e.g., feat vs fix vs docs)
+- Logically independent changes
+
+**Example:**
+```
+# Changed files:
+.agent/workflows/*.md (7 files)     → fix(workflows): ...
+.agent/skills/**/*.md (4 files)     → fix(skills): ...
+USAGE.md, USAGE-ko.md               → docs: ...
+
+# Split into 3 commits
+```
+
+**Do NOT split when:**
+- All changes belong to a single feature
+- Few files changed (5 or fewer)
+- User requested a single commit
+
+### Step 2: Determine Commit Type
+Analyze changes → Select appropriate type:
+- New files added → `feat`
+- Bug fixed → `fix`
+- Refactoring → `refactor`
+- Documentation only → `docs`
+- Tests added → `test`
+- Build/config changes → `chore`
+
+### Step 3: Determine Scope
+Use changed module/component as scope:
+- `feat(auth)`: Authentication related
+- `fix(api)`: API related
+- `refactor(ui)`: UI related
+- No scope is also valid: `chore: update dependencies`
+
+### Step 4: Write Description
+- Under 72 characters
+- Use imperative mood (add, fix, update, remove...)
+- Lowercase first letter
+- No trailing period
+
+### Step 5: Confirm with User
+```
+📝 Commit message preview:
+
+feat(orchestrator): add multi-CLI agent mapping support
+
+- Add user-preferences.yaml for CLI configuration
+- Update spawn-agent.sh to read agent-CLI mapping
+- Update memory schema with CLI field
+
+Co-Authored-By: First Fluke <our.first.fluke@gmail.com>
+
+Proceed with this commit? (Y/N/Edit)
+```
+
+### Step 6: Execute Commit
+After user confirmation:
+```bash
+git add <specific-files>
+git commit -m "<message>"
+```
+
+## References
+- Configuration: `config/commit-config.yaml`
+- Guide: `resources/conventional-commits.md`
+
+## Important Notes
+- **NEVER** commit without user confirmation
+- **NEVER** use `git add -A` or `git add .` without explicit permission
+- **NEVER** commit files that may contain secrets (.env, credentials, etc.)
+- **ALWAYS** use specific file names when staging
+- **ALWAYS** use HEREDOC for multi-line commit messages

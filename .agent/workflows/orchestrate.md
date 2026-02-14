@@ -1,103 +1,112 @@
 ---
-name: orchestrate
-description: CLI 기반 멀티-에이전트 병렬 실행
-triggers:
-  - "/orchestrate"
+description: Automated CLI-based parallel agent execution — spawn subagents via Gemini CLI, coordinate through MCP Memory, monitor progress, and run verification
 ---
 
-# /orchestrate - 멀티-에이전트 병렬 실행
+# MANDATORY RULES — VIOLATION IS FORBIDDEN
 
-## 설정
+- **Response language follows `language` setting in `.agent/config/user-preferences.yaml` if configured.**
+- **NEVER skip steps.** Execute from Step 0 in order. Explicitly report completion of each step before proceeding.
+- **You MUST use MCP tools throughout the entire workflow.** This is NOT optional.
+  - Use code analysis tools (`get_symbols_overview`, `find_symbol`, `find_referencing_symbols`, `search_for_pattern`) for code exploration.
+  - Use memory tools (read/write/edit) for progress tracking.
+  - Memory path: configurable via `memoryConfig.basePath` (default: `.serena/memories`)
+  - Tool names: configurable via `memoryConfig.tools` in `mcp.json`
+  - Do NOT use raw file reads or grep as substitutes. MCP tools are the primary interface.
+- **Read required documents BEFORE starting.**
 
-```yaml
-MAX_PARALLEL: 3
-MAX_RETRIES: 2
-POLL_INTERVAL: 30s
-TIMEOUT: 600s
+---
+
+## Step 0: Preparation (DO NOT SKIP)
+
+1. Read `.agent/skills/workflow-guide/SKILL.md` and confirm Core Rules.
+2. Read `.agent/skills/_shared/context-loading.md` for resource loading strategy.
+3. Read `.agent/skills/_shared/memory-protocol.md` for memory protocol.
+
+---
+
+## Step 1: Load or Create Plan
+
+Check if `.agent/plan.json` exists.
+
+- If yes: load it and proceed to Step 2.
+- If no: ask the user to run `/plan` first, or ask them to describe the tasks to execute.
+- **Do NOT proceed without a plan.**
+
+---
+
+## Step 2: Initialize Session
+
+// turbo
+
+1. 설정 파일 로드:
+   - `.agent/config/user-preferences.yaml` (언어, CLI 매핑)
+2. CLI 매핑 현황 표시:
+
+   ```
+   📋 CLI 에이전트 매핑
+   ┌──────────┬─────────┐
+   │ Agent    │ CLI     │
+   ├──────────┼─────────┤
+   │ frontend │ gemini  │
+   │ backend  │ gemini  │
+   │ mobile   │ claude  │
+   │ pm       │ claude  │
+   └──────────┴─────────┘
+   ```
+
+3. Generate session ID (format: `session-YYYYMMDD-HHMMSS`).
+4. Use memory write tool to create `orchestrator-session.md` and `task-board.md` in the memory base path.
+5. Set session status to RUNNING.
+
+---
+
+## Step 3: Spawn Agents by Priority Tier
+
+// turbo
+For each priority tier (P0 first, then P1, etc.):
+
+- Spawn agents using `oh-my-ag agent:spawn {agent_id} {prompt_file} {session_id} -w {workspace}`.
+- Each agent gets: task description, API contracts, relevant context from `_shared/context-loading.md`.
+- Use memory edit tool to update `task-board.md` with agent status.
+
+---
+
+## Step 4: Monitor Progress
+
+Use `oh-my-ag agent:status {session_id} {agent_id}` to check process health.
+Also use memory read tool to poll `progress-{agent}.md` for logic updates.
+
+- Use memory edit tool to update `task-board.md` with turn counts and status changes.
+- Watch for: completion, failures, crashes.
+
+---
+
+## Step 5: Verify Completed Agents
+
+// turbo
+For each completed agent, run automated verification:
+
+```
+bash .agent/skills/_shared/verify.sh {agent-type} {workspace}
 ```
 
-## 7단계 프로세스
+- PASS (exit 0): accept result.
+- FAIL (exit 1): re-spawn with error context (max 2 retries).
 
-### Step 0: 준비
+---
 
-```
-1. 스킬 문서 로드
-   - .agent/skills/**/SKILL.md 읽기
-   - 트리거 키워드 추출
+## Step 6: Collect Results
 
-2. 규칙 확인
-   - rust-conventions.md
-   - memory-protocol.md
-```
+// turbo
+After all agents complete, use memory read tool to read all `result-{agent}.md` files.
+Compile summary: completed tasks, failed tasks, files changed, remaining issues.
 
-### Step 1: 계획 로드
+---
 
-```
-1. .agent/plan.json 확인
-   - 없으면 pm-agent 호출하여 생성
+## Step 7: Final Report
 
-2. 계획 파싱
-   - 작업 목록 추출
-   - 의존성 그래프 생성
-```
+Present session summary to the user.
 
-### Step 2: 세션 초기화
-
-```
-1. 세션 ID 생성
-   - UUID v4
-
-2. 메모리 파일 생성
-   - .serena/memories/session-{id}.md
-```
-
-### Step 3: 에이전트 생성
-
-```
-1. 의존성 없는 작업 식별
-2. MAX_PARALLEL 만큼 동시 실행
-3. 각 에이전트에게 작업 할당
-```
-
-### Step 4: 진행 상황 모니터링
-
-```
-POLL_INTERVAL (30초) 마다:
-1. 각 에이전트 상태 확인
-2. 완료된 에이전트 결과 수집
-3. 새 작업 할당 (의존성 해소된 것)
-4. 터미널 대시보드 업데이트
-```
-
-### Step 5: 검증
-
-```
-각 에이전트 완료 후:
-1. verify.sh 실행
-2. 실패 시 재시도 (MAX_RETRIES)
-3. 최종 실패 시 사용자 알림
-```
-
-### Step 6-7: 결과 수집 & 리포트
-
-```
-1. 모든 에이전트 결과 수집
-2. 메모리 파일 읽기
-3. 최종 리포트 생성
-```
-
-## 대시보드 출력 예시
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 🚀 Orchestrator Dashboard                                   │
-├─────────────────────────────────────────────────────────────┤
-│ Session: abc123 | Elapsed: 2m 30s                          │
-├─────────────────────────────────────────────────────────────┤
-│ [1/5] ✅ rust-agent: 코드 수정 완료                         │
-│ [2/5] ✅ qa-agent: 테스트 통과                              │
-│ [3/5] ⏳ commit: PR 생성 중...                              │
-│ [4/5] ⏸️ infra-agent: 대기 중 (depends: 3)                  │
-│ [5/5] ⏸️ docs-agent: 대기 중 (depends: 3)                   │
-└─────────────────────────────────────────────────────────────┘
-```
+- If any tasks failed after retries, list them with error details.
+- Suggest next steps: manual fix, re-run specific agents, or run `/review` for QA.
+- Use memory write tool to record final results.

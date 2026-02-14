@@ -1,78 +1,81 @@
 ---
-name: debug
-description: 버그 수정 및 진단 워크플로우
-triggers:
-  - "/debug"
-  - "왜 안 돼"
-  - "에러 수정"
-  - "버그"
+description: Structured bug diagnosis and fixing workflow — reproduce, diagnose root cause, apply minimal fix, write regression test, and scan for similar patterns
 ---
 
-# /debug - 버그 수정 및 진단
+# MANDATORY RULES — VIOLATION IS FORBIDDEN
 
-## Tool Doctor 진단
+- **Response language follows `language` setting in `.agent/config/user-preferences.yaml` if configured.**
+- **NEVER skip steps.** Execute from Step 1 in order.
+- **You MUST use MCP tools throughout the workflow.**
+  - Use code analysis tools (`find_symbol`, `find_referencing_symbols`, `search_for_pattern`) for bug investigation — NOT raw file reads or grep.
+  - Use memory write tool to record debugging results.
+  - Memory path: configurable via `memoryConfig.basePath` (default: `.serena/memories`)
+  - Tool names: configurable via `memoryConfig.tools` in `mcp.json`
+  - MCP tools are the primary interface for all code exploration.
 
-```
-트리거: "왜 안 돼?", "에러 원인"
+---
 
-프로세스:
-1. 에러 정보 수집
-2. 원인 분류
-3. 진단 실행
-4. 해결 가이드 제공
-```
+## Step 1: Collect Error Information
 
-### 진단 결과 포맷
+Ask the user for:
+- Error message, steps to reproduce
+- Expected vs actual behavior
+- Environment (browser, OS, device)
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ 🩺 Tool Doctor 진단 결과                                │
-├─────────────────────────────────────────────────────────┤
-│ 문제: GitHub API 호출 실패                              │
-│                                                         │
-│ 원인 후보:                                              │
-│ 1. [가능성 높음] GitHub 토큰이 만료됨                   │
-│ 2. [가능성 중간] 레이트리밋 초과                        │
-│ 3. [가능성 낮음] 네트워크 연결 문제                     │
-│                                                         │
-│ 해결 체크리스트:                                        │
-│ □ GitHub 토큰 재발급: gh auth login                     │
-│ □ 레이트리밋 확인: gh api rate_limit                    │
-│ □ 네트워크 테스트: curl https://api.github.com          │
-└─────────────────────────────────────────────────────────┘
-```
+If an error message is provided, proceed immediately.
 
-## 버그 수정 워크플로우
+---
 
-```
-트리거: "이 버그 고쳐줘", "/debug fix"
+## Step 2: Reproduce the Bug
 
-프로세스:
-1. 버그 재현
-   - 에러 메시지 확인
-   - 재현 단계 파악
+// turbo
+Use MCP `search_for_pattern` with the error message or stack trace to locate the error in the codebase.
+Use `find_symbol` to identify the exact function and file. Do NOT grep or read files manually.
 
-2. 원인 분석
-   - 코드 탐색
-   - 로그 확인
+---
 
-3. 수정
-   - 패치 생성
-   - 테스트 작성
+## Step 3: Diagnose Root Cause
 
-4. 검증
-   - 단위 테스트
-   - 회귀 테스트
-```
+Use MCP `find_referencing_symbols` to trace the execution path backward from the error point.
+Identify the root cause — not just the symptom. Check:
+- null/undefined access
+- Race conditions
+- Missing error handling
+- Wrong data types
+- Stale state
 
-## 일반적인 에러 유형
+---
 
-| 유형 | 증상 | 해결 |
-|------|------|------|
-| 권한 | Permission denied | 파일/API 권한 확인 |
-| 인증 | 401 Unauthorized | 토큰 재발급 |
-| 네트워크 | Connection refused | 연결 확인 |
-| 레이트리밋 | 429 Too Many | 대기 후 재시도 |
-| 경로 | File not found | 경로 확인 |
-| 설정 | Config missing | 환경변수 설정 |
-| 컴파일 | E0xxx | error-playbook 참조 |
+## Step 4: Propose Minimal Fix
+
+Present the root cause and proposed fix to the user.
+- The fix should change only what is necessary.
+- Explain why this fixes the root cause, not just the symptom.
+- **You MUST get user confirmation before proceeding to Step 5.**
+
+---
+
+## Step 5: Apply Fix and Write Regression Test
+
+// turbo
+1. Implement the minimal fix.
+2. Write a regression test that reproduces the original bug and verifies the fix.
+3. The test must fail without the fix and pass with it.
+
+---
+
+## Step 6: Scan for Similar Patterns
+
+// turbo
+Use MCP `search_for_pattern` to search the codebase for the same pattern that caused the bug.
+Report any other locations that may have the same vulnerability. Fix them if confirmed.
+
+---
+
+## Step 7: Document the Bug
+
+Use memory write tool to record a bug report:
+- Symptom, root cause
+- Fix applied, files changed
+- Regression test location
+- Similar patterns found

@@ -1,64 +1,136 @@
 ---
 name: orchestrator
-version: 1.0.0
-triggers:
-  - "병렬 실행", "parallel"
-  - "멀티 에이전트", "orchestrate"
-  - "동시 실행"
-model: sonnet
-max_turns: 25
+description: Automated multi-agent orchestrator that spawns CLI subagents in parallel, coordinates via MCP Memory, and monitors progress
 ---
 
-# Orchestrator
+# Orchestrator - Automated Multi-Agent Coordinator
 
-CLI 기반 멀티-에이전트 병렬 실행 에이전트.
+## When to use
+- Complex feature requires multiple specialized agents working in parallel
+- User wants automated execution without manually spawning agents
+- Full-stack implementation spanning backend, frontend, mobile, and QA
+- User says "run it automatically", "run in parallel", or similar automation requests
 
-## 역할
+## When NOT to use
+- Simple single-domain task -> use the specific agent directly
+- User wants step-by-step manual control -> use workflow-guide
+- Quick bug fixes or minor changes
 
-- 여러 에이전트 동시 실행
-- 의존성 기반 실행 순서 관리
-- 진행 상황 모니터링
-- 결과 수집 및 통합
+## Important
+This skill orchestrates CLI subagents via `gemini -p "..." --approval-mode=yolo`. It uses MCP Memory tools as a shared state bus. Each subagent runs as an independent process.
 
-## 핵심 규칙
+## Configuration
 
-1. MAX_PARALLEL: 3 (동시 실행 최대)
-2. MAX_RETRIES: 2 (재시도 횟수)
-3. POLL_INTERVAL: 30s (상태 확인 주기)
-4. 의존성 있는 작업은 순차 실행
+| Setting | Default | Description |
+|---------|---------|-------------|
+| MAX_PARALLEL | 3 | Max concurrent subagents |
+| MAX_RETRIES | 2 | Retry attempts per failed task |
+| POLL_INTERVAL | 30s | Status check interval |
+| MAX_TURNS (impl) | 20 | Turn limit for backend/frontend/mobile |
+| MAX_TURNS (review) | 15 | Turn limit for qa/debug |
+| MAX_TURNS (plan) | 10 | Turn limit for pm |
 
-## 실행 설정
+## Memory Configuration
 
-```yaml
-orchestration:
-  max_parallel: 3
-  max_retries: 2
-  poll_interval: 30s
-  timeout: 600s
-```
-
-## 7단계 프로세스
-
-1. **준비**: 스킬 문서 로드
-2. **계획 로드**: plan.json 파싱
-3. **세션 초기화**: 메모리 파일 생성
-4. **에이전트 생성**: 병렬 실행
-5. **모니터링**: 상태 폴링
-6. **검증**: verify.sh 실행
-7. **리포트**: 최종 결과 수집
-
-## 상태 관리
-
-```rust
-pub enum AgentStatus {
-    Pending,
-    Running,
-    Completed,
-    Failed { error: String, retries: u32 },
+Memory provider and tool names are configurable via `mcp.json`:
+```json
+{
+  "memoryConfig": {
+    "provider": "serena",
+    "basePath": ".serena/memories",
+    "tools": {
+      "read": "read_memory",
+      "write": "write_memory",
+      "edit": "edit_memory"
+    }
+  }
 }
 ```
 
-## 리소스 로드 조건
+## Workflow Phases
 
-- 병렬 실행 → parallel-execution.md
-- 의존성 관리 → dependency-graph.md
+**PHASE 1 - Plan**: Analyze request -> decompose tasks -> generate session ID
+**PHASE 2 - Setup**: Use memory write tool to create `orchestrator-session.md` + `task-board.md`
+**PHASE 3 - Execute**: Spawn agents by priority tier (never exceed MAX_PARALLEL)
+**PHASE 4 - Monitor**: Poll every POLL_INTERVAL; handle completed/failed/crashed agents
+**PHASE 4.5 - Verify**: Run `oh-my-ag verify {agent-type}` per completed agent
+**PHASE 5 - Collect**: Read all `result-{agent}.md`, compile summary, cleanup progress files
+
+See `resources/subagent-prompt-template.md` for prompt construction.
+See `resources/memory-schema.md` for memory file formats.
+
+## Memory File Ownership
+
+| File | Owner | Others |
+|------|-------|--------|
+| `orchestrator-session.md` | orchestrator | read-only |
+| `task-board.md` | orchestrator | read-only |
+| `progress-{agent}.md` | that agent | orchestrator reads |
+| `result-{agent}.md` | that agent | orchestrator reads |
+
+## Verification Gate (PHASE 4.5)
+After each agent completes, run automated verification before accepting the result:
+```bash
+oh-my-ag verify {agent-type} --workspace {workspace}
+# or with JSON output for programmatic use:
+oh-my-ag verify {agent-type} --workspace {workspace} --json
+```
+- **PASS (exit 0)**: Accept result, advance to next task
+- **FAIL (exit 1)**: Treat as failure → enter Retry Logic with verify output as error context
+- This is mandatory. Never skip verification even if the agent reports success.
+
+## Retry Logic
+- 1st retry: Wait 30s, re-spawn with error context (include verify output)
+- 2nd retry: Wait 60s, add "Try a different approach"
+- Final failure: Report to user, ask whether to continue or abort
+
+## Clarification Debt (CD) Monitoring
+
+Track user corrections during session execution. See `../_shared/session-metrics.md` for full protocol.
+
+### Event Classification
+When user sends feedback during session:
+- **clarify** (+10): User answering agent's question
+- **correct** (+25): User correcting agent's misunderstanding
+- **redo** (+40): User rejecting work, requesting restart
+
+### Threshold Actions
+| CD Score | Action |
+|----------|--------|
+| CD >= 50 | **RCA Required**: QA agent must add entry to `lessons-learned.md` |
+| CD >= 80 | **Session Pause**: Request user to re-specify requirements |
+| `redo` >= 2 | **Scope Lock**: Request explicit allowlist confirmation before continuing |
+
+### Recording
+After each user correction event:
+```
+[EDIT]("session-metrics.md", append event to Events table)
+```
+
+At session end, if CD >= 50:
+1. Include CD summary in final report
+2. Trigger QA agent RCA generation
+3. Update `lessons-learned.md` with prevention measures
+
+
+
+## Serena Memory (CLI Mode)
+
+See `../_shared/memory-protocol.md`.
+
+## References
+- Prompt template: `resources/subagent-prompt-template.md`
+- Memory schema: `resources/memory-schema.md`
+- Config: `config/cli-config.yaml`
+- Scripts: `scripts/spawn-agent.sh`, `scripts/parallel-run.sh`, `scripts/verify.sh`
+- Task templates: `templates/`
+- Skill routing: `../_shared/skill-routing.md`
+- Verification: `scripts/verify.sh <agent-type>`
+- Session metrics: `../_shared/session-metrics.md`
+- API contracts: `../_shared/api-contracts/`
+- Context loading: `../_shared/context-loading.md`
+- Difficulty guide: `../_shared/difficulty-guide.md`
+- Reasoning templates: `../_shared/reasoning-templates.md`
+- Clarification protocol: `../_shared/clarification-protocol.md`
+- Context budget: `../_shared/context-budget.md`
+- Lessons learned: `../_shared/lessons-learned.md`

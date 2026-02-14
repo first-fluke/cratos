@@ -1,48 +1,67 @@
 ---
-name: workflow-guide
-version: 1.0.0
-triggers:
-  - 복잡한 멀티-도메인 요청
-  - 여러 에이전트 협업 필요
-  - "전체 흐름", "E2E"
-model: sonnet
-max_turns: 30
+name: multi-agent-workflow
+description: Guide for coordinating PM, Frontend, Backend, Mobile, and QA agents on complex projects via CLI
 ---
 
-# Workflow Guide
+# Multi-Agent Workflow Guide
 
-멀티-에이전트 조율 전문 에이전트.
+## When to use
 
-## 역할
+- Complex feature spanning multiple domains (full-stack, mobile)
+- Coordination needed between frontend, backend, mobile, and QA
+- User wants step-by-step guidance for multi-agent coordination
 
-- 복잡한 요청을 단계별로 분해
-- 적절한 에이전트에게 작업 위임
-- 에이전트 간 의존성 관리
-- 최종 결과 통합 및 보고
+## When NOT to use
 
-## 핵심 규칙
+- Simple single-domain task -> use the specific agent directly
+- User wants automated execution -> use orchestrator
+- Quick bug fixes or minor changes
 
-1. 단일 도메인 요청은 해당 에이전트에게 직접 위임
-2. 복합 요청은 DAG(방향 비순환 그래프)로 분해
-3. 병렬 가능한 작업은 동시 실행
-4. 실패 시 롤백 전략 제공
+## Core Rules
 
-## 에이전트 선택 기준
+1. Always start with PM Agent for task decomposition
+2. Spawn independent tasks in parallel (same priority tier)
+3. Define API contracts before frontend/mobile tasks
+4. QA review is always the final step
+5. Assign separate workspaces to avoid file conflicts
+6. Always use Serena MCP tools as the primary method for code exploration and modification
+7. Never skip steps in the workflow — follow each step sequentially without omission
 
-| 도메인 | 에이전트 |
-|--------|----------|
-| Rust 코드 | rust-agent |
-| 채널 연동 | channel-agent |
-| LLM 연동 | llm-agent |
-| 리플레이 | replay-agent |
-| 테스트/보안 | qa-agent |
-| 버그 수정 | debug-agent |
-| 인프라 | infra-agent |
-| 문서 | docs-agent |
-| 계획 | pm-agent |
-| 커밋 | commit |
+## Workflow
 
-## 리소스 로드 조건
+### Step 1: Plan with PM Agent
 
-- 복잡한 워크플로우 → execution-protocol.md
-- 의존성 분석 필요 → dependency-graph.md
+PM Agent analyzes requirements, selects tech stack, creates task breakdown with priorities.
+
+### Step 2: Spawn Agents by Priority
+
+Spawn agents via CLI:
+
+1. Use spawn-agent.sh for each task
+2. CLI selection follows agent_cli_mapping in user-preferences.yaml
+3. Spawn all same-priority tasks in parallel using background processes
+
+```bash
+# Example: spawn backend and frontend in parallel
+oh-my-ag agent:spawn backend "task description" session-id -w ./backend &
+oh-my-ag agent:spawn frontend "task description" session-id -w ./frontend &
+wait
+```
+
+### Step 3: Monitor & Coordinate
+
+- Use memory read tool to poll `progress-{agent}.md` files
+- Verify API contracts align between agents
+- Ensure shared data models are consistent
+
+### Step 4: QA Review
+
+Spawn QA Agent last to review all deliverables. Address CRITICAL issues by re-spawning agents.
+
+## Automated Alternative
+
+For fully automated execution without manual spawning, use the **orchestrator** skill instead.
+
+## References
+
+- Workflow examples: `resources/examples.md`

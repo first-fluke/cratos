@@ -1,47 +1,80 @@
-# 스킬 라우팅
+# Skill Routing Map
 
-## 키워드 → 스킬 매핑
+Routing rules for Orchestrator and workflow-guide to assign tasks to the correct agent.
 
-| 키워드 | 스킬 | 우선순위 |
-|--------|------|----------|
-| rust, cargo, tokio, axum | rust-agent | 1 |
-| telegram, teloxide, slack | channel-agent | 1 |
-| openai, anthropic, llm, 모델 | llm-agent | 1 |
-| 리플레이, 되감기, replay, 이벤트 | replay-agent | 1 |
-| 테스트, 보안, qa, 검증 | qa-agent | 2 |
-| 버그, 에러, 디버그 | debug-agent | 2 |
-| docker, k8s, ci/cd, 배포 | infra-agent | 2 |
-| 문서, readme, api docs | docs-agent | 3 |
-| 계획, prd, 요구사항 | pm-agent | 2 |
-| 커밋, pr, git | commit | 3 |
+---
 
-## 복합 요청 처리
+## Keyword → Skill Mapping
 
-복합 요청은 workflow-guide가 조율:
+| User Request Keywords | Primary Skill | Notes |
+|----------------------|---------------|-------|
+| API, endpoint, REST, GraphQL, database, migration | **backend-agent** | |
+| auth, JWT, login, register, password | **backend-agent** | Auth UI task can also be created for frontend |
+| UI, component, page, form, screen (web) | **frontend-agent** | |
+| style, Tailwind, responsive, CSS | **frontend-agent** | |
+| mobile, iOS, Android, Flutter, React Native, app | **mobile-agent** | |
+| offline, push notification, camera, GPS | **mobile-agent** | |
+| bug, error, crash, broken, slow | **debug-agent** | |
+| review, security, performance | **qa-agent** | |
+| accessibility, WCAG, a11y | **qa-agent** | |
+| plan, breakdown, task, sprint | **pm-agent** | |
+| automatic, parallel, orchestrate | **orchestrator** | |
+| workflow, guide, manual, step-by-step | **workflow-guide** | |
 
-```
-"이슈 고쳐서 PR 만들어줘"
-→ workflow-guide 활성화
-→ rust-agent (코드 수정)
-→ qa-agent (테스트)
-→ commit (PR 생성)
-```
+---
 
-## 라우팅 로직
+## Complex Request Routing
 
-```python
-def route_skill(request: str) -> List[str]:
-    keywords = extract_keywords(request)
-    matched = []
+| Request Pattern | Execution Order |
+|----------------|-----------------|
+| "Create a fullstack app" | pm → (backend + frontend) parallel → qa |
+| "Create a mobile app" | pm → (backend + mobile) parallel → qa |
+| "Fullstack + mobile" | pm → (backend + frontend + mobile) parallel → qa |
+| "Fix bug and review" | debug → qa |
+| "Add feature and test" | pm → relevant agent → qa |
+| "Do everything automatically" | orchestrator (internally pm → agents → qa) |
+| "I'll manage manually" | workflow-guide |
 
-    for kw in keywords:
-        if skill := KEYWORD_MAP.get(kw):
-            matched.append(skill)
+---
 
-    if len(matched) > 1:
-        return ["workflow-guide"] + matched
-    elif len(matched) == 1:
-        return matched
-    else:
-        return ["pm-agent"]  # 기본값
-```
+## Inter-Agent Dependency Rules
+
+### Parallel Execution Possible (No Dependencies)
+- backend + frontend (when API contract is pre-defined)
+- backend + mobile (when API contract is pre-defined)
+- frontend + mobile (independent of each other)
+
+### Sequential Execution Required
+- pm → all other agents (planning comes first)
+- implementation agent → qa (review after implementation complete)
+- implementation agent → debug (debugging after implementation complete)
+- backend → frontend/mobile (when executing parallel without API contract)
+
+### QA Is Always Last
+- qa-agent runs after all implementation tasks are complete
+- Exception: Can run immediately if user requests review of specific files only
+
+---
+
+## Escalation Rules
+
+| Situation | Escalation Target |
+|-----------|------------------|
+| Agent finds bug in different domain | Create task for debug-agent |
+| QA finds CRITICAL issue | Re-run relevant domain agent |
+| Architecture change needed | Request re-planning from pm-agent |
+| Performance issue found (during implementation) | Current agent fixes, debug-agent if severe |
+| API contract mismatch | Orchestrator re-runs backend agent |
+
+---
+
+## Turn Limit Guide by Agent
+
+| Agent | Default Turns | Max Turns (including retries) |
+|-------|--------------|------------------------------|
+| pm-agent | 10 | 15 |
+| backend-agent | 20 | 30 |
+| frontend-agent | 20 | 30 |
+| mobile-agent | 20 | 30 |
+| debug-agent | 15 | 25 |
+| qa-agent | 15 | 20 |
