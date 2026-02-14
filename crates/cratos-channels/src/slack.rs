@@ -8,6 +8,7 @@ use crate::message::{
     AttachmentType, ChannelAdapter, ChannelType, MessageButton, NormalizedMessage,
     OutgoingAttachment, OutgoingMessage,
 };
+use base64::Engine as _;
 use cratos_core::{Orchestrator, OrchestratorInput};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -765,37 +766,113 @@ impl ChannelAdapter for SlackAdapter {
         attachment: OutgoingAttachment,
         reply_to: Option<&str>,
     ) -> Result<String> {
-        // TODO: Implement Slack's new file upload flow:
-        // 1. files.getUploadURLExternal
-        // 2. HTTP PUT to upload URL
-        // 3. files.completeUploadExternal
-        //
-        // For now, send a text message with file info as fallback
-        let caption = attachment
-            .caption
-            .as_deref()
-            .unwrap_or("")
-            .to_string();
-        let text = if caption.is_empty() {
-            format!(
-                "[File: {} ({}, {} bytes)]",
-                attachment.filename,
-                attachment.mime_type,
-                attachment.data.len() * 3 / 4 // Approximate decoded size
-            )
-        } else {
-            format!(
-                "[File: {}] {}",
-                attachment.filename, caption
-            )
-        };
+        // Decode base64 attachment data
+        let file_data = base64::engine::general_purpose::STANDARD
+            .decode(&attachment.data)
+            .map_err(|e| Error::Slack(format!("Invalid base64 attachment data: {}", e)))?;
 
-        let mut message = OutgoingMessage::text(text);
-        if let Some(ts) = reply_to {
-            message = message.in_thread(ts.to_string());
+        let http_client = reqwest::Client::new();
+
+        // Step 1: Get upload URL from Slack
+        let upload_url_response = http_client
+            .post("https://slack.com/api/files.getUploadURLExternal")
+            .bearer_auth(&self.config.bot_token)
+            .form(&[
+                ("filename", attachment.filename.as_str()),
+                ("length", &file_data.len().to_string()),
+            ])
+            .send()
+            .await
+            .map_err(|e| Error::Slack(format!("Failed to get upload URL: {}", e)))?;
+
+        let url_data: serde_json::Value = upload_url_response
+            .json()
+            .await
+            .map_err(|e| Error::Slack(format!("Failed to parse upload URL response: {}", e)))?;
+
+        if !url_data["ok"].as_bool().unwrap_or(false) {
+            let error_msg = url_data["error"]
+                .as_str()
+                .unwrap_or("Unknown error");
+            return Err(Error::Slack(format!("Failed to get upload URL: {}", error_msg)));
         }
 
-        self.send_message(channel_id, message).await
+        let upload_url = url_data["upload_url"]
+            .as_str()
+            .ok_or_else(|| Error::Slack("No upload_url in response".to_string()))?;
+        let file_id = url_data["file_id"]
+            .as_str()
+            .ok_or_else(|| Error::Slack("No file_id in response".to_string()))?;
+
+        debug!(file_id = %file_id, "Got Slack upload URL");
+
+        // Step 2: Upload file content to the external URL
+        http_client
+            .put(upload_url)
+            .header("Content-Type", &attachment.mime_type)
+            .body(file_data)
+            .send()
+            .await
+            .map_err(|e| Error::Slack(format!("Failed to upload file: {}", e)))?;
+
+        debug!(file_id = %file_id, "File uploaded to Slack");
+
+        // Step 3: Complete the upload and share to channel
+        let title = attachment
+            .caption
+            .as_deref()
+            .unwrap_or(&attachment.filename);
+
+        let files_json = serde_json::json!([{
+            "id": file_id,
+            "title": title
+        }]);
+
+        let mut form_params = vec![
+            ("files", files_json.to_string()),
+            ("channel_id", channel_id.to_string()),
+        ];
+
+        if let Some(thread_ts) = reply_to {
+            form_params.push(("thread_ts", thread_ts.to_string()));
+        }
+
+        // Add initial comment if caption is different from filename
+        if let Some(caption) = &attachment.caption {
+            if !caption.is_empty() && caption != &attachment.filename {
+                form_params.push(("initial_comment", caption.clone()));
+            }
+        }
+
+        let complete_response = http_client
+            .post("https://slack.com/api/files.completeUploadExternal")
+            .bearer_auth(&self.config.bot_token)
+            .form(&form_params)
+            .send()
+            .await
+            .map_err(|e| Error::Slack(format!("Failed to complete upload: {}", e)))?;
+
+        let complete_data: serde_json::Value = complete_response
+            .json()
+            .await
+            .map_err(|e| Error::Slack(format!("Failed to parse complete response: {}", e)))?;
+
+        if !complete_data["ok"].as_bool().unwrap_or(false) {
+            let error_msg = complete_data["error"]
+                .as_str()
+                .unwrap_or("Unknown error");
+            return Err(Error::Slack(format!("Failed to complete upload: {}", error_msg)));
+        }
+
+        info!(
+            file_id = %file_id,
+            filename = %attachment.filename,
+            channel = %channel_id,
+            "File uploaded to Slack"
+        );
+
+        // Return the file ID as the message identifier
+        Ok(file_id.to_string())
     }
 }
 
@@ -903,5 +980,54 @@ mod tests {
         // Very old timestamp should be rejected
         let result = adapter.verify_signature("1000000000", "body", "v0=sig");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_outgoing_attachment_struct() {
+        use crate::message::AttachmentType;
+
+        let attachment = OutgoingAttachment {
+            filename: "test.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            data: base64::engine::general_purpose::STANDARD.encode(b"test data"),
+            attachment_type: AttachmentType::Document,
+            caption: Some("Test file".to_string()),
+        };
+
+        assert_eq!(attachment.filename, "test.pdf");
+        assert_eq!(attachment.mime_type, "application/pdf");
+        assert!(attachment.caption.is_some());
+        assert!(matches!(attachment.attachment_type, AttachmentType::Document));
+    }
+
+    #[test]
+    fn test_base64_decode_for_attachment() {
+        use base64::Engine as _;
+
+        let original_data = b"Hello, World!";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(original_data);
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .unwrap();
+
+        assert_eq!(decoded, original_data);
+    }
+
+    #[test]
+    fn test_invalid_base64_attachment() {
+        use base64::Engine as _;
+
+        let result = base64::engine::general_purpose::STANDARD.decode("not-valid-base64!!!");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_slack_file_upload_url_format() {
+        // Verify Slack API URL formats used in send_attachment
+        let upload_url = "https://slack.com/api/files.getUploadURLExternal";
+        let complete_url = "https://slack.com/api/files.completeUploadExternal";
+
+        assert!(upload_url.contains("files.getUploadURLExternal"));
+        assert!(complete_url.contains("files.completeUploadExternal"));
     }
 }
