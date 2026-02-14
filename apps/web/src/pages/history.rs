@@ -9,31 +9,49 @@ use wasm_bindgen::JsCast;
 
 use crate::api::ApiClient;
 
-/// Execution from API
+/// Generic API response wrapper matching backend format
+#[derive(Debug, Clone, Deserialize, Default)]
+struct ApiResponse<T: Default> {
+    #[serde(default)]
+
+    #[allow(dead_code)]
+    success: bool,
+    #[serde(default)]
+    data: T,
+    #[serde(default)]
+    #[allow(dead_code)]
+    error: Option<String>,
+}
+
+/// Execution from API (matching backend ExecutionSummary)
 #[derive(Debug, Clone, Deserialize)]
 pub struct Execution {
     pub id: Uuid,
-    #[serde(default)]
+    /// Backend field: input_text
+    #[serde(alias = "input_text")]
     pub input_preview: Option<String>,
     pub status: String,
+    /// Backend field: channel_type
+    #[serde(alias = "channel_type")]
     pub channel: String,
-    #[serde(default)]
+    /// Backend field: created_at
+    #[serde(alias = "created_at")]
     pub started_at: Option<String>,
+    /// Backend field: completed_at (for duration calculation)
     #[serde(default)]
-    pub duration_ms: Option<u64>,
+    pub completed_at: Option<String>,
 }
 
-/// API response
-#[derive(Debug, Clone, Deserialize, Default)]
-struct ExecutionsResponse {
-    #[serde(default)]
-    executions: Vec<Execution>,
-    #[serde(default)]
-    total: usize,
-    #[serde(default)]
-    page: usize,
-    #[serde(default)]
-    per_page: usize,
+impl Execution {
+    /// Calculate duration in milliseconds from timestamps
+    pub fn duration_ms(&self) -> Option<u64> {
+        let created = self.started_at.as_ref()?;
+        let completed = self.completed_at.as_ref()?;
+        let created_dt = chrono::DateTime::parse_from_rfc3339(created).ok()?;
+        let completed_dt = chrono::DateTime::parse_from_rfc3339(completed).ok()?;
+        let duration = completed_dt.signed_duration_since(created_dt);
+        Some(duration.num_milliseconds().max(0) as u64)
+    }
 }
 
 /// History page showing past executions
@@ -57,20 +75,20 @@ pub fn History() -> impl IntoView {
             set_loading.set(true);
             let client = ApiClient::new();
 
-            let mut url = format!(
-                "/api/v1/executions?page={}&per_page={}",
-                current_page, per_page
-            );
+            // Backend uses `limit` parameter, not page/per_page
+            let limit = per_page;
+            let mut url = format!("/api/v1/executions?limit={}", limit);
             if let Some(status) = status_filter {
                 if !status.is_empty() {
                     url.push_str(&format!("&status={}", status));
                 }
             }
 
-            match client.get::<ExecutionsResponse>(&url).await {
+            match client.get::<ApiResponse<Vec<Execution>>>(&url).await {
                 Ok(resp) => {
-                    set_executions.set(resp.executions);
-                    set_total.set(resp.total);
+                    let executions = resp.data;
+                    set_total.set(executions.len());
+                    set_executions.set(executions);
                     set_error.set(None);
                 }
                 Err(e) => {
@@ -96,7 +114,7 @@ pub fn History() -> impl IntoView {
         current
     });
 
-    let total_pages = move || (total.get() + per_page - 1) / per_page;
+    let total_pages = move || total.get().div_ceil(per_page);
 
     view! {
         <div class="space-y-6">
@@ -105,7 +123,7 @@ pub fn History() -> impl IntoView {
                 <h1 class="text-3xl font-bold">"Execution History"</h1>
                 <div class="flex items-center space-x-4">
                     <select
-                        class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500"
+                        class="px-3 py-2 bg-theme-input-bg border border-theme-border-default rounded-lg focus:outline-none focus:border-theme-primary text-theme-text-primary"
                         on:change=move |ev| {
                             let value = event_target_value(&ev);
                             set_filter_status.set(if value.is_empty() { None } else { Some(value) });
@@ -118,7 +136,7 @@ pub fn History() -> impl IntoView {
                         <option value="running">"Running"</option>
                     </select>
                     <button
-                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        class="px-4 py-2 bg-theme-info text-white rounded-lg hover:opacity-90 transition-colors"
                         on:click=move |_| {
                             let data = executions.get();
                             if data.is_empty() {
@@ -138,7 +156,7 @@ pub fn History() -> impl IntoView {
                                         e.status,
                                         e.channel,
                                         e.started_at.as_deref().unwrap_or(""),
-                                        e.duration_ms.map(|d| d.to_string()).unwrap_or_default()
+                                        e.duration_ms().map(|d| d.to_string()).unwrap_or_default()
                                     )
                                 })
                                 .collect();
@@ -184,43 +202,43 @@ pub fn History() -> impl IntoView {
 
             // Loading indicator
             <Show when=move || loading.get()>
-                <div class="text-center text-gray-400 py-8">
+                <div class="text-center text-theme-muted py-8">
                     "Loading..."
                 </div>
             </Show>
 
             // Executions table
             <Show when=move || !loading.get()>
-                <div class="bg-gray-800 rounded-lg overflow-hidden">
+                <div class="bg-theme-card rounded-lg overflow-hidden border border-theme-border-default shadow-sm">
                     <table class="w-full">
-                        <thead class="bg-gray-750">
+                        <thead class="bg-theme-elevated">
                             <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                <th class="px-6 py-3 text-left text-xs font-medium text-theme-muted uppercase tracking-wider">
                                     "Input"
                                 </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                <th class="px-6 py-3 text-left text-xs font-medium text-theme-muted uppercase tracking-wider">
                                     "Status"
                                 </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                <th class="px-6 py-3 text-left text-xs font-medium text-theme-muted uppercase tracking-wider">
                                     "Channel"
                                 </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                <th class="px-6 py-3 text-left text-xs font-medium text-theme-muted uppercase tracking-wider">
                                     "Time"
                                 </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                <th class="px-6 py-3 text-left text-xs font-medium text-theme-muted uppercase tracking-wider">
                                     "Duration"
                                 </th>
-                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                <th class="px-6 py-3 text-right text-xs font-medium text-theme-muted uppercase tracking-wider">
                                     "Actions"
                                 </th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-700">
+                        <tbody class="divide-y divide-theme-border-default">
                             <Show
                                 when=move || !executions.get().is_empty()
                                 fallback=|| view! {
                                     <tr>
-                                        <td colspan="6" class="px-6 py-8 text-center text-gray-400">
+                                        <td colspan="6" class="px-6 py-8 text-center text-theme-muted">
                                             "No executions found"
                                         </td>
                                     </tr>
@@ -240,8 +258,8 @@ pub fn History() -> impl IntoView {
             </Show>
 
             // Pagination
-            <div class="flex items-center justify-between">
-                <p class="text-sm text-gray-400">
+            <div class="flex items-center justify-between pt-4">
+                <p class="text-sm text-theme-muted">
                     {move || {
                         let start = (page.get() - 1) * per_page + 1;
                         let end = std::cmp::min(page.get() * per_page, total.get());
@@ -250,17 +268,17 @@ pub fn History() -> impl IntoView {
                 </p>
                 <div class="flex space-x-2">
                     <button
-                        class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        class="px-3 py-1 bg-theme-button-secondary text-theme-text-secondary rounded hover:bg-theme-button-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         disabled=move || page.get() <= 1
                         on:click=move |_| set_page.update(|p| *p = p.saturating_sub(1).max(1))
                     >
                         "Previous"
                     </button>
-                    <span class="px-3 py-1 text-gray-400">
+                    <span class="px-3 py-1 text-theme-muted">
                         {move || format!("{} / {}", page.get(), total_pages())}
                     </span>
                     <button
-                        class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        class="px-3 py-1 bg-theme-button-secondary text-theme-text-secondary rounded hover:bg-theme-button-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         disabled=move || page.get() >= total_pages()
                         on:click=move |_| set_page.update(|p| *p += 1)
                     >
@@ -276,10 +294,10 @@ pub fn History() -> impl IntoView {
 #[component]
 fn ExecutionRow(execution: Execution) -> impl IntoView {
     let status_class = match execution.status.as_str() {
-        "completed" | "success" => "bg-green-900 text-green-300",
-        "failed" | "error" => "bg-red-900 text-red-300",
-        "running" | "in_progress" => "bg-yellow-900 text-yellow-300",
-        _ => "bg-gray-700 text-gray-300",
+        "completed" | "success" => "bg-theme-success/10 text-theme-success border border-theme-success/30",
+        "failed" | "error" => "bg-theme-error/10 text-theme-error border border-theme-error/30",
+        "running" | "in_progress" => "bg-theme-warning/10 text-theme-warning border border-theme-warning/30",
+        _ => "bg-theme-secondary/10 text-theme-secondary border border-theme-secondary/30",
     };
 
     let time_display = execution
@@ -288,16 +306,16 @@ fn ExecutionRow(execution: Execution) -> impl IntoView {
         .unwrap_or_else(|| "--".to_string());
 
     let duration_display = execution
-        .duration_ms
+        .duration_ms()
         .map(|d| format!("{}ms", d))
         .unwrap_or_else(|| "-".to_string());
 
     let exec_id = execution.id;
 
     view! {
-        <tr class="hover:bg-gray-750 transition-colors">
+        <tr class="hover:bg-theme-elevated transition-colors bg-theme-card">
             <td class="px-6 py-4">
-                <div class="max-w-xs truncate text-sm">
+                <div class="max-w-xs truncate text-sm text-theme-text-primary">
                     {execution.input_preview.clone().unwrap_or_else(|| execution.id.to_string())}
                 </div>
             </td>
@@ -306,24 +324,24 @@ fn ExecutionRow(execution: Execution) -> impl IntoView {
                     {execution.status.clone()}
                 </span>
             </td>
-            <td class="px-6 py-4 text-sm text-gray-400">
+            <td class="px-6 py-4 text-sm text-theme-muted">
                 {execution.channel.clone()}
             </td>
-            <td class="px-6 py-4 text-sm text-gray-400">
+            <td class="px-6 py-4 text-sm text-theme-muted">
                 {time_display}
             </td>
-            <td class="px-6 py-4 text-sm text-gray-400">
+            <td class="px-6 py-4 text-sm text-theme-muted">
                 {duration_display}
             </td>
             <td class="px-6 py-4 text-right">
                 <a
                     href={format!("/history/{}", exec_id)}
-                    class="text-blue-400 hover:text-blue-300 text-sm"
+                    class="text-theme-primary hover:text-theme-primary/80 text-sm font-medium mr-4 transition-colors"
                 >
                     "View"
                 </a>
                 <button
-                    class="ml-4 text-gray-400 hover:text-gray-300 text-sm"
+                    class="text-theme-muted hover:text-theme-text-primary text-sm transition-colors"
                     on:click=move |_| {
                         // Trigger replay via API
                         spawn_local(async move {

@@ -12,20 +12,20 @@ const DEFAULT_HEIGHT: u32 = 400;
 const PADDING: u32 = 60;
 const CHART_COLORS: [&str; 8] = [
     "#3B82F6", // blue
+    "#8B5CF6", // purple
     "#10B981", // green
     "#F59E0B", // yellow
     "#EF4444", // red
-    "#8B5CF6", // purple
     "#EC4899", // pink
     "#06B6D4", // cyan
     "#F97316", // orange
 ];
 
-// SVG color constants
-const BG_COLOR: &str = "#111827";
-const GRID_COLOR: &str = "#374151";
-const AXIS_COLOR: &str = "#6B7280";
-const TEXT_COLOR: &str = "#9CA3AF";
+// SVG color constants - updated for glassmorphism
+const BG_COLOR: &str = "transparent";
+const GRID_COLOR: &str = "rgba(255, 255, 255, 0.05)";
+const AXIS_COLOR: &str = "rgba(255, 255, 255, 0.1)";
+const TEXT_COLOR: &str = "rgba(255, 255, 255, 0.5)";
 
 /// Chart data structure
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -62,6 +62,7 @@ pub enum ChartType {
 
 impl ChartType {
     /// Parse from string
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "line" => ChartType::Line,
@@ -110,30 +111,30 @@ pub fn Chart(
     let series_for_check = series.clone();
 
     view! {
-        <div class="chart-container bg-gray-900 rounded-lg overflow-hidden">
+        <div class="chart-container rounded-2xl overflow-hidden transition-all duration-500">
             // Title
             <Show when=move || !title_for_check.is_empty()>
-                <div class="px-4 py-2 border-b border-gray-800">
-                    <h3 class="text-sm font-medium text-gray-300">{title.clone()}</h3>
+                <div class="px-4 py-3 border-b border-white/5">
+                    <h3 class="text-sm font-bold tracking-wider uppercase text-theme-secondary opacity-70">{title.clone()}</h3>
                 </div>
             </Show>
 
             // Chart SVG
-            <div class="p-4" inner_html=svg_content.clone() />
+            <div class="p-2 md:p-4" inner_html=svg_content.clone() />
 
             // Legend
             <Show when=move || show_legend && !series_for_check.is_empty()>
-                <div class="px-4 pb-4 flex flex-wrap gap-4">
+                <div class="px-6 pb-6 flex flex-wrap gap-6 mt-2">
                     {series.iter().enumerate().map(|(i, series_item)| {
                         let color = series_item.color.clone().unwrap_or_else(|| CHART_COLORS[i % CHART_COLORS.len()].to_string());
                         let name = series_item.name.clone();
                         view! {
-                            <div class="flex items-center space-x-2">
+                            <div class="flex items-center space-x-3 group cursor-default">
                                 <div
-                                    class="w-3 h-3 rounded-full"
-                                    style=format!("background-color: {}", color)
+                                    class="w-2.5 h-2.5 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.2)] group-hover:scale-125 transition-transform"
+                                    style=format!("background-color: {}; box-shadow: 0 0 10px {}44", color, color)
                                 />
-                                <span class="text-xs text-gray-400">{name}</span>
+                                <span class="text-[10px] font-black uppercase tracking-widest text-theme-secondary group-hover:text-theme-primary transition-colors">{name}</span>
                             </div>
                         }
                     }).collect_view()}
@@ -248,7 +249,7 @@ fn render_line_chart(data: &ChartData, width: u32, height: u32, show_grid: bool)
 
         if !points.is_empty() {
             svg.push_str(&format!(
-                r##"<polyline fill="none" stroke="{}" stroke-width="2" points="{}"/>"##,
+                r##"<polyline fill="none" stroke="{}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="{}"/>"##,
                 color,
                 points.join(" ")
             ));
@@ -258,8 +259,8 @@ fn render_line_chart(data: &ChartData, width: u32, height: u32, show_grid: bool)
                 let coords: Vec<&str> = point.split(',').collect();
                 if coords.len() == 2 {
                     svg.push_str(&format!(
-                        r##"<circle cx="{}" cy="{}" r="4" fill="{}" stroke="{}" stroke-width="2"/>"##,
-                        coords[0], coords[1], color, BG_COLOR
+                        r##"<circle cx="{}" cy="{}" r="5" fill="{}" stroke="{}" stroke-width="2"/>"##,
+                        coords[0], coords[1], color, "white"
                     ));
                 }
             }
@@ -281,8 +282,8 @@ fn render_bar_chart(data: &ChartData, width: u32, height: u32, show_grid: bool) 
     let num_bars = data.labels.len();
     let num_series = data.series.len();
     let bar_group_width = chart_width as f64 / num_bars as f64;
-    let bar_width = (bar_group_width * 0.8) / num_series as f64;
-    let bar_gap = bar_group_width * 0.1;
+    let bar_width = (bar_group_width * 0.7) / num_series as f64;
+    let bar_gap = bar_group_width * 0.15;
 
     let mut svg = format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}" class="w-full h-auto">"##,
@@ -328,7 +329,7 @@ fn render_bar_chart(data: &ChartData, width: u32, height: u32, show_grid: bool) 
                 };
 
                 svg.push_str(&format!(
-                    r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="{}" rx="2"/>"##,
+                    r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="{}" rx="4" fill-opacity="0.8"/>"##,
                     x, y, bar_width, bar_height, color
                 ));
             }
@@ -397,8 +398,15 @@ fn render_area_chart(data: &ChartData, width: u32, height: u32, show_grid: bool)
         path.push('Z');
 
         svg.push_str(&format!(
-            r##"<path d="{}" fill="{}" fill-opacity="0.3" stroke="{}" stroke-width="2"/>"##,
-            path, color, color
+            r##"
+            <defs>
+                <linearGradient id="grad-{}" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:{};stop-opacity:0.4" />
+                    <stop offset="100%" style="stop-color:{};stop-opacity:0.05" />
+                </linearGradient>
+            </defs>
+            <path d="{}" fill="url(#grad-{})" stroke="{}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>"##,
+            series_idx, color, color, path, series_idx, color
         ));
     }
 
@@ -448,8 +456,8 @@ fn render_scatter_chart(data: &ChartData, width: u32, height: u32, show_grid: bo
             let y = height - PADDING - ((val - min_val) / value_range * chart_height as f64) as u32;
 
             svg.push_str(&format!(
-                r##"<circle cx="{}" cy="{}" r="6" fill="{}" stroke="{}" stroke-width="2"/>"##,
-                x, y, color, BG_COLOR
+                r##"<circle cx="{}" cy="{}" r="6" fill="{}" stroke="rgba(255,255,255,0.8)" stroke-width="2" fill-opacity="0.7"/>"##,
+                x, y, color
             ));
         }
     }
@@ -507,8 +515,8 @@ fn render_pie_chart(data: &ChartData, width: u32, height: u32) -> String {
         let large_arc = if angle > std::f64::consts::PI { 1 } else { 0 };
 
         svg.push_str(&format!(
-            r##"<path d="M{},{} L{:.1},{:.1} A{},{} 0 {} 1 {:.1},{:.1} Z" fill="{}" stroke="{}" stroke-width="2"/>"##,
-            cx, cy, x1, y1, radius, radius, large_arc, x2, y2, color, BG_COLOR
+            r##"<path d="M{},{} L{:.1},{:.1} A{},{} 0 {} 1 {:.1},{:.1} Z" fill="{}" fill-opacity="0.8" stroke="white" stroke-opacity="0.2" stroke-width="2"/>"##,
+            cx, cy, x1, y1, radius, radius, large_arc, x2, y2, color
         ));
 
         start_angle = end_angle;
@@ -539,7 +547,7 @@ fn get_value_range(data: &ChartData) -> (f64, f64) {
     }
 
     // Add padding to range
-    let padding = (max_val - min_val) * 0.1;
+    let padding = (max_val - min_val) * 0.15;
     (min_val - padding, max_val + padding)
 }
 
@@ -552,7 +560,7 @@ fn render_grid(width: u32, height: u32, padding: u32, y_lines: u32, x_lines: u32
     for i in 0..=y_lines {
         let y = padding + (i as f64 * chart_height as f64 / y_lines as f64) as u32;
         svg.push_str(&format!(
-            r##"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1" stroke-dasharray="4,4"/>"##,
+            r##"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1" stroke-dasharray="2,4"/>"##,
             padding, y, padding + chart_width, y, GRID_COLOR
         ));
     }
@@ -562,7 +570,7 @@ fn render_grid(width: u32, height: u32, padding: u32, y_lines: u32, x_lines: u32
         for i in 0..=x_lines {
             let x = padding + (i as f64 * chart_width as f64 / x_lines as f64) as u32;
             svg.push_str(&format!(
-                r##"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1" stroke-dasharray="4,4"/>"##,
+                r##"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1" stroke-dasharray="2,4"/>"##,
                 x, padding, x, height - padding, GRID_COLOR
             ));
         }
@@ -573,8 +581,8 @@ fn render_grid(width: u32, height: u32, padding: u32, y_lines: u32, x_lines: u32
 
 fn render_axes(width: u32, height: u32, padding: u32) -> String {
     format!(
-        r##"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="2"/>
-           <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="2"/>"##,
+        r##"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1" stroke-opacity="0.3"/>
+           <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1" stroke-opacity="0.3"/>"##,
         padding, padding, padding, height - padding, AXIS_COLOR, // Y-axis
         padding, height - padding, width - padding, height - padding, AXIS_COLOR // X-axis
     )
@@ -589,8 +597,8 @@ fn render_y_labels(height: u32, padding: u32, min_val: f64, max_val: f64, num_la
         let val = min_val + (i as f64 * (max_val - min_val) / num_labels as f64);
 
         svg.push_str(&format!(
-            r##"<text x="{}" y="{}" text-anchor="end" fill="{}" font-size="12" font-family="sans-serif">{:.1}</text>"##,
-            padding - 8, y + 4, TEXT_COLOR, val
+            r##"<text x="{}" y="{}" text-anchor="end" fill="{}" font-size="10" font-weight="bold" font-family="monospace">{:.1}</text>"##,
+            padding - 12, y + 4, TEXT_COLOR, val
         ));
     }
 
@@ -607,7 +615,7 @@ fn render_x_labels(width: u32, height: u32, padding: u32, labels: &[String]) -> 
 
     for (i, label) in labels.iter().enumerate() {
         let x = padding + (i as f64 * chart_width as f64 / (labels.len() - 1).max(1) as f64) as u32;
-        let y = height - padding + 20;
+        let y = height - padding + 24;
 
         // Truncate long labels
         let display_label = if label.len() > 10 {
@@ -617,7 +625,7 @@ fn render_x_labels(width: u32, height: u32, padding: u32, labels: &[String]) -> 
         };
 
         svg.push_str(&format!(
-            r##"<text x="{}" y="{}" text-anchor="middle" fill="{}" font-size="11" font-family="sans-serif">{}</text>"##,
+            r##"<text x="{}" y="{}" text-anchor="middle" fill="{}" font-size="10" font-weight="bold" font-family="monospace">{}</text>"##,
             x, y, TEXT_COLOR, display_label
         ));
     }

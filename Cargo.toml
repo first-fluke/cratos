@@ -88,6 +88,10 @@ candle-nn = { version = "0.8", default-features = false }
 # mDNS service discovery
 mdns-sd = "0.11"
 
+# API documentation (utoipa 4.x for axum 0.7 compatibility)
+utoipa = { version = "4", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "7", features = ["axum"] }
+
 # Internal crates
 cratos-core = { path = "crates/cratos-core" }
 cratos-channels = { path = "crates/cratos-channels" }
@@ -177,6 +181,8 @@ regex = { workspace = true }
 include_dir = "0.7"
 base64 = "0.22"
 x25519-dalek.workspace = true
+utoipa.workspace = true
+utoipa-swagger-ui.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true

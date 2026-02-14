@@ -174,28 +174,28 @@ pub fn Chat() -> impl IntoView {
 
     // Connection status indicator
     let connection_status = move || match ws_state.get() {
-        WsState::Connected => ("Connected", "bg-green-500"),
-        WsState::Connecting => ("Connecting...", "bg-yellow-500"),
-        WsState::Disconnected => ("Disconnected", "bg-red-500"),
-        WsState::Error => ("Error", "bg-red-700"),
+        WsState::Connected => ("Connected", "bg-theme-success"),
+        WsState::Connecting => ("Connecting...", "bg-theme-warning"),
+        WsState::Disconnected => ("Disconnected", "bg-theme-error"),
+        WsState::Error => ("Error", "bg-theme-error"),
     };
 
     view! {
         <div class="flex flex-col h-[calc(100vh-8rem)]">
             // Chat header
-            <div class="flex items-center justify-between pb-4 border-b border-gray-700">
-                <h1 class="text-2xl font-bold">"Chat"</h1>
+            <div class="flex items-center justify-between pb-4 border-b border-theme-default">
+                <h1 class="text-2xl font-bold text-theme-primary">"Chat"</h1>
                 <div class="flex items-center space-x-4">
                     // Connection status
                     <div class="flex items-center space-x-2">
                         <div class={move || format!("w-2 h-2 rounded-full {}", connection_status().1)} />
-                        <span class="text-sm text-gray-400">{move || connection_status().0}</span>
+                        <span class="text-sm text-theme-secondary">{move || connection_status().0}</span>
                     </div>
-                    <span class="text-sm text-gray-400">
+                    <span class="text-sm text-theme-secondary">
                         "Session: " {move || session_id().to_string()[..8].to_string()}
                     </span>
                     <button
-                        class="px-3 py-1 text-sm bg-gray-700 rounded hover:bg-gray-600"
+                        class="px-3 py-1 text-sm bg-theme-elevated text-theme-primary rounded hover:bg-theme-card border border-theme-default"
                         on:click=move |_| {
                             set_messages.set(Vec::new());
                         }
@@ -221,11 +221,11 @@ pub fn Chat() -> impl IntoView {
 
                 // Streaming indicator
                 <Show when=move || is_streaming.get()>
-                    <div class="flex items-center space-x-2 text-gray-400">
+                    <div class="flex items-center space-x-2 text-theme-muted">
                         <div class="flex space-x-1">
-                            <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0ms" />
-                            <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 150ms" />
-                            <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 300ms" />
+                            <div class="w-2 h-2 bg-theme-info rounded-full animate-bounce" style="animation-delay: 0ms" />
+                            <div class="w-2 h-2 bg-theme-info rounded-full animate-bounce" style="animation-delay: 150ms" />
+                            <div class="w-2 h-2 bg-theme-info rounded-full animate-bounce" style="animation-delay: 300ms" />
                         </div>
                         <span class="text-sm">"AI is thinking..."</span>
                     </div>
@@ -233,19 +233,19 @@ pub fn Chat() -> impl IntoView {
             </div>
 
             // Input area
-            <form on:submit=on_submit class="pt-4 border-t border-gray-700">
+            <form on:submit=on_submit class="pt-4 border-t border-theme-default">
                 <div class="flex space-x-4">
                     <input
                         type="text"
                         placeholder="Type your message..."
-                        class="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500"
+                        class="flex-1 px-4 py-3 bg-theme-card text-theme-primary border border-theme-default rounded-lg focus:outline-none focus:border-theme-info placeholder-theme-muted"
                         prop:value=move || input.get()
                         on:input=move |ev| set_input.set(event_target_value(&ev))
                         disabled=move || ws_state.get() != WsState::Connected
                     />
                     <button
                         type="submit"
-                        class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        class="px-6 py-3 bg-theme-info text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled=move || {
                             input.get().trim().is_empty()
                                 || is_streaming.get()
