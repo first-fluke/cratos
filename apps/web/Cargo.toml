@@ -41,6 +41,7 @@ web-sys = { version = "0.3", features = [
     "HtmlElement",
     "HtmlInputElement",
     "HtmlTextAreaElement",
+    "HtmlAnchorElement",
     "WebSocket",
     "MessageEvent",
     "CloseEvent",
@@ -51,6 +52,9 @@ web-sys = { version = "0.3", features = [
     "Storage",
     "Navigator",
     "Clipboard",
+    "Blob",
+    "BlobPropertyBag",
+    "Url",
 ] }
 
 # HTTP client for WASM
