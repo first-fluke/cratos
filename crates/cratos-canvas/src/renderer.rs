@@ -140,11 +140,10 @@ impl ContentRenderer {
                 language: None,
                 source_url: Some(url.clone()),
             },
-            CanvasBlock::Chart { chart_type, .. } => RenderedBlock {
-                html: format!(
-                    r#"<div class="chart" data-type="{}">Chart rendering requires JavaScript</div>"#,
-                    chart_type.as_ref()
-                ),
+            CanvasBlock::Chart {
+                chart_type, data, ..
+            } => RenderedBlock {
+                html: render_chart_svg(*chart_type, data),
                 block_type: "chart".to_string(),
                 language: None,
                 source_url: None,
@@ -191,6 +190,192 @@ fn html_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
+}
+
+/// Render a chart to SVG
+///
+/// Supports basic chart types: Line, Bar, Pie, Scatter, Area.
+/// Data format: `{"labels": ["A","B"], "datasets": [{"data": [10, 20], "color": "#4299e1"}]}`
+fn render_chart_svg(chart_type: crate::document::ChartType, data: &serde_json::Value) -> String {
+    use crate::document::ChartType;
+
+    const WIDTH: f64 = 400.0;
+    const HEIGHT: f64 = 250.0;
+    const PADDING: f64 = 40.0;
+    const CHART_WIDTH: f64 = WIDTH - PADDING * 2.0;
+    const CHART_HEIGHT: f64 = HEIGHT - PADDING * 2.0;
+
+    // Parse data
+    let labels: Vec<String> = data["labels"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    let datasets: Vec<(Vec<f64>, String)> = data["datasets"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|ds| {
+                    let values: Vec<f64> = ds["data"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(|v| v.as_f64()).collect())
+                        .unwrap_or_default();
+                    let color = ds["color"].as_str().unwrap_or("#4299e1").to_string();
+                    (values, color)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if datasets.is_empty() || datasets[0].0.is_empty() {
+        return format!(
+            r##"<svg width="{}" height="{}" xmlns="http://www.w3.org/2000/svg">
+                <rect width="100%" height="100%" fill="#1a1a2e"/>
+                <text x="50%" y="50%" text-anchor="middle" fill="#888" font-size="14">No chart data</text>
+            </svg>"##,
+            WIDTH, HEIGHT
+        );
+    }
+
+    let all_values: Vec<f64> = datasets.iter().flat_map(|(v, _)| v.iter().copied()).collect();
+    let max_val = all_values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let min_val = all_values.iter().copied().fold(f64::INFINITY, f64::min).min(0.0);
+    let range = (max_val - min_val).max(1.0);
+
+    let mut svg = format!(
+        r##"<svg width="{}" height="{}" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100%" height="100%" fill="#1a1a2e"/>
+            <g transform="translate({}, {})">"##,
+        WIDTH, HEIGHT, PADDING, PADDING
+    );
+
+    // Y-axis
+    svg.push_str(&format!(
+        r##"<line x1="0" y1="0" x2="0" y2="{}" stroke="#444" stroke-width="1"/>"##,
+        CHART_HEIGHT
+    ));
+
+    // X-axis
+    svg.push_str(&format!(
+        r##"<line x1="0" y1="{}" x2="{}" y2="{}" stroke="#444" stroke-width="1"/>"##,
+        CHART_HEIGHT, CHART_WIDTH, CHART_HEIGHT
+    ));
+
+    let n = datasets[0].0.len();
+
+    match chart_type {
+        ChartType::Bar => {
+            let bar_width = CHART_WIDTH / n as f64 * 0.7;
+            let gap = CHART_WIDTH / n as f64 * 0.15;
+
+            for (di, (values, color)) in datasets.iter().enumerate() {
+                for (i, &val) in values.iter().enumerate() {
+                    let x = (i as f64 / n as f64) * CHART_WIDTH + gap + (di as f64 * bar_width / datasets.len() as f64);
+                    let h = ((val - min_val) / range) * CHART_HEIGHT;
+                    let y = CHART_HEIGHT - h;
+                    svg.push_str(&format!(
+                        r#"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="{}" opacity="0.8"/>"#,
+                        x, y, bar_width / datasets.len() as f64, h, color
+                    ));
+                }
+            }
+        }
+        ChartType::Line | ChartType::Area => {
+            for (values, color) in &datasets {
+                let mut points = String::new();
+                let mut area_points = format!("0,{:.1} ", CHART_HEIGHT);
+
+                for (i, &val) in values.iter().enumerate() {
+                    let x = (i as f64 / (n - 1).max(1) as f64) * CHART_WIDTH;
+                    let y = CHART_HEIGHT - ((val - min_val) / range) * CHART_HEIGHT;
+                    points.push_str(&format!("{:.1},{:.1} ", x, y));
+                    area_points.push_str(&format!("{:.1},{:.1} ", x, y));
+                }
+                area_points.push_str(&format!("{:.1},{:.1}", CHART_WIDTH, CHART_HEIGHT));
+
+                if chart_type == ChartType::Area {
+                    svg.push_str(&format!(
+                        r#"<polygon points="{}" fill="{}" opacity="0.3"/>"#,
+                        area_points, color
+                    ));
+                }
+
+                svg.push_str(&format!(
+                    r#"<polyline points="{}" fill="none" stroke="{}" stroke-width="2"/>"#,
+                    points.trim(), color
+                ));
+
+                // Data points
+                for (i, &val) in values.iter().enumerate() {
+                    let x = (i as f64 / (n - 1).max(1) as f64) * CHART_WIDTH;
+                    let y = CHART_HEIGHT - ((val - min_val) / range) * CHART_HEIGHT;
+                    svg.push_str(&format!(
+                        r#"<circle cx="{:.1}" cy="{:.1}" r="4" fill="{}" />"#,
+                        x, y, color
+                    ));
+                }
+            }
+        }
+        ChartType::Scatter => {
+            for (values, color) in &datasets {
+                for (i, &val) in values.iter().enumerate() {
+                    let x = (i as f64 / (n - 1).max(1) as f64) * CHART_WIDTH;
+                    let y = CHART_HEIGHT - ((val - min_val) / range) * CHART_HEIGHT;
+                    svg.push_str(&format!(
+                        r#"<circle cx="{:.1}" cy="{:.1}" r="5" fill="{}" opacity="0.7"/>"#,
+                        x, y, color
+                    ));
+                }
+            }
+        }
+        ChartType::Pie => {
+            let values = &datasets[0].0;
+            let total: f64 = values.iter().sum();
+            if total > 0.0 {
+                let cx = CHART_WIDTH / 2.0;
+                let cy = CHART_HEIGHT / 2.0;
+                let r = CHART_HEIGHT.min(CHART_WIDTH) / 2.0 * 0.8;
+
+                let colors = ["#4299e1", "#48bb78", "#ed8936", "#e53e3e", "#805ad5", "#38b2ac"];
+                let mut start_angle = -std::f64::consts::FRAC_PI_2;
+
+                for (i, &val) in values.iter().enumerate() {
+                    let angle = (val / total) * 2.0 * std::f64::consts::PI;
+                    let end_angle = start_angle + angle;
+
+                    let x1 = cx + r * start_angle.cos();
+                    let y1 = cy + r * start_angle.sin();
+                    let x2 = cx + r * end_angle.cos();
+                    let y2 = cy + r * end_angle.sin();
+
+                    let large_arc = if angle > std::f64::consts::PI { 1 } else { 0 };
+                    let color = colors[i % colors.len()];
+
+                    svg.push_str(&format!(
+                        r##"<path d="M{:.1},{:.1} L{:.1},{:.1} A{:.1},{:.1} 0 {} 1 {:.1},{:.1} Z" fill="{}" stroke="#1a1a2e" stroke-width="1"/>"##,
+                        cx, cy, x1, y1, r, r, large_arc, x2, y2, color
+                    ));
+
+                    start_angle = end_angle;
+                }
+            }
+        }
+    }
+
+    // X-axis labels
+    for (i, label) in labels.iter().enumerate().take(n) {
+        let x = match chart_type {
+            ChartType::Bar => (i as f64 + 0.5) / n as f64 * CHART_WIDTH,
+            _ => (i as f64 / (n - 1).max(1) as f64) * CHART_WIDTH,
+        };
+        svg.push_str(&format!(
+            r##"<text x="{:.1}" y="{:.1}" text-anchor="middle" fill="#888" font-size="10">{}</text>"##,
+            x, CHART_HEIGHT + 15.0, html_escape(label)
+        ));
+    }
+
+    svg.push_str("</g></svg>");
+    svg
 }
 
 /// Chart type for display
@@ -285,5 +470,172 @@ mod tests {
         assert_eq!(html_escape("<script>"), "&lt;script&gt;");
         assert_eq!(html_escape("a & b"), "a &amp; b");
         assert_eq!(html_escape("\"quoted\""), "&quot;quoted&quot;");
+    }
+
+    #[test]
+    fn test_render_chart_bar() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({
+            "labels": ["A", "B", "C"],
+            "datasets": [{"data": [10, 20, 30], "color": "#4299e1"}]
+        });
+        let block = CanvasBlock::chart(crate::document::ChartType::Bar, data);
+        let rendered = renderer.render_block(&block);
+
+        assert_eq!(rendered.block_type, "chart");
+        assert!(rendered.html.contains("<svg"));
+        assert!(rendered.html.contains("rect"));
+    }
+
+    #[test]
+    fn test_render_chart_line() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({
+            "labels": ["Jan", "Feb", "Mar"],
+            "datasets": [{"data": [5, 15, 10], "color": "#48bb78"}]
+        });
+        let block = CanvasBlock::chart(crate::document::ChartType::Line, data);
+        let rendered = renderer.render_block(&block);
+
+        assert!(rendered.html.contains("<polyline"));
+        assert!(rendered.html.contains("<circle"));
+    }
+
+    #[test]
+    fn test_render_chart_pie() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({
+            "labels": ["Red", "Blue", "Green"],
+            "datasets": [{"data": [30, 50, 20]}]
+        });
+        let block = CanvasBlock::chart(crate::document::ChartType::Pie, data);
+        let rendered = renderer.render_block(&block);
+
+        assert!(rendered.html.contains("<path"));
+    }
+
+    #[test]
+    fn test_render_chart_empty_data() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({});
+        let block = CanvasBlock::chart(crate::document::ChartType::Bar, data);
+        let rendered = renderer.render_block(&block);
+
+        assert!(rendered.html.contains("No chart data"));
+    }
+
+    #[test]
+    fn test_render_chart_area() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({
+            "labels": ["Q1", "Q2", "Q3", "Q4"],
+            "datasets": [{"data": [100, 150, 120, 180], "color": "#ed8936"}]
+        });
+        let block = CanvasBlock::chart(crate::document::ChartType::Area, data);
+        let rendered = renderer.render_block(&block);
+
+        assert!(rendered.html.contains("<polygon"));
+        assert!(rendered.html.contains("<polyline"));
+    }
+
+    #[test]
+    fn test_render_chart_scatter() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({
+            "labels": ["P1", "P2", "P3"],
+            "datasets": [{"data": [5, 10, 7], "color": "#805ad5"}]
+        });
+        let block = CanvasBlock::chart(crate::document::ChartType::Scatter, data);
+        let rendered = renderer.render_block(&block);
+
+        assert!(rendered.html.contains("<circle"));
+        assert!(rendered.html.contains("opacity"));
+    }
+
+    #[test]
+    fn test_render_chart_multiple_datasets() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({
+            "labels": ["A", "B", "C"],
+            "datasets": [
+                {"data": [10, 20, 30], "color": "#4299e1"},
+                {"data": [15, 25, 35], "color": "#48bb78"}
+            ]
+        });
+        let block = CanvasBlock::chart(crate::document::ChartType::Line, data);
+        let rendered = renderer.render_block(&block);
+
+        // Should contain two polylines for two datasets
+        let polyline_count = rendered.html.matches("<polyline").count();
+        assert_eq!(polyline_count, 2);
+    }
+
+    #[test]
+    fn test_render_chart_with_labels() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({
+            "labels": ["January", "February", "March"],
+            "datasets": [{"data": [10, 20, 30]}]
+        });
+        let block = CanvasBlock::chart(crate::document::ChartType::Bar, data);
+        let rendered = renderer.render_block(&block);
+
+        assert!(rendered.html.contains("January"));
+        assert!(rendered.html.contains("February"));
+        assert!(rendered.html.contains("March"));
+    }
+
+    #[test]
+    fn test_render_chart_negative_values() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({
+            "labels": ["A", "B", "C"],
+            "datasets": [{"data": [-10, 20, -5]}]
+        });
+        let block = CanvasBlock::chart(crate::document::ChartType::Bar, data);
+        let rendered = renderer.render_block(&block);
+
+        // Should render without panic
+        assert!(rendered.html.contains("<svg"));
+    }
+
+    #[test]
+    fn test_chart_type_as_ref() {
+        use crate::document::ChartType;
+
+        assert_eq!(ChartType::Line.as_ref(), "line");
+        assert_eq!(ChartType::Bar.as_ref(), "bar");
+        assert_eq!(ChartType::Pie.as_ref(), "pie");
+        assert_eq!(ChartType::Scatter.as_ref(), "scatter");
+        assert_eq!(ChartType::Area.as_ref(), "area");
+    }
+
+    #[test]
+    fn test_svg_dimensions() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({
+            "labels": ["A"],
+            "datasets": [{"data": [10]}]
+        });
+        let block = CanvasBlock::chart(crate::document::ChartType::Bar, data);
+        let rendered = renderer.render_block(&block);
+
+        assert!(rendered.html.contains("width=\"400\""));
+        assert!(rendered.html.contains("height=\"250\""));
+    }
+
+    #[test]
+    fn test_html_escape_special_chars_in_labels() {
+        let renderer = ContentRenderer::new();
+        let data = serde_json::json!({
+            "labels": ["<script>", "A & B", "\"quoted\""],
+            "datasets": [{"data": [10, 20, 30]}]
+        });
+        let block = CanvasBlock::chart(crate::document::ChartType::Bar, data);
+        let rendered = renderer.render_block(&block);
+
+        // HTML entities should be escaped
+        assert!(rendered.html.contains("&lt;script&gt;"));
+        assert!(rendered.html.contains("A &amp; B"));
     }
 }
