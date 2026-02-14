@@ -12,6 +12,7 @@ use axum::{extract::Path, routing::get, Extension, Json, Router};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use cratos_core::scheduler::{ScheduledTask, SchedulerEngine, TaskAction, TriggerType};
@@ -20,7 +21,7 @@ use super::config::ApiResponse;
 use crate::middleware::auth::{require_scope, RequireAuth};
 
 /// Task view for API responses
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TaskView {
     pub id: Uuid,
     pub name: String,
@@ -39,7 +40,7 @@ pub struct TaskView {
 }
 
 /// Request to create a new task
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTaskRequest {
     pub name: String,
     pub description: Option<String>,
@@ -58,7 +59,7 @@ fn default_true() -> bool {
 }
 
 /// Request to update a task
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[allow(dead_code)]
 pub struct UpdateTaskRequest {
     pub name: Option<String>,
@@ -213,7 +214,18 @@ fn parse_action(action_type: &str, config: &serde_json::Value) -> Result<TaskAct
 }
 
 /// List all scheduled tasks (requires authentication + scheduler_read scope)
-async fn list_tasks(
+#[utoipa::path(
+    get,
+    path = "/api/v1/scheduler/tasks",
+    tag = "scheduler",
+    responses(
+        (status = 200, description = "List of scheduled tasks", body = Vec<TaskView>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - missing SchedulerRead scope")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn list_tasks(
     RequireAuth(auth): RequireAuth,
     engine: Option<Extension<Arc<SchedulerEngine>>>,
 ) -> Result<Json<ApiResponse<Vec<TaskView>>>, crate::middleware::auth::AuthRejection> {
@@ -235,7 +247,20 @@ async fn list_tasks(
 }
 
 /// Create a new scheduled task (requires authentication + scheduler_write scope)
-async fn create_task(
+#[utoipa::path(
+    post,
+    path = "/api/v1/scheduler/tasks",
+    tag = "scheduler",
+    request_body = CreateTaskRequest,
+    responses(
+        (status = 200, description = "Created task", body = TaskView),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - missing SchedulerWrite scope")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn create_task(
     RequireAuth(auth): RequireAuth,
     engine: Option<Extension<Arc<SchedulerEngine>>>,
     Json(request): Json<CreateTaskRequest>,
@@ -280,7 +305,21 @@ async fn create_task(
 }
 
 /// Get task details (requires authentication + scheduler_read scope)
-async fn get_task(
+#[utoipa::path(
+    get,
+    path = "/api/v1/scheduler/tasks/{id}",
+    tag = "scheduler",
+    params(
+        ("id" = Uuid, Path, description = "Task ID")
+    ),
+    responses(
+        (status = 200, description = "Task details", body = TaskView),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Task not found")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn get_task(
     RequireAuth(auth): RequireAuth,
     engine: Option<Extension<Arc<SchedulerEngine>>>,
     Path(id): Path<Uuid>,
@@ -297,7 +336,22 @@ async fn get_task(
 }
 
 /// Update a task (requires authentication + scheduler_write scope)
-async fn update_task(
+#[utoipa::path(
+    put,
+    path = "/api/v1/scheduler/tasks/{id}",
+    tag = "scheduler",
+    params(
+        ("id" = Uuid, Path, description = "Task ID")
+    ),
+    request_body = UpdateTaskRequest,
+    responses(
+        (status = 200, description = "Updated task", body = TaskView),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Task not found")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn update_task(
     RequireAuth(auth): RequireAuth,
     engine: Option<Extension<Arc<SchedulerEngine>>>,
     Path(id): Path<Uuid>,
@@ -323,7 +377,21 @@ async fn update_task(
 }
 
 /// Delete a task (requires authentication + scheduler_write scope)
-async fn delete_task(
+#[utoipa::path(
+    delete,
+    path = "/api/v1/scheduler/tasks/{id}",
+    tag = "scheduler",
+    params(
+        ("id" = Uuid, Path, description = "Task ID")
+    ),
+    responses(
+        (status = 200, description = "Task deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Task not found")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn delete_task(
     RequireAuth(auth): RequireAuth,
     engine: Option<Extension<Arc<SchedulerEngine>>>,
     Path(id): Path<Uuid>,

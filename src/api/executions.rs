@@ -12,6 +12,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use cratos_replay::{EventStore, ExecutionViewer, ReplayOptions};
@@ -20,7 +21,7 @@ use super::config::ApiResponse;
 use crate::middleware::auth::RequireAuth;
 
 /// Query parameters for listing executions
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct ListExecutionsQuery {
     /// Maximum number of results
     #[serde(default = "default_limit")]
@@ -40,7 +41,7 @@ fn default_limit() -> i64 {
 }
 
 /// Execution summary for list view
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ExecutionSummary {
     pub id: Uuid,
     pub channel_type: String,
@@ -54,7 +55,7 @@ pub struct ExecutionSummary {
 }
 
 /// Detailed execution view
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ExecutionDetail {
     pub id: Uuid,
     pub channel_type: String,
@@ -70,7 +71,7 @@ pub struct ExecutionDetail {
 }
 
 /// Event summary
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct EventSummary {
     pub id: Uuid,
     pub sequence_num: i32,
@@ -80,7 +81,18 @@ pub struct EventSummary {
 }
 
 /// List recent executions (requires authentication)
-async fn list_executions(
+#[utoipa::path(
+    get,
+    path = "/api/v1/executions",
+    tag = "executions",
+    params(ListExecutionsQuery),
+    responses(
+        (status = 200, description = "List of executions", body = Vec<ExecutionSummary>),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn list_executions(
     RequireAuth(_auth): RequireAuth,
     Extension(store): Extension<Arc<EventStore>>,
     Query(query): Query<ListExecutionsQuery>,
@@ -141,7 +153,21 @@ async fn list_executions(
 }
 
 /// Get execution details by ID (requires authentication)
-async fn get_execution(
+#[utoipa::path(
+    get,
+    path = "/api/v1/executions/{id}",
+    tag = "executions",
+    params(
+        ("id" = Uuid, Path, description = "Execution ID")
+    ),
+    responses(
+        (status = 200, description = "Execution details", body = ExecutionDetail),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Execution not found")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn get_execution(
     RequireAuth(_auth): RequireAuth,
     Extension(store): Extension<Arc<EventStore>>,
     Path(id): Path<Uuid>,
@@ -191,7 +217,21 @@ async fn get_execution(
 }
 
 /// Get replay timeline events for an execution (requires authentication)
-async fn get_replay_events(
+#[utoipa::path(
+    get,
+    path = "/api/v1/executions/{id}/replay",
+    tag = "executions",
+    params(
+        ("id" = Uuid, Path, description = "Execution ID")
+    ),
+    responses(
+        (status = 200, description = "Replay timeline events"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Execution not found")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn get_replay_events(
     RequireAuth(_auth): RequireAuth,
     Extension(store): Extension<Arc<EventStore>>,
     Path(id): Path<Uuid>,
@@ -207,7 +247,21 @@ async fn get_replay_events(
 }
 
 /// Rerun an execution with replay options (requires authentication)
-async fn rerun_execution(
+#[utoipa::path(
+    post,
+    path = "/api/v1/executions/{id}/rerun",
+    tag = "executions",
+    params(
+        ("id" = Uuid, Path, description = "Execution ID")
+    ),
+    responses(
+        (status = 200, description = "Rerun result"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Execution not found")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn rerun_execution(
     RequireAuth(_auth): RequireAuth,
     Extension(store): Extension<Arc<EventStore>>,
     Path(id): Path<Uuid>,
@@ -223,6 +277,96 @@ async fn rerun_execution(
     }
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ExecutionStats {
+    pub labels: Vec<String>,
+    pub series: Vec<f64>,
+}
+
+/// Get execution statistics for traffic analysis (requires authentication)
+#[utoipa::path(
+    get,
+    path = "/api/v1/executions/stats",
+    tag = "executions",
+    responses(
+        (status = 200, description = "Execution statistics", body = ExecutionStats),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn get_execution_stats(
+    RequireAuth(_auth): RequireAuth,
+    Extension(store): Extension<Arc<EventStore>>,
+) -> Json<ApiResponse<ExecutionStats>> {
+    // Fetch recent executions (up to 200)
+    let executions = match store.list_recent_executions(200).await {
+        Ok(execs) => execs,
+        Err(e) => {
+            return Json(ApiResponse::error(format!(
+                "Failed to fetch stats: {}",
+                e
+            )));
+        }
+    };
+
+    // Group by hour for the last 24 hours
+    let now = Utc::now();
+    let mut counts = std::collections::HashMap::new();
+    
+    // Initialize last 24h buckets
+    for i in 0..24 {
+        let hour = now - chrono::Duration::hours(i);
+        let key = hour.format("%H:00").to_string();
+        counts.insert(key, 0);
+    }
+
+    // Aggregate
+    for exec in executions {
+        if exec.created_at > now - chrono::Duration::hours(24) {
+            let key = exec.created_at.format("%H:00").to_string();
+            // Simplify: just increment the bucket for that hour
+            *counts.entry(key).or_insert(0) += 1;
+        }
+    }
+
+    // Sort labels and create series
+    // Logic: 00:00, 04:00, ... 6 points or just last 24h?
+    // Dashboard chart expects specific labels? No, generic Chart expects labels.
+    // Let's return last 12 hours in 2-hour intervals or similar to match the mock data style
+    // Mock data: 00:00, 04:00, 08:00... (4 hour intervals)
+    
+    let mut labels = Vec::new();
+    let mut series = Vec::new();
+    
+    // Generate 6 points (every 4 hours) working backwards from now rounded to nearest 4h
+    // Or just return the raw hourly data? The Chart component needs to handle it.
+    // Le's simply return last 6 hours hourly? Or last 24h in 4h chunks.
+    
+    let mut buckets = std::collections::BTreeMap::new();
+    for i in (0..=6).map(|x| x * 4).rev() { // 24, 20, 16... 0
+       let time = now - chrono::Duration::hours(i);
+       let label = time.format("%H:%M").to_string();
+       buckets.insert(time, (label, 0));
+    }
+    
+    // Re-aggregate into these buckets
+    // This is approximate but fine for a dashboard
+    // Better: just fetch all recent and let frontend decide?
+    // No, backend aggregation is safer.
+    
+    // Simple approach: Return last 7 hours hourly
+    labels.clear();
+    series.clear();
+    for i in (0..7).rev() {
+        let time = now - chrono::Duration::hours(i);
+        let key = time.format("%H:00").to_string();
+        labels.push(key.clone());
+        series.push(*counts.get(&key).unwrap_or(&0) as f64);
+    }
+
+    Json(ApiResponse::success(ExecutionStats { labels, series }))
+}
+
 /// Create executions routes
 pub fn executions_routes() -> Router {
     Router::new()
@@ -230,6 +374,7 @@ pub fn executions_routes() -> Router {
         .route("/api/v1/executions/:id", get(get_execution))
         .route("/api/v1/executions/:id/replay", get(get_replay_events))
         .route("/api/v1/executions/:id/rerun", post(rerun_execution))
+        .route("/api/v1/executions/stats", get(get_execution_stats))
 }
 
 #[cfg(test)]

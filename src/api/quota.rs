@@ -5,18 +5,19 @@
 use axum::{routing::get, Json, Router};
 use cratos_llm::{global_quota_tracker, global_tracker};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::middleware::auth::RequireAuth;
 
 /// Response for GET /api/v1/quota
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct QuotaResponse {
     pub providers: Vec<ProviderQuota>,
     pub today: TodaySummary,
 }
 
 /// Rate limit state for a single provider.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ProviderQuota {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,7 +32,7 @@ pub struct ProviderQuota {
 }
 
 /// Numeric quota fields.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct QuotaNumbers {
     pub remaining: Option<u64>,
     pub limit: Option<u64>,
@@ -39,14 +40,24 @@ pub struct QuotaNumbers {
 }
 
 /// Today's cost/token summary.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct TodaySummary {
     pub total_cost_usd: f64,
     pub total_tokens: u64,
 }
 
 /// GET /api/v1/quota handler (requires authentication).
-async fn get_quota(RequireAuth(_auth): RequireAuth) -> Json<QuotaResponse> {
+#[utoipa::path(
+    get,
+    path = "/api/v1/quota",
+    tag = "quota",
+    responses(
+        (status = 200, description = "Quota and rate limit status", body = QuotaResponse),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn get_quota(RequireAuth(_auth): RequireAuth) -> Json<QuotaResponse> {
     let tracker = global_quota_tracker();
     let cost_tracker = global_tracker();
 

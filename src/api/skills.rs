@@ -16,6 +16,7 @@ use cratos_skills::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, error, info};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Skill list query parameters
@@ -30,7 +31,7 @@ pub struct SkillListQuery {
 }
 
 /// Skill info response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SkillInfo {
     /// Skill ID
     pub id: String,
@@ -114,7 +115,16 @@ pub fn skills_routes() -> Router {
 }
 
 /// List all skills
-async fn list_skills(
+#[utoipa::path(
+    get,
+    path = "/api/v1/skills",
+    tag = "skills",
+    responses(
+        (status = 200, description = "List of skills", body = Vec<SkillInfo>),
+        (status = 500, description = "Database error")
+    )
+)]
+pub async fn list_skills(
     Query(query): Query<SkillListQuery>,
     Extension(store): Extension<Arc<SkillStore>>,
 ) -> impl IntoResponse {
@@ -153,7 +163,20 @@ async fn list_skills(
 }
 
 /// Get single skill details
-async fn get_skill(
+#[utoipa::path(
+    get,
+    path = "/api/v1/skills/{id}",
+    tag = "skills",
+    params(
+        ("id" = String, Path, description = "Skill UUID")
+    ),
+    responses(
+        (status = 200, description = "Skill details", body = SkillInfo),
+        (status = 400, description = "Invalid UUID"),
+        (status = 404, description = "Skill not found")
+    )
+)]
+pub async fn get_skill(
     Path(id): Path<String>,
     Extension(store): Extension<Arc<SkillStore>>,
 ) -> impl IntoResponse {

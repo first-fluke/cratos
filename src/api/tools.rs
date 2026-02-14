@@ -6,12 +6,13 @@ use axum::{routing::get, Extension, Json, Router};
 use cratos_tools::ToolRegistry;
 use serde::Serialize;
 use std::sync::Arc;
+use utoipa::ToSchema;
 
 use super::config::ApiResponse;
 use crate::middleware::auth::RequireAuth;
 
 /// Tool information for API response
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ToolInfo {
     /// Tool name (identifier)
     pub name: String,
@@ -26,7 +27,17 @@ pub struct ToolInfo {
 }
 
 /// List all available tools from the ToolRegistry
-async fn list_tools(
+#[utoipa::path(
+    get,
+    path = "/api/v1/tools",
+    tag = "tools",
+    responses(
+        (status = 200, description = "List of available tools", body = Vec<ToolInfo>),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(("api_key" = []))
+)]
+pub async fn list_tools(
     RequireAuth(_auth): RequireAuth,
     registry: Option<Extension<Arc<ToolRegistry>>>,
 ) -> Json<ApiResponse<Vec<ToolInfo>>> {

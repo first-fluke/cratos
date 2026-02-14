@@ -16,7 +16,6 @@ pub fn load_config() -> Result<AppConfig> {
         .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Toml))
         // 2. External overrides (optional)
         .add_source(File::with_name("config/default").required(false))
-        .add_source(File::with_name("config/local").required(false))
         .add_source(
             File::with_name(&format!(
                 "config/{}",
@@ -24,6 +23,7 @@ pub fn load_config() -> Result<AppConfig> {
             ))
             .required(false),
         )
+        .add_source(File::with_name("config/local").required(false))
         // 3. Environment variables (highest priority)
         // prefix_separator("_") ensures CRATOS_LLM__X works (single _ after prefix).
         // Without it, config-rs 0.14 defaults prefix_separator to separator ("__"),
