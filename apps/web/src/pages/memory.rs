@@ -10,7 +10,7 @@ use leptos::*;
 
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
-use web_sys::MouseEvent;
+use web_sys::{MouseEvent, ResizeObserver, ResizeObserverEntry};
 
 use crate::api::ApiClient;
 // use crate::components::StatCard;
@@ -198,7 +198,14 @@ fn ForceGraph(
     let (transform, set_transform) = create_signal((0.0, 0.0, 1.0)); // x, y, scale
     let (is_panning, set_is_panning) = create_signal(false);
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
+
     let (selected_node_id, set_selected_node_id) = create_signal::<Option<String>>(None);
+    
+    // Resize Observer State
+    let (resize_observer, set_resize_observer) = create_signal::<Option<ResizeObserver>>(None);
+    // Keep closure alive
+    #[allow(clippy::type_complexity)]
+    let (resize_closure, set_resize_closure) = create_signal::<Option<Closure<dyn FnMut(Vec<js_sys::Object>, JsValue)>>>(None);
 
     let selected_node = move || {
         let id = selected_node_id.get()?;
@@ -398,13 +405,41 @@ fn ForceGraph(
     };
     
     // Resize Observer
+    // Resize Observer
     create_effect(move |_| {
          if let Some(div) = container_ref.get() {
-            let w = div.client_width() as f64;
-            let h = div.client_height() as f64;
-            set_width.set(w);
-            set_height.set(h);
-            gloo_console::log!("ForceGraph Resize:", w, h);
+            if resize_observer.get_untracked().is_some() { return; }
+
+            let set_w = set_width;
+            let set_h = set_height;
+            let closure = Closure::wrap(Box::new(move |entries: Vec<js_sys::Object>, _observer: JsValue| {
+                for entry in entries {
+                    if let Ok(entry) = entry.dyn_into::<ResizeObserverEntry>() {
+                        let rect = entry.content_rect();
+                        let w = rect.width();
+                        let h = rect.height();
+                        if w > 0.0 && h > 0.0 {
+                            set_w.set(w);
+                            set_h.set(h);
+                            gloo_console::log!("ForceGraph Rezized:", w, h);
+                        }
+                    }
+                }
+            }) as Box<dyn FnMut(Vec<js_sys::Object>, JsValue)>);
+
+            if let Ok(observer) = ResizeObserver::new(closure.as_ref().unchecked_ref()) {
+                observer.observe(&div);
+                set_resize_observer.set(Some(observer));
+                set_resize_closure.set(Some(closure));
+            } else {
+                gloo_console::error!("Failed to create ResizeObserver");
+            }
+        }
+    });
+
+    on_cleanup(move || {
+        if let Some(obs) = resize_observer.get_untracked() {
+             obs.disconnect();
         }
     });
 
