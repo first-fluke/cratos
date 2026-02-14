@@ -355,7 +355,7 @@ pub async fn run() -> Result<()> {
 
     // Phase 6: ProactiveScheduler with real executor
     let scheduler_engine_ext =
-        start_scheduler(&config, &data_dir, &orchestrator, &shutdown_controller).await;
+        start_scheduler(&config, &data_dir, &orchestrator, &event_bus, &shutdown_controller).await;
 
     // Phase 3: Auto skill generation background task
     start_skill_generation_task(&event_store, &skill_store, &skill_registry, &shutdown_controller);
@@ -955,6 +955,7 @@ async fn start_scheduler(
     config: &AppConfig,
     data_dir: &std::path::Path,
     orchestrator: &Arc<Orchestrator>,
+    event_bus: &Arc<EventBus>,
     shutdown_controller: &ShutdownController,
 ) -> Option<Arc<SchedulerEngine>> {
     if !config.scheduler.enabled {
@@ -970,11 +971,13 @@ async fn start_scheduler(
                 .with_retry_delay(config.scheduler.retry_delay_secs)
                 .with_max_concurrent(config.scheduler.max_concurrent);
 
-            // Build real executor using orchestrator
+            // Build real executor using orchestrator and event bus
             let sched_orch = orchestrator.clone();
+            let sched_event_bus = event_bus.clone();
             let task_executor: cratos_core::scheduler::TaskExecutor =
                 Arc::new(move |action: cratos_core::scheduler::TaskAction| {
                     let orch = sched_orch.clone();
+                    let _eb = sched_event_bus.clone();
                     Box::pin(async move {
                         use cratos_core::scheduler::TaskAction;
                         match action {
@@ -1016,7 +1019,110 @@ async fn start_scheduler(
                                         )
                                     })
                             }
-                            _ => Ok("Action type not yet supported".to_string()),
+                            TaskAction::Notification {
+                                channel,
+                                channel_id,
+                                message,
+                            } => {
+                                // Send notification via NaturalLanguage action
+                                // This routes through the orchestrator which can respond to channels
+                                let prompt = format!(
+                                    "[Scheduled Notification for {}:{}]\n{}",
+                                    channel, channel_id, message
+                                );
+                                let input = cratos_core::OrchestratorInput::new(
+                                    "scheduler",
+                                    &channel,
+                                    &channel_id,
+                                    &prompt,
+                                );
+                                match orch.process(input).await {
+                                    Ok(_) => {
+                                        info!(
+                                            channel = %channel,
+                                            channel_id = %channel_id,
+                                            "Scheduler notification sent"
+                                        );
+                                        Ok(format!("Notification sent to {}:{}", channel, channel_id))
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            channel = %channel,
+                                            channel_id = %channel_id,
+                                            error = %e,
+                                            "Failed to send scheduler notification"
+                                        );
+                                        Err(cratos_core::scheduler::SchedulerError::Execution(
+                                            format!("Notification failed: {}", e)
+                                        ))
+                                    }
+                                }
+                            }
+                            TaskAction::Webhook {
+                                url,
+                                method,
+                                headers,
+                                body,
+                            } => {
+                                // Execute HTTP webhook
+                                let client = reqwest::Client::new();
+                                let method = match method.to_uppercase().as_str() {
+                                    "GET" => reqwest::Method::GET,
+                                    "POST" => reqwest::Method::POST,
+                                    "PUT" => reqwest::Method::PUT,
+                                    "DELETE" => reqwest::Method::DELETE,
+                                    "PATCH" => reqwest::Method::PATCH,
+                                    _ => reqwest::Method::POST,
+                                };
+
+                                let mut request = client.request(method, &url);
+
+                                // Add headers
+                                if let Some(hdrs) = headers {
+                                    if let Some(obj) = hdrs.as_object() {
+                                        for (k, v) in obj {
+                                            if let Some(val) = v.as_str() {
+                                                request = request.header(k, val);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Add body
+                                if let Some(b) = body {
+                                    request = request.json(&b);
+                                }
+
+                                match request.send().await {
+                                    Ok(resp) => {
+                                        let status = resp.status();
+                                        let body = resp
+                                            .text()
+                                            .await
+                                            .unwrap_or_else(|_| String::new());
+                                        if status.is_success() {
+                                            info!(url = %url, status = %status, "Webhook succeeded");
+                                            Ok(format!(
+                                                "Webhook {} returned {}: {}",
+                                                url,
+                                                status,
+                                                &body[..body.len().min(200)]
+                                            ))
+                                        } else {
+                                            warn!(url = %url, status = %status, "Webhook failed");
+                                            Err(cratos_core::scheduler::SchedulerError::Execution(
+                                                format!("Webhook failed with status {}: {}", status, &body[..body.len().min(200)])
+                                            ))
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(url = %url, error = %e, "Webhook request failed");
+                                        Err(cratos_core::scheduler::SchedulerError::Execution(
+                                            format!("Webhook request failed: {}", e)
+                                        ))
+                                    }
+                                }
+                            }
                         }
                     })
                 });
