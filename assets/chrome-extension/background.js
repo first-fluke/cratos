@@ -1,7 +1,11 @@
 // Cratos AI Assistant — Chrome Extension Background Service Worker
 // Manages WebSocket connection to Cratos server, message routing, and badge state.
 
-const DEFAULT_SERVER_URL = "ws://127.0.0.1:8090/ws/gateway";
+const DEFAULT_SERVER_URL = "ws://127.0.0.1:19527/ws/gateway";
+const OLD_SERVER_URLS = [
+  "ws://127.0.0.1:8080/ws/gateway",
+  "ws://127.0.0.1:8090/ws/gateway",
+];
 const RECONNECT_DELAY_MS = 5000;
 const REQUEST_TIMEOUT_MS = 30000;
 
@@ -609,8 +613,20 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+// ── Migrate old server URLs ──────────────────────────────────────────
+
+async function migrateSettings() {
+  const result = await chrome.storage.local.get(["serverUrl"]);
+  if (result.serverUrl && OLD_SERVER_URLS.includes(result.serverUrl)) {
+    console.log("[cratos] Migrating old server URL to new default");
+    await chrome.storage.local.set({ serverUrl: DEFAULT_SERVER_URL });
+  }
+}
+
 // ── Init ─────────────────────────────────────────────────────────────
 
-setBadge("OFF", "#888");
-ensureOffscreen();
-connect();
+migrateSettings().then(() => {
+  setBadge("OFF", "#888");
+  ensureOffscreen();
+  connect();
+});

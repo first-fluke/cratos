@@ -18,7 +18,7 @@ path = "src/main.rs"
 [dependencies]
 # Leptos framework
 leptos = { version = "0.6", features = ["csr"] }
-leptos_router = "0.6"
+leptos_router = { version = "0.6", features = ["csr"] }
 leptos_meta = "0.6"
 
 # Serialization
@@ -74,6 +74,7 @@ flate2 = "1.0"
 # Logging
 tracing = "0.1"
 tracing-wasm = "0.2"
+console_error_panic_hook = "0.1"
 
 [features]
 default = []

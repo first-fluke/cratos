@@ -8,7 +8,7 @@ const statusEl = document.getElementById("status");
 
 // Load saved settings
 chrome.storage.local.get(["serverUrl", "apiKey"], (result) => {
-  serverUrlInput.value = result.serverUrl || "ws://127.0.0.1:8090/ws/gateway";
+  serverUrlInput.value = result.serverUrl || "ws://127.0.0.1:19527/ws/gateway";
   apiKeyInput.value = result.apiKey || "";
 });
 

@@ -4,10 +4,11 @@ use leptos::*;
 fn main() {
     #[cfg(target_arch = "wasm32")]
     {
-        // Initialize tracing for WASM
-        tracing_wasm::set_as_global_default();
-        
-        tracing::info!("Starting Cratos Web Dashboard");
+        // Set panic hook for better error messages
+        console_error_panic_hook::set_once();
+
+        // Log to console
+        web_sys::console::log_1(&"Starting Cratos Web Dashboard".into());
 
         // Mount the app
         mount_to_body(|| view! { <App /> });
