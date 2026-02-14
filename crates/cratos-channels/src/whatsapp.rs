@@ -13,7 +13,7 @@
 //! For production/business use, consider the official WhatsApp Business API instead.
 
 use crate::error::{Error, Result};
-use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingMessage};
+use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingAttachment, OutgoingMessage};
 use crate::util::{mask_for_logging, WHATSAPP_MESSAGE_LIMIT};
 use cratos_core::{Orchestrator, OrchestratorInput};
 use serde::{Deserialize, Serialize};
@@ -501,6 +501,106 @@ impl ChannelAdapter for WhatsAppAdapter {
 
         Ok(())
     }
+
+    async fn send_attachment(
+        &self,
+        channel_id: &str,
+        attachment: OutgoingAttachment,
+        reply_to: Option<&str>,
+    ) -> Result<String> {
+        use base64::Engine as _;
+
+        // Decode base64 attachment data
+        let file_data = base64::engine::general_purpose::STANDARD
+            .decode(&attachment.data)
+            .map_err(|e| Error::WhatsApp(format!("Invalid base64 attachment data: {}", e)))?;
+
+        // Determine media type for WhatsApp
+        let media_type = match attachment.mime_type.split('/').next().unwrap_or("document") {
+            "image" => "image",
+            "video" => "video",
+            "audio" => "audio",
+            _ => "document",
+        };
+
+        // Upload media to WhatsApp bridge
+        let upload_url = format!("{}/media/upload", self.config.bridge_url);
+
+        #[derive(Serialize)]
+        struct UploadRequest<'a> {
+            media_type: &'a str,
+            filename: &'a str,
+            mime_type: &'a str,
+            data: String, // base64
+        }
+
+        #[derive(Deserialize)]
+        struct UploadResponse {
+            media_id: Option<String>,
+            error: Option<String>,
+        }
+
+        let upload_resp: UploadResponse = self
+            .client
+            .post(&upload_url)
+            .json(&UploadRequest {
+                media_type,
+                filename: &attachment.filename,
+                mime_type: &attachment.mime_type,
+                data: base64::engine::general_purpose::STANDARD.encode(&file_data),
+            })
+            .send()
+            .await
+            .map_err(|e| Error::Bridge(format!("Failed to upload media: {}", e)))?
+            .json()
+            .await
+            .map_err(|e| Error::Bridge(format!("Failed to parse upload response: {}", e)))?;
+
+        let media_id = upload_resp.media_id.ok_or_else(|| {
+            Error::WhatsApp(upload_resp.error.unwrap_or_else(|| "Upload failed".to_string()))
+        })?;
+
+        // Send media message
+        let send_url = format!("{}/message/media", self.config.bridge_url);
+
+        #[derive(Serialize)]
+        struct MediaMessageRequest<'a> {
+            to: &'a str,
+            media_type: &'a str,
+            media_id: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            caption: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            reply_to: Option<&'a str>,
+        }
+
+        #[derive(Deserialize)]
+        struct MediaMessageResponse {
+            message_id: Option<String>,
+            error: Option<String>,
+        }
+
+        let resp: MediaMessageResponse = self
+            .client
+            .post(&send_url)
+            .json(&MediaMessageRequest {
+                to: channel_id,
+                media_type,
+                media_id: &media_id,
+                caption: attachment.caption.as_deref(),
+                reply_to,
+            })
+            .send()
+            .await
+            .map_err(|e| Error::Bridge(format!("Failed to send media message: {}", e)))?
+            .json()
+            .await
+            .map_err(|e| Error::Bridge(format!("Failed to parse response: {}", e)))?;
+
+        resp.message_id.ok_or_else(|| {
+            Error::WhatsApp(resp.error.unwrap_or_else(|| "Send media failed".to_string()))
+        })
+    }
 }
 
 #[cfg(test)]
@@ -534,6 +634,52 @@ mod tests {
 
         assert!(adapter.is_number_allowed("+821012345678"));
         assert!(adapter.is_number_allowed("+14155551234"));
+    }
+
+    #[test]
+    fn test_media_type_detection() {
+        // Test media type classification used in send_attachment
+        let test_cases = [
+            ("image/jpeg", "image"),
+            ("image/png", "image"),
+            ("video/mp4", "video"),
+            ("audio/mpeg", "audio"),
+            ("application/pdf", "document"),
+            ("text/plain", "document"),
+        ];
+
+        for (mime_type, expected) in test_cases {
+            let detected = match mime_type.split('/').next().unwrap_or("document") {
+                "image" => "image",
+                "video" => "video",
+                "audio" => "audio",
+                _ => "document",
+            };
+            assert_eq!(detected, expected, "MIME type {} should map to {}", mime_type, expected);
+        }
+    }
+
+    #[test]
+    fn test_whatsapp_bridge_url_format() {
+        let config = WhatsAppConfig::new("http://localhost:3001");
+
+        let upload_url = format!("{}/media/upload", config.bridge_url);
+        let send_url = format!("{}/message/media", config.bridge_url);
+
+        assert_eq!(upload_url, "http://localhost:3001/media/upload");
+        assert_eq!(send_url, "http://localhost:3001/message/media");
+    }
+
+    #[test]
+    fn test_base64_encoding_for_upload() {
+        use base64::Engine as _;
+
+        let data = b"test file content";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(data);
+
+        // Verify it's valid base64
+        assert!(base64::engine::general_purpose::STANDARD.decode(&encoded).is_ok());
+        assert!(!encoded.contains(' '));
     }
 
     // Note: mask_for_logging tests are in util.rs
