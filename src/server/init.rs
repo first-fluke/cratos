@@ -459,8 +459,6 @@ pub async fn run() -> Result<()> {
     let app = Router::new()
         // Health endpoints (/health public for LB, /health/detailed and /metrics require auth)
         .merge(crate::api::health_routes())
-        // Root endpoint (no auth) - only if Web UI is not enabled
-        .route("/", get(|| async { "Cratos AI Assistant" }))
         // API routes (auth applied per-handler via RequireAuth extractor)
         .merge(crate::api::api_router_with_session_state(session_state))
         // WebSocket routes
@@ -503,7 +501,7 @@ pub async fn run() -> Result<()> {
         app
     };
 
-    // Add Web UI static file serving (SPA fallback)
+    // Add Web UI static file serving (SPA fallback) or simple text response
     let app = if serve_web_ui {
         // Serve static files, fallback to index.html for SPA routing
         let serve_dir = ServeDir::new(web_ui_dir)
@@ -513,7 +511,8 @@ pub async fn run() -> Result<()> {
             ));
         app.fallback_service(serve_dir)
     } else {
-        app
+        // No Web UI - serve simple text at root
+        app.route("/", get(|| async { "Cratos AI Assistant" }))
     };
 
     let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)
