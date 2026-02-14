@@ -59,16 +59,21 @@ pub fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<LlmRouter>> {
             info!("Registered DeepSeek provider (low cost)");
         }
     }
-    if let Ok(config) = OpenAiConfig::from_env() {
-        let auth_source = config.auth_source;
-        cratos_llm::cli_auth::register_auth_source("openai", auth_source);
-        let provider = OpenAiProvider::new(config);
-        router.register("openai", Arc::new(provider));
-        registered_count += 1;
-        if default_provider.is_none() {
-            default_provider = Some("openai".to_string());
+    match OpenAiConfig::from_env() {
+        Ok(config) => {
+            let auth_source = config.auth_source;
+            cratos_llm::cli_auth::register_auth_source("openai", auth_source);
+            let provider = OpenAiProvider::new(config);
+            router.register("openai", Arc::new(provider));
+            registered_count += 1;
+            if default_provider.is_none() {
+                default_provider = Some("openai".to_string());
+            }
+            info!("Registered OpenAI provider ({})", auth_source);
         }
-        info!("Registered OpenAI provider ({})", auth_source);
+        Err(e) => {
+            debug!("OpenAI provider not available: {}", e);
+        }
     }
     if let Ok(config) = AnthropicConfig::from_env() {
         if let Ok(provider) = AnthropicProvider::new(config) {
@@ -184,6 +189,7 @@ pub fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<LlmRouter>> {
         }
     } else if router.has_provider(&normalized_provider) {
         router.set_default(&normalized_provider);
+        info!("Default provider set to: {}", normalized_provider);
     } else {
         warn!(
             "Configured default provider '{}' not available, using auto-detected",

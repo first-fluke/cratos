@@ -12,14 +12,12 @@ use tracing::{debug, info, instrument, warn};
 /// Docker sandbox for isolated tool execution
 ///
 /// This struct provides Docker-based sandboxing for executing untrusted tools
-/// in an isolated environment. Currently a work-in-progress feature.
-///
-/// TODO: Complete Docker sandbox implementation
-#[allow(dead_code)] // Work-in-progress feature
+/// in an isolated environment with network isolation, resource limits, and
+/// security options.
 pub struct DockerSandbox {
     config: SandboxConfig,
-    /// Container ID if running
-    container_id: Option<String>,
+    /// Container ID if running (reserved for future persistent container support)
+    _container_id: Option<String>,
 }
 
 impl DockerSandbox {
@@ -28,7 +26,7 @@ impl DockerSandbox {
     pub fn new(config: SandboxConfig) -> Self {
         Self {
             config,
-            container_id: None,
+            _container_id: None,
         }
     }
 
