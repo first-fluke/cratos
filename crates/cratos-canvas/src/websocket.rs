@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::document::{CanvasBlock, CanvasDocument};
 use crate::protocol::{ClientMessage, ServerMessage, UpdateSource};
 use crate::session::CanvasSessionManager;
-use cratos_llm::{CompletionRequest, LlmRouter, Message as LlmMessage, MessageRole};
+use cratos_llm::{CompletionRequest, LlmRouter, Message as LlmMessage};
 use tokio_util::sync::CancellationToken;
 
 /// Shared state for the WebSocket handler
@@ -349,9 +349,9 @@ async fn handle_client_message(
             }
 
             // Build context from referenced blocks
-            let context = collect_context_text(&state, session_id, &context_blocks).await;
+            let context = collect_context_text(state, session_id, &context_blocks).await;
             let ai_response =
-                run_ai_completion(&state, &prompt, &context, target_id, session_id).await;
+                run_ai_completion(state, &prompt, &context, target_id, session_id).await;
 
             // Update the block content
             state

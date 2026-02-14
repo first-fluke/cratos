@@ -81,6 +81,14 @@ pub enum ServerMessage {
         tool_name: String,
         status: String,
     },
+    /// Artifact (file, image, etc.) generated during execution
+    Artifact {
+        execution_id: Uuid,
+        filename: String,
+        mime_type: String,
+        /// Base64-encoded data
+        data: String,
+    },
     /// Error message
     Error {
         message: String,
@@ -347,12 +355,23 @@ async fn handle_client_message(
             tokio::spawn(async move {
                 match orchestrator.process(input).await {
                     Ok(result) => {
+                        // Send final text response
                         let _ = tx_final.send(ServerMessage::ChatResponse {
                             execution_id: result.execution_id,
                             text: result.response,
                             is_final: true,
                             persona: "cratos".to_string(),
                         });
+
+                        // Send artifacts (files, images, etc.)
+                        for artifact in &result.artifacts {
+                            let _ = tx_final.send(ServerMessage::Artifact {
+                                execution_id: result.execution_id,
+                                filename: artifact.name.clone(),
+                                mime_type: artifact.mime_type.clone(),
+                                data: artifact.data.clone(),
+                            });
+                        }
                     }
                     Err(e) => {
                         let _ = tx_final.send(ServerMessage::Error {
@@ -394,12 +413,23 @@ async fn handle_client_message(
             tokio::spawn(async move {
                 match orchestrator.process(input).await {
                     Ok(result) => {
+                        // Send final text response
                         let _ = tx_final.send(ServerMessage::ChatResponse {
                             execution_id: result.execution_id,
                             text: result.response,
                             is_final: true,
                             persona: persona_for_final,
                         });
+
+                        // Send artifacts (files, images, etc.)
+                        for artifact in &result.artifacts {
+                            let _ = tx_final.send(ServerMessage::Artifact {
+                                execution_id: result.execution_id,
+                                filename: artifact.name.clone(),
+                                mime_type: artifact.mime_type.clone(),
+                                data: artifact.data.clone(),
+                            });
+                        }
                     }
                     Err(e) => {
                         let _ = tx_final.send(ServerMessage::Error {
@@ -553,5 +583,19 @@ mod tests {
         let json = format!(r#"{{"type":"cancel","execution_id":"{}"}}"#, id);
         let msg: ClientMessage = serde_json::from_str(&json).unwrap();
         assert!(matches!(msg, ClientMessage::Cancel { execution_id } if execution_id == Some(id)));
+    }
+
+    #[test]
+    fn test_artifact_message_serialization() {
+        let msg = ServerMessage::Artifact {
+            execution_id: Uuid::nil(),
+            filename: "test.png".to_string(),
+            mime_type: "image/png".to_string(),
+            data: "base64data".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"artifact\""));
+        assert!(json.contains("\"filename\":\"test.png\""));
+        assert!(json.contains("\"mime_type\":\"image/png\""));
     }
 }

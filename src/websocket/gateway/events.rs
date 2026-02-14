@@ -111,6 +111,18 @@ pub fn convert_event(event: &OrchestratorEvent) -> Option<GatewayFrame> {
                 "message_id": message_id,
             }),
         ),
+        OrchestratorEvent::QuotaWarning {
+            provider,
+            remaining_pct,
+            reset_in_secs,
+        } => (
+            "quota.warning",
+            serde_json::json!({
+                "provider": provider,
+                "remaining_pct": remaining_pct,
+                "reset_in_secs": reset_in_secs,
+            }),
+        ),
     };
 
     Some(GatewayFrame::event(name, data))

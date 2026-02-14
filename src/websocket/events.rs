@@ -411,6 +411,11 @@ fn convert_event(
             // A2A events are not forwarded to the events WS
             None
         }
+        OrchestratorEvent::QuotaWarning { .. } => {
+            // QuotaWarning events are handled via notify_chat_id in Telegram,
+            // not forwarded to the general events WS
+            None
+        }
     }
 }
 
