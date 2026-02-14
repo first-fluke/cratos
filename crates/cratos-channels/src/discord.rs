@@ -3,14 +3,15 @@
 //! This module provides the Discord bot adapter using the serenity library.
 
 use crate::error::{Error, Result};
-use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingMessage};
+use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingAttachment, OutgoingMessage};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use crate::util::{mask_for_logging, sanitize_error_for_user, DISCORD_MESSAGE_LIMIT};
 use cratos_core::event_bus::OrchestratorEvent;
 use cratos_core::{Orchestrator, OrchestratorInput};
 use serde::Deserialize;
 use serenity::all::{
     ButtonStyle, ChannelId, Client, Command, CommandInteraction, CommandOptionType,
-    ComponentInteraction, Context, CreateActionRow, CreateButton, CreateCommand,
+    ComponentInteraction, Context, CreateActionRow, CreateAttachment, CreateButton, CreateCommand,
     CreateCommandOption, CreateEmbed, CreateInteractionResponse, CreateInteractionResponseMessage,
     CreateMessage, EditMessage, EventHandler, GatewayIntents, Interaction, Message, MessageId,
     MessageReference, Ready,
@@ -453,6 +454,61 @@ impl ChannelAdapter for DiscordAdapter {
 
         Ok(())
     }
+
+    async fn send_attachment(
+        &self,
+        channel_id: &str,
+        attachment: OutgoingAttachment,
+        reply_to: Option<&str>,
+    ) -> Result<String> {
+        let channel_id: u64 = channel_id
+            .parse()
+            .map_err(|_| Error::Parse("Invalid channel ID".to_string()))?;
+
+        let http_guard = self.http.read().await;
+        let http = http_guard
+            .as_ref()
+            .ok_or_else(|| Error::Discord("Not connected".to_string()))?;
+
+        // Decode base64 data
+        let data = BASE64
+            .decode(&attachment.data)
+            .map_err(|e| Error::Discord(format!("Invalid base64 data: {}", e)))?;
+
+        let channel = ChannelId::new(channel_id);
+
+        // Create attachment
+        let discord_attachment = CreateAttachment::bytes(data, &attachment.filename);
+
+        // Build message with attachment
+        let content = attachment
+            .caption
+            .as_deref()
+            .unwrap_or("")
+            .to_string();
+
+        let mut builder = CreateMessage::new().add_file(discord_attachment);
+
+        if !content.is_empty() {
+            builder = builder.content(&content);
+        }
+
+        if let Some(reply) = reply_to {
+            if let Ok(msg_id) = reply.parse::<u64>() {
+                builder = builder.reference_message(MessageReference::from((
+                    ChannelId::new(channel_id),
+                    MessageId::new(msg_id),
+                )));
+            }
+        }
+
+        let sent = channel
+            .send_message(http, builder)
+            .await
+            .map_err(|e| Error::Discord(format!("Failed to send attachment: {}", e)))?;
+
+        Ok(sent.id.get().to_string())
+    }
 }
 
 /// Discord event handler
@@ -602,6 +658,30 @@ impl EventHandler for DiscordHandler {
 
                     if let Err(e) = msg.channel_id.send_message(&ctx.http, builder).await {
                         error!(error = %e, "Failed to send Discord response");
+                    }
+                }
+
+                // Handle artifacts (files, images)
+                for artifact in &result.artifacts {
+                    // Decode artifact data
+                    let data = match BASE64.decode(&artifact.data) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            error!(error = %e, artifact = %artifact.name, "Failed to decode artifact data");
+                            continue;
+                        }
+                    };
+
+                    let discord_attachment = CreateAttachment::bytes(data, &artifact.name);
+                    let caption = format!("Artifact: {}", artifact.name);
+
+                    let builder = CreateMessage::new()
+                        .add_file(discord_attachment)
+                        .content(&caption)
+                        .reference_message(MessageReference::from((msg.channel_id, msg.id)));
+
+                    if let Err(e) = msg.channel_id.send_message(&ctx.http, builder).await {
+                        error!(error = %e, artifact = %artifact.name, "Failed to send Discord artifact");
                     }
                 }
             }

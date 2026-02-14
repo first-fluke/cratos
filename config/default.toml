@@ -285,6 +285,17 @@ enabled = false
 # allowed_channels = []        # Empty = allow all
 
 # ============================================================================
+# Matrix Configuration
+# ============================================================================
+[channels.matrix]
+enabled = false
+# Environment variables required:
+# MATRIX_HOMESERVER_URL - e.g., "https://matrix.org"
+# MATRIX_USER_ID - e.g., "@bot:matrix.org"
+# MATRIX_PASSWORD - Bot account password
+# MATRIX_ALLOWED_ROOMS - Comma-separated room IDs (optional, empty = allow all)
+
+# ============================================================================
 # WhatsApp Configuration (Baileys - Unofficial)
 # ============================================================================
 # WARNING: Baileys uses reverse-engineered WhatsApp Web protocol

@@ -23,6 +23,8 @@ pub struct AppConfig {
     pub scheduler: SchedulerAppConfig,
     #[serde(default)]
     pub security: SecurityConfig,
+    #[serde(default)]
+    pub canvas: CanvasConfig,
 }
 
 /// Scheduler configuration
@@ -221,9 +223,18 @@ pub struct ReplayConfig {
 
 /// Channels configuration
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ChannelsConfig {
     pub telegram: TelegramChannelConfig,
     pub slack: SlackChannelConfig,
+    #[serde(default)]
+    pub discord: DiscordChannelConfig,
+    #[serde(default)]
+    pub matrix: MatrixChannelConfig,
+    #[serde(default)]
+    pub whatsapp: WhatsAppChannelConfig,
+    #[serde(default)]
+    pub whatsapp_business: WhatsAppBusinessChannelConfig,
 }
 
 /// Telegram channel config
@@ -238,6 +249,44 @@ pub struct SlackChannelConfig {
     pub enabled: bool,
 }
 
+/// Discord channel config
+#[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
+pub struct DiscordChannelConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+/// Matrix channel config
+#[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
+pub struct MatrixChannelConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+/// WhatsApp (Baileys) channel config
+#[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
+pub struct WhatsAppChannelConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_whatsapp_bridge_url")]
+    pub bridge_url: String,
+}
+
+fn default_whatsapp_bridge_url() -> String {
+    "http://localhost:3001".to_string()
+}
+
+/// WhatsApp Business API channel config
+#[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
+pub struct WhatsAppBusinessChannelConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
 /// Vector search configuration
 #[derive(Debug, Clone, Deserialize, Default)]
 #[allow(dead_code)]
@@ -246,6 +295,22 @@ pub struct VectorSearchConfig {
     pub enabled: bool,
     #[serde(default = "default_dimensions")]
     pub dimensions: usize,
+}
+
+/// Canvas (live document editing) configuration
+#[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
+pub struct CanvasConfig {
+    /// Enable canvas feature
+    #[serde(default)]
+    pub enabled: bool,
+    /// Maximum concurrent editing sessions
+    #[serde(default = "default_max_canvas_sessions")]
+    pub max_sessions: usize,
+}
+
+fn default_max_canvas_sessions() -> usize {
+    100
 }
 
 pub(crate) fn default_true() -> bool {

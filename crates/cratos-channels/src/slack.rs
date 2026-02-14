@@ -5,7 +5,8 @@
 
 use crate::error::{Error, Result};
 use crate::message::{
-    ChannelAdapter, ChannelType, MessageButton, NormalizedMessage, OutgoingMessage,
+    AttachmentType, ChannelAdapter, ChannelType, MessageButton, NormalizedMessage,
+    OutgoingAttachment, OutgoingMessage,
 };
 use cratos_core::{Orchestrator, OrchestratorInput};
 use hmac::{Hmac, Mac};
@@ -432,6 +433,33 @@ impl SlackAdapter {
                     OutgoingMessage::text(response_text).in_thread(reply_thread.to_string());
 
                 let _ = self.send_message(channel, message).await?;
+
+                // Handle artifacts (files, images)
+                for artifact in &result.artifacts {
+                    let attachment = OutgoingAttachment {
+                        filename: artifact.name.clone(),
+                        mime_type: artifact.mime_type.clone(),
+                        data: artifact.data.clone(),
+                        attachment_type: if artifact.mime_type.starts_with("image/") {
+                            AttachmentType::Image
+                        } else if artifact.mime_type.starts_with("audio/") {
+                            AttachmentType::Audio
+                        } else if artifact.mime_type.starts_with("video/") {
+                            AttachmentType::Video
+                        } else {
+                            AttachmentType::Document
+                        },
+                        caption: Some(format!("Artifact: {}", artifact.name)),
+                    };
+
+                    if let Err(e) = self
+                        .send_attachment(channel, attachment, Some(reply_thread))
+                        .await
+                    {
+                        error!(error = %e, artifact = %artifact.name, "Failed to send Slack artifact");
+                    }
+                }
+
                 Ok(Some("Message sent".to_string()))
             }
             Err(e) => {
@@ -729,6 +757,45 @@ impl ChannelAdapter for SlackAdapter {
     async fn send_typing(&self, _channel_id: &str) -> Result<()> {
         // Slack doesn't have a typing indicator API for bots
         Ok(())
+    }
+
+    async fn send_attachment(
+        &self,
+        channel_id: &str,
+        attachment: OutgoingAttachment,
+        reply_to: Option<&str>,
+    ) -> Result<String> {
+        // TODO: Implement Slack's new file upload flow:
+        // 1. files.getUploadURLExternal
+        // 2. HTTP PUT to upload URL
+        // 3. files.completeUploadExternal
+        //
+        // For now, send a text message with file info as fallback
+        let caption = attachment
+            .caption
+            .as_deref()
+            .unwrap_or("")
+            .to_string();
+        let text = if caption.is_empty() {
+            format!(
+                "[File: {} ({}, {} bytes)]",
+                attachment.filename,
+                attachment.mime_type,
+                attachment.data.len() * 3 / 4 // Approximate decoded size
+            )
+        } else {
+            format!(
+                "[File: {}] {}",
+                attachment.filename, caption
+            )
+        };
+
+        let mut message = OutgoingMessage::text(text);
+        if let Some(ts) = reply_to {
+            message = message.in_thread(ts.to_string());
+        }
+
+        self.send_message(channel_id, message).await
     }
 }
 

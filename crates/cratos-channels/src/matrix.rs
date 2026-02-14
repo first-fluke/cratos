@@ -23,7 +23,9 @@
 use crate::error::{Error, Result};
 use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingMessage};
 use async_trait::async_trait;
+use cratos_core::{Orchestrator, OrchestratorInput};
 use matrix_sdk::{
+    config::SyncSettings,
     room::Room,
     ruma::{
         events::room::message::{
@@ -37,7 +39,8 @@ use matrix_sdk::{
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info, warn};
 
 /// Default device name for Matrix client
 const DEFAULT_DEVICE_NAME: &str = "Cratos Bot";
@@ -245,6 +248,121 @@ impl MatrixAdapter {
             }
             _ => None,
         })
+    }
+
+    /// Run the Matrix adapter event loop
+    ///
+    /// Connects to the homeserver, syncs events, and processes incoming messages.
+    /// Runs until shutdown signal is received.
+    ///
+    /// # Arguments
+    /// * `orchestrator` - AI orchestrator for message processing
+    /// * `shutdown` - Cancellation token for graceful shutdown
+    ///
+    /// # Errors
+    /// Returns error if connection fails or sync encounters an unrecoverable error.
+    pub async fn run(
+        self: Arc<Self>,
+        orchestrator: Arc<Orchestrator>,
+        shutdown: CancellationToken,
+    ) -> crate::error::Result<()> {
+        // Connect to homeserver
+        self.connect().await?;
+        info!("Matrix adapter connected to {}", self.config.homeserver_url);
+
+        let client = self.get_client().await?;
+        let adapter = self.clone();
+        let orch = orchestrator.clone();
+        let own_user_id = self.config.user_id.clone();
+
+        // Register message handler
+        client.add_event_handler(move |event: OriginalSyncRoomMessageEvent, room: Room| {
+            let adapter = adapter.clone();
+            let orch = orch.clone();
+            let own_user_id = own_user_id.clone();
+
+            async move {
+                let room_id = room.room_id();
+
+                // Normalize and filter message
+                let Some(normalized) = adapter.normalize_message(room_id, &event) else {
+                    return;
+                };
+
+                // Skip own messages
+                if event.sender.as_str() == own_user_id {
+                    return;
+                }
+
+                debug!(
+                    room_id = %room_id,
+                    sender = %event.sender,
+                    "Processing Matrix message"
+                );
+
+                // Send typing indicator
+                let _ = adapter.send_typing(room_id.as_str()).await;
+
+                // Process with orchestrator
+                let input = OrchestratorInput::new(
+                    "matrix",
+                    room_id.as_str(),
+                    event.sender.as_str(),
+                    &normalized.text,
+                );
+
+                match orch.process(input).await {
+                    Ok(result) => {
+                        let response = if result.response.is_empty() {
+                            "Done.".to_string()
+                        } else {
+                            result.response
+                        };
+
+                        if let Err(e) = adapter
+                            .send_message(room_id.as_str(), crate::message::OutgoingMessage::text(response))
+                            .await
+                        {
+                            warn!(error = %e, "Failed to send Matrix response");
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, "Matrix orchestrator error");
+                        let _ = adapter
+                            .send_message(
+                                room_id.as_str(),
+                                crate::message::OutgoingMessage::text("Sorry, I encountered an error."),
+                            )
+                            .await;
+                    }
+                }
+            }
+        });
+
+        // Sync loop
+        let sync_settings = SyncSettings::default().timeout(std::time::Duration::from_secs(30));
+
+        loop {
+            tokio::select! {
+                sync_result = client.sync_once(sync_settings.clone()) => {
+                    match sync_result {
+                        Ok(_) => {
+                            debug!("Matrix sync completed");
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "Matrix sync error, retrying...");
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        }
+                    }
+                }
+                _ = shutdown.cancelled() => {
+                    info!("Matrix adapter shutting down");
+                    break;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
