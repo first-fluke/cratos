@@ -10,7 +10,8 @@ use super::validation::validate_production_config;
 use crate::middleware::rate_limit::RateLimitLayer;
 use anyhow::{Context, Result};
 use axum::{routing::get, Extension, Router};
-use cratos_channels::{TelegramAdapter, TelegramConfig};
+use tower_http::services::ServeDir;
+use cratos_channels::{DiscordAdapter, DiscordConfig, TelegramAdapter, TelegramConfig};
 use cratos_core::{
     admin_scopes, shutdown_signal_with_controller, ApprovalManager, AuthStore, EventBus,
     OlympusConfig, OlympusHooks, Orchestrator, OrchestratorConfig, PlannerConfig, RedisStore,
@@ -166,6 +167,17 @@ pub async fn run() -> Result<()> {
     let graph_memory =
         init_graph_memory(&data_dir, &vectors_dir, &embedding_provider, &mut tool_registry).await;
 
+    // ── Canvas State (live document editing) ──────────────────────────
+    let canvas_state: Option<Arc<cratos_canvas::CanvasState>> = if config.canvas.enabled {
+        let session_manager = Arc::new(cratos_canvas::CanvasSessionManager::new());
+        let state = cratos_canvas::CanvasState::new(session_manager);
+        info!(max_sessions = config.canvas.max_sessions, "Canvas state initialized");
+        Some(Arc::new(state))
+    } else {
+        debug!("Canvas disabled by configuration");
+        None
+    };
+
     let tool_count = tool_registry.len();
     let tool_registry = Arc::new(tool_registry);
     info!("Tool registry initialized with {} tools", tool_count);
@@ -320,6 +332,27 @@ pub async fn run() -> Result<()> {
         }
     }
 
+    // Start WhatsApp adapter (Baileys bridge)
+    if config.channels.whatsapp.enabled {
+        if let Some(handle) = start_whatsapp_adapter(&shutdown_controller) {
+            channel_handles.push(handle);
+        }
+    }
+
+    // Start Discord adapter
+    if config.channels.discord.enabled {
+        if let Some(handle) = start_discord_adapter(&orchestrator, &shutdown_controller) {
+            channel_handles.push(handle);
+        }
+    }
+
+    // Start Matrix adapter
+    if config.channels.matrix.enabled {
+        if let Some(handle) = start_matrix_adapter(&orchestrator, &shutdown_controller) {
+            channel_handles.push(handle);
+        }
+    }
+
     // Phase 6: ProactiveScheduler with real executor
     let scheduler_engine_ext =
         start_scheduler(&config, &data_dir, &orchestrator, &shutdown_controller).await;
@@ -392,11 +425,41 @@ pub async fn run() -> Result<()> {
     let session_state = crate::api::SessionState::new();
     let e2e_ciphers = session_state.e2e_ciphers();
 
+    // Initialize WhatsApp Business adapter (for webhook handling)
+    let whatsapp_business_adapter: Option<Arc<cratos_channels::WhatsAppBusinessAdapter>> =
+        if config.channels.whatsapp_business.enabled {
+            match cratos_channels::WhatsAppBusinessConfig::from_env() {
+                Ok(cfg) => match cratos_channels::WhatsAppBusinessAdapter::new(cfg) {
+                    Ok(adapter) => {
+                        info!("WhatsApp Business adapter initialized");
+                        Some(Arc::new(adapter))
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Failed to create WhatsApp Business adapter");
+                        None
+                    }
+                },
+                Err(e) => {
+                    warn!(error = %e, "WhatsApp Business not configured");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+    // Web UI static files (SPA fallback)
+    let web_ui_dir = std::path::Path::new("apps/web/dist");
+    let serve_web_ui = web_ui_dir.exists();
+    if serve_web_ui {
+        info!("Web UI enabled: serving from {}", web_ui_dir.display());
+    }
+
     // Build the main router with all endpoints
     let app = Router::new()
         // Health endpoints (/health public for LB, /health/detailed and /metrics require auth)
         .merge(crate::api::health_routes())
-        // Root endpoint (no auth)
+        // Root endpoint (no auth) - only if Web UI is not enabled
         .route("/", get(|| async { "Cratos AI Assistant" }))
         // API routes (auth applied per-handler via RequireAuth extractor)
         .merge(crate::api::api_router_with_session_state(session_state))
@@ -413,6 +476,7 @@ pub async fn run() -> Result<()> {
         .layer(Extension(tool_registry.clone()))
         .layer(Extension(dev_monitor.clone()))
         .layer(Extension(event_store.clone()))
+        .layer(Extension(skill_store.clone()))
         .layer(Extension(e2e_ciphers))
         .layer(Extension(pairing_manager))
         .layer(Extension(challenge_store))
@@ -421,6 +485,33 @@ pub async fn run() -> Result<()> {
     // Conditionally add scheduler engine Extension
     let app = if let Some(sched_engine) = scheduler_engine_ext {
         app.layer(Extension(sched_engine))
+    } else {
+        app
+    };
+
+    // Conditionally add Canvas state Extension
+    let app = if let Some(canvas) = canvas_state {
+        app.layer(Extension(canvas))
+    } else {
+        app
+    };
+
+    // Conditionally add WhatsApp Business adapter Extension
+    let app = if let Some(wa_adapter) = whatsapp_business_adapter {
+        app.layer(Extension(wa_adapter))
+    } else {
+        app
+    };
+
+    // Add Web UI static file serving (SPA fallback)
+    let app = if serve_web_ui {
+        // Serve static files, fallback to index.html for SPA routing
+        let serve_dir = ServeDir::new(web_ui_dir)
+            .append_index_html_on_directories(true)
+            .fallback(tower_http::services::ServeFile::new(
+                web_ui_dir.join("index.html"),
+            ));
+        app.fallback_service(serve_dir)
     } else {
         app
     };
@@ -724,6 +815,140 @@ fn start_slack_adapter(
             None
         }
     }
+}
+
+/// Start the Matrix adapter
+///
+/// Connects to a Matrix homeserver and handles room messages.
+/// Returns None if configuration is missing or adapter creation fails.
+fn start_matrix_adapter(
+    orchestrator: &Arc<Orchestrator>,
+    shutdown_controller: &ShutdownController,
+) -> Option<tokio::task::JoinHandle<()>> {
+    use cratos_channels::{MatrixAdapter, MatrixConfig};
+
+    let config = match MatrixConfig::from_env() {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(error = %e, "Matrix adapter not started: missing configuration");
+            return None;
+        }
+    };
+
+    let adapter = match MatrixAdapter::new(config) {
+        Ok(a) => Arc::new(a),
+        Err(e) => {
+            warn!(error = %e, "Failed to create Matrix adapter");
+            return None;
+        }
+    };
+
+    let orch = orchestrator.clone();
+    let shutdown = shutdown_controller.token();
+
+    let handle = tokio::spawn(async move {
+        if let Err(e) = adapter.run(orch, shutdown).await {
+            error!(error = %e, "Matrix adapter error");
+        }
+    });
+
+    info!("Matrix adapter started");
+    Some(handle)
+}
+
+/// Start the Discord adapter
+///
+/// Creates a Discord bot using serenity and starts the event loop.
+/// Returns None if configuration is missing or adapter creation fails.
+fn start_discord_adapter(
+    orchestrator: &Arc<Orchestrator>,
+    shutdown_controller: &ShutdownController,
+) -> Option<tokio::task::JoinHandle<()>> {
+    let config = match DiscordConfig::from_env() {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(error = %e, "Discord adapter not started: missing configuration");
+            return None;
+        }
+    };
+
+    let adapter = Arc::new(DiscordAdapter::new(config));
+    let orch = orchestrator.clone();
+    let shutdown = shutdown_controller.token();
+
+    let handle = tokio::spawn(async move {
+        tokio::select! {
+            result = adapter.run(orch) => {
+                if let Err(e) = result {
+                    error!(error = %e, "Discord adapter error");
+                }
+            }
+            _ = shutdown.cancelled() => {
+                info!("Discord adapter shutting down");
+            }
+        }
+    });
+
+    info!("Discord adapter started");
+    Some(handle)
+}
+
+/// Start the WhatsApp (Baileys) adapter
+///
+/// Connects to the Baileys bridge server and periodically checks connection status.
+/// Returns None if configuration is missing or adapter creation fails.
+fn start_whatsapp_adapter(
+    shutdown_controller: &ShutdownController,
+) -> Option<tokio::task::JoinHandle<()>> {
+    use cratos_channels::{WhatsAppAdapter, WhatsAppConfig};
+
+    let config = match WhatsAppConfig::from_env() {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(error = %e, "WhatsApp adapter not started: missing configuration");
+            return None;
+        }
+    };
+
+    let adapter = match WhatsAppAdapter::new(config) {
+        Ok(a) => Arc::new(a),
+        Err(e) => {
+            warn!(error = %e, "Failed to create WhatsApp adapter");
+            return None;
+        }
+    };
+
+    let shutdown = shutdown_controller.token();
+
+    let handle = tokio::spawn(async move {
+        // Baileys bridge polling mode - check connection status periodically
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    match adapter.status().await {
+                        Ok(status) => {
+                            debug!(status = ?status, "WhatsApp connection status");
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "WhatsApp status check failed");
+                        }
+                    }
+                }
+                _ = shutdown.cancelled() => {
+                    info!("WhatsApp adapter shutting down");
+                    if let Err(e) = adapter.disconnect().await {
+                        warn!(error = %e, "Error disconnecting WhatsApp");
+                    }
+                    break;
+                }
+            }
+        }
+    });
+
+    info!("WhatsApp (Baileys) adapter started");
+    Some(handle)
 }
 
 async fn start_scheduler(
