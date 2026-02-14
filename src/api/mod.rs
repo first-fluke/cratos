@@ -5,6 +5,7 @@
 //! - Tool listing and information
 //! - Execution history
 //! - Scheduler management
+//! - Webhooks for external services
 
 pub mod browser;
 pub mod config;
@@ -15,7 +16,9 @@ pub mod pairing;
 pub mod quota;
 pub mod scheduler;
 pub mod sessions;
+pub mod skills;
 pub mod tools;
+pub mod webhooks;
 
 use axum::Router;
 
@@ -28,7 +31,9 @@ pub use pairing::pairing_routes;
 pub use quota::quota_routes;
 pub use scheduler::scheduler_routes;
 pub use sessions::{sessions_routes_with_state, SessionState};
+pub use skills::skills_routes;
 pub use tools::tools_routes;
+pub use webhooks::webhooks_routes;
 
 /// Create the API router with all endpoints (default SessionState)
 #[allow(dead_code)]
@@ -48,4 +53,6 @@ pub fn api_router_with_session_state(session_state: SessionState) -> Router {
         .merge(browser_routes())
         .merge(dev_sessions_routes())
         .merge(pairing_routes())
+        .merge(webhooks_routes())
+        .merge(skills_routes())
 }
