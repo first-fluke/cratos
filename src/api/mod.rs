@@ -8,6 +8,7 @@
 //! - Webhooks for external services
 //! - API documentation (Swagger UI at /docs)
 
+pub mod auth;
 pub mod browser;
 pub mod config;
 pub mod dev_sessions;
@@ -26,9 +27,11 @@ pub mod webhooks;
 
 use axum::Router;
 
+pub use auth::auth_routes;
 pub use browser::browser_routes;
-pub use config::{config_routes, config_routes_with_state};
+pub use config::config_routes_with_state;
 pub use dev_sessions::dev_sessions_routes;
+pub use docs::docs_routes;
 pub use executions::executions_routes;
 pub use graph::graph_routes;
 pub use health::health_routes;
@@ -40,7 +43,6 @@ pub use sessions::{sessions_routes_with_state, SessionState};
 pub use skills::skills_routes;
 pub use tools::tools_routes;
 pub use webhooks::webhooks_routes;
-pub use docs::docs_routes;
 
 use crate::api::config::ConfigState;
 
@@ -54,6 +56,7 @@ pub fn api_router() -> Router {
 pub fn api_router_with_state(session_state: SessionState, config_state: ConfigState) -> Router {
     Router::new()
         .merge(config_routes_with_state(config_state))
+        .merge(auth_routes())
         .merge(tools_routes())
         .merge(executions_routes())
         .merge(scheduler_routes())
@@ -66,5 +69,4 @@ pub fn api_router_with_state(session_state: SessionState, config_state: ConfigSt
         .merge(skills_routes())
         .merge(pantheon_routes())
         .merge(graph_routes())
-        .merge(docs_routes())
 }

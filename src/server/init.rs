@@ -10,7 +10,6 @@ use super::validation::validate_production_config;
 use crate::middleware::rate_limit::RateLimitLayer;
 use anyhow::{Context, Result};
 use axum::{routing::get, Extension, Router};
-use tower_http::{cors::CorsLayer, services::ServeDir};
 use cratos_channels::{DiscordAdapter, DiscordConfig, TelegramAdapter, TelegramConfig};
 use cratos_core::{
     admin_scopes, shutdown_signal_with_controller, ApprovalManager, AuthStore, EventBus,
@@ -22,14 +21,15 @@ use cratos_memory::{GraphMemory, VectorBridge};
 use cratos_replay::EventStore;
 use cratos_search::{IndexConfig, VectorIndex};
 use cratos_skills::{
-    SemanticSkillRouter, Skill, SkillCategory, SkillOrigin, SkillRegistry, SkillStatus,
-    SkillStore, SkillTrigger,
+    SemanticSkillRouter, Skill, SkillCategory, SkillOrigin, SkillRegistry, SkillStatus, SkillStore,
+    SkillTrigger,
 };
 use cratos_tools::{
     register_builtins_with_config, BuiltinsConfig, ExecConfig, ExecMode, RunnerConfig, ToolRegistry,
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tower_http::{cors::CorsLayer, services::ServeDir};
 use tracing::{debug, error, info, warn};
 
 /// Run the server
@@ -60,9 +60,9 @@ pub async fn run() -> Result<()> {
     );
     info!("SQLite event store initialized at {}", db_path.display());
 
-    let chronicle_store = Arc::new(
-        cratos_core::chronicles::ChronicleStore::with_path(&data_dir)
-    );
+    let chronicle_store = Arc::new(cratos_core::chronicles::ChronicleStore::with_path(
+        &data_dir,
+    ));
     info!("Chronicle store initialized at {}", data_dir.display());
 
     let skill_db_path = data_dir.join("skills.db");
@@ -124,13 +124,23 @@ pub async fn run() -> Result<()> {
     };
 
     let vectors_dir = data_dir.join("vectors");
-    let (_execution_searcher, _semantic_skill_router) =
-        init_vector_search(&embedding_provider, &vectors_dir, &event_store, &skill_registry)
-            .await?;
+    let (_execution_searcher, _semantic_skill_router) = init_vector_search(
+        &embedding_provider,
+        &vectors_dir,
+        &event_store,
+        &skill_registry,
+    )
+    .await?;
 
     let llm_router = resolve_llm_provider(&config.llm)?;
     let llm_provider: Arc<dyn LlmProvider> = llm_router.clone();
     info!("LLM provider initialized: {}", llm_provider.name());
+
+    // ── Gemini Quota Poller ──────────────────────────────────────────
+    let _gemini_quota_tx = cratos_llm::start_gemini_quota_poller().await;
+    if _gemini_quota_tx.is_some() {
+        info!("Gemini quota poller started");
+    }
 
     let mut tool_registry = ToolRegistry::new();
     // Convert security config to ExecConfig
@@ -172,14 +182,22 @@ pub async fn run() -> Result<()> {
     }
 
     // ── Graph RAG Memory ──────────────────────────────────────────────
-    let graph_memory =
-        init_graph_memory(&data_dir, &vectors_dir, &embedding_provider, &mut tool_registry).await;
+    let graph_memory = init_graph_memory(
+        &data_dir,
+        &vectors_dir,
+        &embedding_provider,
+        &mut tool_registry,
+    )
+    .await;
 
     // ── Canvas State (live document editing) ──────────────────────────
     let canvas_state: Option<Arc<cratos_canvas::CanvasState>> = if config.canvas.enabled {
         let session_manager = Arc::new(cratos_canvas::CanvasSessionManager::new());
         let state = cratos_canvas::CanvasState::new(session_manager);
-        info!(max_sessions = config.canvas.max_sessions, "Canvas state initialized");
+        info!(
+            max_sessions = config.canvas.max_sessions,
+            "Canvas state initialized"
+        );
         Some(Arc::new(state))
     } else {
         debug!("Canvas disabled by configuration");
@@ -368,14 +386,29 @@ pub async fn run() -> Result<()> {
     }
 
     // Phase 6: ProactiveScheduler with real executor
-    let scheduler_engine_ext =
-        start_scheduler(&config, &data_dir, &orchestrator, &event_bus, &shutdown_controller).await;
+    let scheduler_engine_ext = start_scheduler(
+        &config,
+        &data_dir,
+        &orchestrator,
+        &event_bus,
+        &shutdown_controller,
+    )
+    .await;
 
     // Phase 3: Auto skill generation background task
-    start_skill_generation_task(&event_store, &skill_store, &skill_registry, &shutdown_controller);
+    start_skill_generation_task(
+        &event_store,
+        &skill_store,
+        &skill_registry,
+        &shutdown_controller,
+    );
 
     // Cleanup task
-    start_cleanup_task(&event_store, config.replay.retention_days, &shutdown_controller);
+    start_cleanup_task(
+        &event_store,
+        config.replay.retention_days,
+        &shutdown_controller,
+    );
 
     let redis_url_for_health = config.redis.url.clone();
 
@@ -474,8 +507,13 @@ pub async fn run() -> Result<()> {
     let app = Router::new()
         // Health endpoints (/health public for LB, /health/detailed and /metrics require auth)
         .merge(crate::api::health_routes())
+        // API documentation (Swagger UI at /docs)
+        .merge(crate::api::docs_routes())
         // API routes (auth applied per-handler via RequireAuth extractor)
-        .merge(crate::api::api_router_with_state(session_state, config_state))
+        .merge(crate::api::api_router_with_state(
+            session_state,
+            config_state,
+        ))
         // WebSocket routes
         .merge(crate::websocket::websocket_router())
         // Layers (applied to all routes)
@@ -611,10 +649,12 @@ async fn init_default_skills(
                     Ok(None) => {
                         // Create the skill automatically
                         let description = generate_skill_description(skill_name, persona_name);
-                        let mut new_skill = Skill::new(skill_name, &description, SkillCategory::System);
+                        let mut new_skill =
+                            Skill::new(skill_name, &description, SkillCategory::System);
                         new_skill.origin = SkillOrigin::Builtin;
                         new_skill.status = SkillStatus::Active;
-                        new_skill.trigger = SkillTrigger::with_keywords(vec![skill_name.to_string()]);
+                        new_skill.trigger =
+                            SkillTrigger::with_keywords(vec![skill_name.to_string()]);
 
                         if let Err(e) = skill_store.save_skill(&new_skill).await {
                             warn!(
@@ -657,7 +697,10 @@ async fn init_default_skills(
     }
 
     if skills_created > 0 {
-        info!("Created {} default skills from persona TOML files", skills_created);
+        info!(
+            "Created {} default skills from persona TOML files",
+            skills_created
+        );
     }
     if default_skills_registered > 0 {
         info!(
@@ -671,14 +714,18 @@ async fn init_default_skills(
 fn generate_skill_description(skill_name: &str, persona_name: &str) -> String {
     match skill_name {
         // Cratos skills
-        "delegation" => "Delegate tasks to appropriate personas based on domain expertise".to_string(),
+        "delegation" => {
+            "Delegate tasks to appropriate personas based on domain expertise".to_string()
+        }
         "orchestration" => "Coordinate multi-persona tasks and synthesize results".to_string(),
         "judgment" => "Make final decisions when domains overlap or conflict".to_string(),
 
         // Athena skills
         "sprint_planning" => "Plan and organize sprint tasks with clear objectives".to_string(),
         "roadmap_gen" => "Generate project roadmaps with milestones and timelines".to_string(),
-        "risk_analysis" => "Identify and assess project risks with mitigation strategies".to_string(),
+        "risk_analysis" => {
+            "Identify and assess project risks with mitigation strategies".to_string()
+        }
 
         // Sindri skills
         "api_builder" => "Design and implement REST/GraphQL API endpoints".to_string(),
@@ -696,13 +743,17 @@ fn generate_skill_description(skill_name: &str, persona_name: &str) -> String {
         "bug_triage" => "Triage and prioritize bug reports".to_string(),
 
         // Mimir skills
-        "research" => "Research topics and synthesize information from multiple sources".to_string(),
+        "research" => {
+            "Research topics and synthesize information from multiple sources".to_string()
+        }
         "analysis" => "Analyze data and provide insights".to_string(),
         "documentation" => "Create and maintain technical documentation".to_string(),
 
         // Thor skills
         "ci_cd" => "Configure and maintain CI/CD pipelines".to_string(),
-        "container_orchestration" => "Manage container orchestration with Kubernetes/Docker".to_string(),
+        "container_orchestration" => {
+            "Manage container orchestration with Kubernetes/Docker".to_string()
+        }
         "monitoring" => "Set up monitoring and alerting systems".to_string(),
         "incident_response" => "Handle incidents and implement recovery procedures".to_string(),
 
@@ -1117,8 +1168,8 @@ async fn start_scheduler(
             // Build real executor using orchestrator and event bus
             let sched_orch = orchestrator.clone();
             let sched_event_bus = event_bus.clone();
-            let task_executor: cratos_core::scheduler::TaskExecutor =
-                Arc::new(move |action: cratos_core::scheduler::TaskAction| {
+            let task_executor: cratos_core::scheduler::TaskExecutor = Arc::new(
+                move |action: cratos_core::scheduler::TaskAction| {
                     let orch = sched_orch.clone();
                     let _eb = sched_event_bus.clone();
                     Box::pin(async move {
@@ -1139,7 +1190,9 @@ async fn start_scheduler(
                                 .runner()
                                 .execute(&tool, args)
                                 .await
-                                .map(|r| serde_json::to_string(&r.result.output).unwrap_or_default())
+                                .map(|r| {
+                                    serde_json::to_string(&r.result.output).unwrap_or_default()
+                                })
                                 .map_err(|e| {
                                     cratos_core::scheduler::SchedulerError::Execution(e.to_string())
                                 }),
@@ -1186,7 +1239,10 @@ async fn start_scheduler(
                                             channel_id = %channel_id,
                                             "Scheduler notification sent"
                                         );
-                                        Ok(format!("Notification sent to {}:{}", channel, channel_id))
+                                        Ok(format!(
+                                            "Notification sent to {}:{}",
+                                            channel, channel_id
+                                        ))
                                     }
                                     Err(e) => {
                                         warn!(
@@ -1196,7 +1252,7 @@ async fn start_scheduler(
                                             "Failed to send scheduler notification"
                                         );
                                         Err(cratos_core::scheduler::SchedulerError::Execution(
-                                            format!("Notification failed: {}", e)
+                                            format!("Notification failed: {}", e),
                                         ))
                                     }
                                 }
@@ -1239,10 +1295,8 @@ async fn start_scheduler(
                                 match request.send().await {
                                     Ok(resp) => {
                                         let status = resp.status();
-                                        let body = resp
-                                            .text()
-                                            .await
-                                            .unwrap_or_else(|_| String::new());
+                                        let body =
+                                            resp.text().await.unwrap_or_else(|_| String::new());
                                         if status.is_success() {
                                             info!(url = %url, status = %status, "Webhook succeeded");
                                             Ok(format!(
@@ -1254,21 +1308,26 @@ async fn start_scheduler(
                                         } else {
                                             warn!(url = %url, status = %status, "Webhook failed");
                                             Err(cratos_core::scheduler::SchedulerError::Execution(
-                                                format!("Webhook failed with status {}: {}", status, &body[..body.len().min(200)])
+                                                format!(
+                                                    "Webhook failed with status {}: {}",
+                                                    status,
+                                                    &body[..body.len().min(200)]
+                                                ),
                                             ))
                                         }
                                     }
                                     Err(e) => {
                                         error!(url = %url, error = %e, "Webhook request failed");
                                         Err(cratos_core::scheduler::SchedulerError::Execution(
-                                            format!("Webhook request failed: {}", e)
+                                            format!("Webhook request failed: {}", e),
                                         ))
                                     }
                                 }
                             }
                         }
                     })
-                });
+                },
+            );
 
             let scheduler_engine = Arc::new(
                 SchedulerEngine::new(Arc::new(scheduler_store), scheduler_config)
