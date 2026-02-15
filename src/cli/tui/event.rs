@@ -43,12 +43,12 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         // ── Screen / UI ────────────────────────────────────────
         (KeyModifiers::CONTROL, KeyCode::Char('l')) => {
             app.messages.clear();
-            app.scroll_offset = 0;
+            app.ui_state.scroll_offset = 0;
         }
         (_, KeyCode::F(1)) => app.toggle_sidebar(),
         (_, KeyCode::F(2)) => {
-            app.mouse_captured = !app.mouse_captured;
-            if app.mouse_captured {
+            app.ui_state.mouse_captured = !app.ui_state.mouse_captured;
+            if app.ui_state.mouse_captured {
                 execute!(std::io::stdout(), EnableMouseCapture).ok();
             } else {
                 execute!(std::io::stdout(), DisableMouseCapture).ok();
@@ -79,9 +79,19 @@ fn handle_key(app: &mut App, key: KeyEvent) {
             }
         }
 
+        // ── Tab Completion ──
+        (_, KeyCode::Tab) => {
+            if !app.ui_state.suggestions.is_empty() {
+                let suggestion = app.ui_state.suggestions[0];
+                app.textarea = tui_textarea::TextArea::new(vec![format!("/{}", suggestion)]);
+                app.textarea.move_cursor(tui_textarea::CursorMove::End);
+                app.ui_state.suggestions.clear();
+            }
+        }
+
         // ── Submit (blocked during loading) ────────────────────
         (_, KeyCode::Enter) => {
-            if !app.is_loading {
+            if !app.ui_state.is_loading {
                 app.submit();
             }
         }
@@ -89,6 +99,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         // ── Delegate everything else to textarea ────────────────
         _ => {
             app.textarea.input(Event::Key(key));
+            app.update_suggestions();
         }
     }
 }

@@ -3,9 +3,12 @@
 use chrono::Local;
 use cratos_core::Orchestrator;
 use ratatui::style::Style;
+use ratatui::widgets::ScrollbarState;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tui_textarea::TextArea;
+
+use super::command::CommandRegistry;
 
 /// A single chat message displayed in the TUI.
 pub struct ChatMessage {
@@ -28,16 +31,40 @@ const MAX_HISTORY: usize = 50;
 
 /// Per-provider quota display data for the sidebar.
 pub struct ProviderQuotaDisplay {
-    /// Provider name (e.g. "gemini", "anthropic").
     pub provider: String,
-    /// Remaining percentage (0.0–100.0), if known.
     pub remaining_pct: Option<f64>,
-    /// Human-readable summary (e.g. "85% left" or "987/1.0K req").
     pub summary: String,
-    /// Reset time display (e.g. "~2m 14s").
     pub reset_display: String,
-    /// Tier label (e.g. "free"), if known.
     pub tier_label: Option<String>,
+}
+
+/// UI-specific state.
+pub struct TuiState {
+    pub scroll_offset: usize,
+    pub scrollbar_state: ScrollbarState,
+    pub show_sidebar: bool,
+    pub mouse_captured: bool,
+    pub is_loading: bool,
+    pub loading_tick: usize,
+    pub tick_count: usize,
+    pub history_index: Option<usize>,
+    pub suggestions: Vec<&'static str>,
+}
+
+impl Default for TuiState {
+    fn default() -> Self {
+        Self {
+            scroll_offset: 0,
+            scrollbar_state: ScrollbarState::default(),
+            show_sidebar: false,
+            mouse_captured: true,
+            is_loading: false,
+            loading_tick: 0,
+            tick_count: 0,
+            history_index: None,
+            suggestions: Vec::new(),
+        }
+    }
 }
 
 /// Main application state.
@@ -46,31 +73,19 @@ pub struct App {
     pub textarea: TextArea<'static>,
     pub persona: String,
     pub provider_name: String,
-    pub scroll_offset: usize,
-    pub is_loading: bool,
     pub should_quit: bool,
-    pub loading_tick: usize,
-    /// Global tick counter (always increments, used for periodic refresh).
-    tick_count: usize,
-    /// Per-provider quota info for sidebar display.
+    pub ui_state: TuiState,
+
     pub provider_quotas: Vec<ProviderQuotaDisplay>,
-    /// One-line quota summary for the status bar.
     pub quota_status_line: String,
-    /// Cached cost status line for TUI display (updated each tick).
     pub cost_line: String,
-    /// Whether the sidebar is visible (toggled with F1).
-    pub show_sidebar: bool,
-    /// Whether the terminal mouse capture is active (toggled with F2).
-    pub mouse_captured: bool,
-    /// Previous input history for up/down navigation.
+
     input_history: Vec<String>,
-    /// Current position in input history (None = new input).
-    history_index: Option<usize>,
     orchestrator: Arc<Orchestrator>,
     session_id: String,
-    /// Sender side lives in App so `submit_message` can clone it into spawned tasks.
+    commands: Arc<CommandRegistry>,
+
     response_tx: mpsc::UnboundedSender<ChatMessage>,
-    /// Receiver side polled each frame by the event loop.
     pub response_rx: mpsc::UnboundedReceiver<ChatMessage>,
 }
 
@@ -89,20 +104,15 @@ impl App {
             textarea: new_textarea(),
             persona: persona.clone(),
             provider_name,
-            scroll_offset: 0,
-            is_loading: false,
             should_quit: false,
-            loading_tick: 0,
-            tick_count: 0,
+            ui_state: TuiState::default(),
             provider_quotas: Vec::new(),
             quota_status_line: "awaiting first API call".to_string(),
             cost_line: String::new(),
-            show_sidebar: false,
-            mouse_captured: true,
             input_history: Vec::new(),
-            history_index: None,
             orchestrator,
             session_id,
+            commands: Arc::new(CommandRegistry::new()),
             response_tx: tx,
             response_rx: rx,
         };
@@ -116,7 +126,7 @@ impl App {
 
     // ── helpers ──────────────────────────────────────────────────────────
 
-    fn push_system(&mut self, content: String) {
+    pub fn push_system(&mut self, content: String) {
         self.messages.push(ChatMessage {
             role: Role::System,
             sender: "system".into(),
@@ -134,54 +144,48 @@ impl App {
         });
     }
 
-    /// Scroll to the bottom of the chat history.
     pub fn scroll_to_bottom(&mut self) {
-        self.scroll_offset = 0;
+        self.ui_state.scroll_offset = 0;
     }
 
-    /// Toggle sidebar visibility (F1).
     pub fn toggle_sidebar(&mut self) {
-        self.show_sidebar = !self.show_sidebar;
+        self.ui_state.show_sidebar = !self.ui_state.show_sidebar;
     }
 
     // ── input handling ──────────────────────────────────────────────────
 
-    /// Returns true if the textarea is empty (single empty line).
     pub fn is_input_empty(&self) -> bool {
         self.textarea.lines().len() == 1 && self.textarea.lines()[0].is_empty()
     }
 
-    /// Returns true if there are previous inputs in history.
     pub fn has_history(&self) -> bool {
         !self.input_history.is_empty()
     }
 
-    /// Navigate to the previous entry in input history.
     pub fn history_up(&mut self) {
         if self.input_history.is_empty() {
             return;
         }
-        let idx = match self.history_index {
+        let idx = match self.ui_state.history_index {
             None => self.input_history.len() - 1,
             Some(0) => return,
             Some(i) => i - 1,
         };
-        self.history_index = Some(idx);
+        self.ui_state.history_index = Some(idx);
         let text = self.input_history[idx].clone();
         self.textarea = TextArea::new(vec![text]);
         self.textarea.set_cursor_line_style(Style::default());
     }
 
-    /// Navigate to the next entry in input history, or clear if at the end.
     pub fn history_down(&mut self) {
-        match self.history_index {
+        match self.ui_state.history_index {
             None => {}
             Some(i) if i >= self.input_history.len() - 1 => {
-                self.history_index = None;
+                self.ui_state.history_index = None;
                 self.textarea = new_textarea();
             }
             Some(i) => {
-                self.history_index = Some(i + 1);
+                self.ui_state.history_index = Some(i + 1);
                 let text = self.input_history[i + 1].clone();
                 self.textarea = TextArea::new(vec![text]);
                 self.textarea.set_cursor_line_style(Style::default());
@@ -190,88 +194,52 @@ impl App {
     }
 
     pub fn scroll_up(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_add(1);
+        self.ui_state.scroll_offset = self.ui_state.scroll_offset.saturating_add(1);
     }
 
     pub fn scroll_down(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+        self.ui_state.scroll_offset = self.ui_state.scroll_offset.saturating_sub(1);
+    }
+
+    pub fn update_suggestions(&mut self) {
+        let text = self.textarea.lines()[0].as_str();
+        if text.starts_with('/') && !text.contains(' ') {
+            self.ui_state.suggestions = self.commands.get_suggestions(text);
+        } else {
+            self.ui_state.suggestions.clear();
+        }
     }
 
     // ── submit ──────────────────────────────────────────────────────────
 
-    /// Process typed input: either a `/command` or a chat message.
     pub fn submit(&mut self) {
         let text = self.textarea.lines().join("\n").trim().to_string();
         if text.is_empty() {
             return;
         }
 
-        // Store in history (cap at MAX_HISTORY)
         self.input_history.push(text.clone());
         if self.input_history.len() > MAX_HISTORY {
             self.input_history.remove(0);
         }
-        self.history_index = None;
-
-        // Reset textarea
+        self.ui_state.history_index = None;
         self.textarea = new_textarea();
+        self.ui_state.suggestions.clear();
 
         if text.starts_with('/') {
-            self.handle_command(&text);
+            let commands = self.commands.clone();
+            if let Err(e) = commands.handle(self, &text) {
+                self.push_system(format!("Command error: {}", e));
+            }
         } else {
             self.submit_message(text);
         }
     }
 
-    fn handle_command(&mut self, cmd: &str) {
-        let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
-        match parts[0] {
-            "/quit" | "/exit" => {
-                self.should_quit = true;
-            }
-            "/clear" => {
-                self.messages.clear();
-                self.scroll_offset = 0;
-                self.push_system("Chat cleared.".into());
-            }
-            "/help" => {
-                self.push_system(
-                    "Commands:\n\
-                     \x20 /persona <name>  Switch persona\n\
-                     \x20 /clear           Clear chat\n\
-                     \x20 /help            Show this help\n\
-                     \x20 /quit            Exit TUI\n\
-                     \n\
-                     Keys:\n\
-                     \x20 \u{2191}/\u{2193} (empty input) Input history\n\
-                     \x20 \u{2191}/\u{2193} (otherwise)   Scroll chat\n\
-                     \x20 PageUp/PageDn    Scroll fast\n\
-                     \x20 Mouse scroll     Scroll chat\n\
-                     \x20 F1               Toggle sidebar\n\
-                     \x20 F2               Toggle mouse (scroll/select)\n\
-                     \x20 Ctrl+L           Clear screen\n\
-                     \x20 Ctrl+C / Esc     Quit"
-                        .into(),
-                );
-            }
-            "/persona" => {
-                if let Some(name) = parts.get(1) {
-                    self.persona = name.trim().to_string();
-                    self.push_system(format!("Persona switched to: {}", self.persona));
-                } else {
-                    self.push_system(format!("Current persona: {}", self.persona));
-                }
-            }
-            _ => {
-                self.push_system(format!("Unknown command: {}", parts[0]));
-            }
-        }
-    }
-
     fn submit_message(&mut self, text: String) {
         self.push_user(text.clone());
-        self.is_loading = true;
-        self.loading_tick = 0;
+        self.ui_state.is_loading = true;
+        self.ui_state.loading_tick = 0;
         self.scroll_to_bottom();
 
         let orchestrator = self.orchestrator.clone();
@@ -279,12 +247,10 @@ impl App {
         let persona = self.persona.clone();
         let tx = self.response_tx.clone();
 
-        // Subscribe to EventBus for real-time tool execution updates
         let event_tx = tx.clone();
         let event_bus = orchestrator.event_bus().cloned();
 
         tokio::spawn(async move {
-            // If EventBus is available, spawn a listener for tool events
             let event_handle = if let Some(bus) = event_bus {
                 let mut rx = bus.subscribe();
                 let etx = event_tx.clone();
@@ -354,28 +320,24 @@ impl App {
 
             let _ = tx.send(msg);
 
-            // Cancel event listener once the main response is received
             if let Some(handle) = event_handle {
                 handle.abort();
             }
         });
     }
 
-    /// Called every tick to drain incoming LLM responses.
     pub fn poll_responses(&mut self) {
         while let Ok(msg) = self.response_rx.try_recv() {
-            self.is_loading = false;
+            self.ui_state.is_loading = false;
             self.messages.push(msg);
             self.scroll_to_bottom();
         }
     }
 
-    /// Refresh multi-provider quota data from the global tracker.
     pub fn refresh_quota(&mut self) {
         let tracker = cratos_llm::global_quota_tracker();
         let states = tracker.try_get_all_states();
 
-        // Bug 6: show placeholder when no data yet
         if states.is_empty() {
             self.provider_quotas.clear();
             self.quota_status_line = "awaiting first API call".to_string();
@@ -411,7 +373,6 @@ impl App {
                 })
                 .unwrap_or_default();
 
-            // Build status bar part
             let tier_suffix = state
                 .tier_label
                 .as_deref()
@@ -432,14 +393,12 @@ impl App {
         self.quota_status_line = status_parts.join(" \u{00b7} ");
     }
 
-    /// Refresh the cached cost status line from the global tracker.
     pub fn refresh_cost(&mut self) {
         let tracker = cratos_llm::global_tracker();
         if let Some(stats) = tracker.try_get_stats() {
             if stats.total_requests == 0 {
                 self.cost_line = String::new();
             } else {
-                // Check if using a free-tier auth source (OAuth, CLI tokens)
                 let is_free = cratos_llm::cli_auth::get_all_auth_sources()
                     .values()
                     .any(|s| *s != cratos_llm::cli_auth::AuthSource::ApiKey);
@@ -453,21 +412,18 @@ impl App {
         }
     }
 
-    /// Advance the loading spinner animation counter.
     pub fn tick(&mut self) {
-        self.tick_count = self.tick_count.wrapping_add(1);
-        if self.is_loading {
-            self.loading_tick = self.loading_tick.wrapping_add(1);
+        self.ui_state.tick_count = self.ui_state.tick_count.wrapping_add(1);
+        if self.ui_state.is_loading {
+            self.ui_state.loading_tick = self.ui_state.loading_tick.wrapping_add(1);
         }
-        // Refresh quota and cost every 4 ticks (~800ms at 200ms tick rate)
-        if self.tick_count % 4 == 0 {
+        if self.ui_state.tick_count % 4 == 0 {
             self.refresh_quota();
             self.refresh_cost();
         }
     }
 }
 
-/// Create a fresh TextArea with default styling.
 fn new_textarea() -> TextArea<'static> {
     let mut ta = TextArea::default();
     ta.set_cursor_line_style(Style::default());

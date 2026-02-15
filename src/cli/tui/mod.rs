@@ -4,6 +4,7 @@
 //! Initializes the Orchestrator directly (no server required).
 
 pub mod app;
+pub mod command;
 pub mod event;
 pub mod ui;
 
@@ -36,7 +37,7 @@ pub async fn run(persona: Option<String>) -> Result<()> {
         // Resolve the actual default provider name (router returns "router")
         let default_name = config.llm.default_provider.clone();
         let normalized = match default_name.as_str() {
-            "google" => "gemini",
+            "google" | "google_pro" => "gemini",
             "zhipu" | "zhipuai" => "glm",
             other => other,
         };
@@ -128,7 +129,7 @@ pub async fn run(persona: Option<String>) -> Result<()> {
     let tick_rate = Duration::from_millis(200);
 
     let run_result: Result<()> = loop {
-        terminal.draw(|frame| ui::draw(frame, &app))?;
+        terminal.draw(|frame| ui::draw(frame, &mut app))?;
 
         if let Err(e) = event::handle_events(&mut app, tick_rate) {
             break Err(e);
