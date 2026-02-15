@@ -121,8 +121,20 @@ async fn login_google(Query(params): Query<LoginParams>) -> Response {
     // 5. Build Authorization URL
     let url = oauth::build_auth_url(&config, redirect_uri, &pkce, &state);
 
-    // 6. Redirect user
-    Redirect::to(&url).into_response()
+    // 6. Redirect user (Client-side to avoid proxy following 303)
+    let safe_url = url.replace("\"", "&quot;");
+    Html(format!(r#"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Redirecting...</title>
+    <meta http-equiv="refresh" content="0;url={}">
+</head>
+<body>
+    <p>Redirecting to Google...</p>
+    <script>window.location.href = "{}";</script>
+</body>
+</html>"#, safe_url, url)).into_response()
 }
 
 /// Handle Google OAuth callback
