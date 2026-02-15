@@ -112,11 +112,15 @@ impl GeminiConfig {
 
     /// Create configuration from environment variables.
     ///
-    /// Priority:
+    /// If `preferred_provider` is provided (e.g., "google_pro" or "google"),
+    /// it will prioritize that specific OAuth token if available.
+    ///
+    /// Priority (default):
     /// 1. `GOOGLE_API_KEY` / `GEMINI_API_KEY` env var → `GeminiAuth::ApiKey`
-    /// 2. `~/.cratos/google_oauth.json` (Cratos OAuth) → `GeminiAuth::OAuth`
-    /// 3. `~/.gemini/oauth_creds.json` (Gemini CLI) → `GeminiAuth::OAuth`
-    pub fn from_env() -> Result<Self> {
+    /// 2. `~/.cratos/google_pro_oauth.json` (Google AI Pro) → `GeminiAuth::OAuth`
+    /// 3. `~/.cratos/google_oauth.json` (Cratos OAuth) → `GeminiAuth::OAuth`
+    /// 4. `~/.gemini/oauth_creds.json` (Gemini CLI) → `GeminiAuth::OAuth`
+    pub fn from_env(preferred_provider: Option<&str>) -> Result<Self> {
         let base_url =
             std::env::var("GEMINI_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
         let default_model =
@@ -137,7 +141,65 @@ impl GeminiConfig {
             });
         }
 
-        // 2. Try Cratos OAuth token
+        // 2. Try preferred provider first
+        if let Some(pref) = preferred_provider {
+            match pref {
+                "google_pro" => {
+                    if let Some(mut tokens) = cli_auth::read_cratos_google_pro_oauth() {
+                        if cli_auth::is_token_expired(tokens.expiry_date) {
+                            info!("Preferred Google AI Pro OAuth token expired, attempting refresh...");
+                            tokens = Self::try_refresh_blocking(tokens);
+                        }
+                        return Ok(Self {
+                            auth: GeminiAuth::OAuth(tokens.access_token),
+                            auth_source: AuthSource::GoogleAiPro,
+                            base_url,
+                            default_model,
+                            default_max_tokens: 8192,
+                            timeout: Duration::from_secs(60),
+                            project_id: None,
+                        });
+                    }
+                }
+                "google" | "gemini" => {
+                    if let Some(mut tokens) = cli_auth::read_cratos_google_oauth() {
+                        if cli_auth::is_token_expired(tokens.expiry_date) {
+                            info!("Preferred Google AI OAuth token expired, attempting refresh...");
+                            tokens = Self::try_refresh_blocking(tokens);
+                        }
+                        return Ok(Self {
+                            auth: GeminiAuth::OAuth(tokens.access_token),
+                            auth_source: AuthSource::CratosOAuth,
+                            base_url,
+                            default_model,
+                            default_max_tokens: 8192,
+                            timeout: Duration::from_secs(60),
+                            project_id: None,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // 3. Try Cratos Google AI Pro OAuth token (Default priority)
+        if let Some(mut tokens) = cli_auth::read_cratos_google_pro_oauth() {
+            if cli_auth::is_token_expired(tokens.expiry_date) {
+                info!("Cratos Google AI Pro OAuth token expired, attempting refresh...");
+                tokens = Self::try_refresh_blocking(tokens);
+            }
+            return Ok(Self {
+                auth: GeminiAuth::OAuth(tokens.access_token),
+                auth_source: AuthSource::GoogleAiPro,
+                base_url,
+                default_model,
+                default_max_tokens: 8192,
+                timeout: Duration::from_secs(60),
+                project_id: None,
+            });
+        }
+
+        // 4. Try Cratos Google OAuth token
         if let Some(mut tokens) = cli_auth::read_cratos_google_oauth() {
             if cli_auth::is_token_expired(tokens.expiry_date) {
                 info!("Cratos Google OAuth token expired, attempting refresh...");
@@ -154,7 +216,7 @@ impl GeminiConfig {
             });
         }
 
-        // 3. Try Gemini CLI OAuth credentials → routed to Standard API (safe)
+        // 5. Try Gemini CLI OAuth credentials → routed to Standard API (safe)
         if let Some(creds) = cli_auth::read_gemini_oauth() {
             if cli_auth::is_token_expired(creds.expiry_date) {
                 info!("Gemini CLI token expired — run `gemini auth login` to refresh");
@@ -174,7 +236,7 @@ impl GeminiConfig {
             });
         }
 
-        // 4. Try gcloud CLI
+        // 6. Try gcloud CLI
         if let Ok(token) = cli_auth::get_gcloud_access_token_blocking() {
             info!("Using Google Cloud SDK (gcloud) credentials");
             let project_id = cli_auth::get_gcloud_project_id_blocking().ok();
@@ -209,7 +271,11 @@ impl GeminiConfig {
             }
         };
 
-        let oauth_config = crate::oauth_config::google_oauth_config();
+        let oauth_config = if tokens.provider == crate::oauth_config::GOOGLE_PRO_TOKEN_FILE {
+            crate::oauth_config::google_pro_oauth_config()
+        } else {
+            crate::oauth_config::google_oauth_config()
+        };
         let token_file = oauth_config.token_file.clone();
 
         // Use a blocking reqwest client for sync context

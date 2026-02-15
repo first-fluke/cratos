@@ -102,7 +102,11 @@ impl TelegramAdapter {
                                 })
                                 .unwrap_or_default();
 
-                            let emoji = if remaining_pct < 10.0 { "🔴" } else { "⚠️" };
+                            let emoji = if remaining_pct < 10.0 {
+                                "🔴"
+                            } else {
+                                "⚠️"
+                            };
                             let text = format!(
                                 "{} <b>Quota Warning</b>\n\
                                 Provider: <code>{}</code>\n\

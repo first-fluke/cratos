@@ -2,11 +2,13 @@
 
 use super::adapter::TelegramAdapter;
 use crate::error::{Error, Result};
-use crate::message::{AttachmentType, ChannelAdapter, ChannelType, OutgoingAttachment, OutgoingMessage};
+use crate::message::{
+    AttachmentType, ChannelAdapter, ChannelType, OutgoingAttachment, OutgoingMessage,
+};
 use crate::util::markdown_to_html;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use teloxide::{
-    payloads::{SendDocumentSetters, SendPhotoSetters, SendMessageSetters},
+    payloads::{SendDocumentSetters, SendMessageSetters, SendPhotoSetters},
     prelude::*,
     types::{ChatAction, ChatId, InputFile, MessageId, ParseMode, ReplyParameters},
 };
@@ -138,9 +140,7 @@ impl ChannelAdapter for TelegramAdapter {
                 if let Some(rp) = reply_params {
                     request = request.reply_parameters(rp);
                 }
-                request
-                    .await
-                    .map_err(|e| Error::Telegram(e.to_string()))?
+                request.await.map_err(|e| Error::Telegram(e.to_string()))?
             }
             AttachmentType::Audio | AttachmentType::Voice => {
                 // For audio, we use send_document as send_audio requires specific metadata
@@ -151,9 +151,7 @@ impl ChannelAdapter for TelegramAdapter {
                 if let Some(rp) = reply_params {
                     request = request.reply_parameters(rp);
                 }
-                request
-                    .await
-                    .map_err(|e| Error::Telegram(e.to_string()))?
+                request.await.map_err(|e| Error::Telegram(e.to_string()))?
             }
             AttachmentType::Video => {
                 // Videos sent as documents for simplicity
@@ -164,9 +162,7 @@ impl ChannelAdapter for TelegramAdapter {
                 if let Some(rp) = reply_params {
                     request = request.reply_parameters(rp);
                 }
-                request
-                    .await
-                    .map_err(|e| Error::Telegram(e.to_string()))?
+                request.await.map_err(|e| Error::Telegram(e.to_string()))?
             }
             AttachmentType::Document | AttachmentType::Other => {
                 let mut request = self.bot.send_document(ChatId(chat_id), input_file);
@@ -176,9 +172,7 @@ impl ChannelAdapter for TelegramAdapter {
                 if let Some(rp) = reply_params {
                     request = request.reply_parameters(rp);
                 }
-                request
-                    .await
-                    .map_err(|e| Error::Telegram(e.to_string()))?
+                request.await.map_err(|e| Error::Telegram(e.to_string()))?
             }
         };
 

@@ -64,8 +64,7 @@ pub async fn handle_slash_command(
                 if sessions.is_empty() {
                     "No active AI development sessions.".to_string()
                 } else {
-                    let mut lines =
-                        vec![format!("<b>Active AI Sessions ({})</b>", sessions.len())];
+                    let mut lines = vec![format!("<b>Active AI Sessions ({})</b>", sessions.len())];
                     for (i, s) in sessions.iter().enumerate() {
                         lines.push(format!(
                             "{}. <b>{:?}</b> - {:?}\n   Path: <code>{}</code>\n   PID: {:?}",
@@ -148,12 +147,8 @@ pub async fn handle_slash_command(
                     // by falling through to the normal message processing
                     // We rewrite the text so the orchestrator picks it up
                     let chat_id_str = chat_id.0.to_string();
-                    let input = OrchestratorInput::new(
-                        "telegram",
-                        &chat_id_str,
-                        &chat_id_str,
-                        &request,
-                    );
+                    let input =
+                        OrchestratorInput::new("telegram", &chat_id_str, &chat_id_str, &request);
 
                     match orchestrator.process(input).await {
                         Ok(result) => {
@@ -165,10 +160,7 @@ pub async fn handle_slash_command(
                             crate::util::markdown_to_html(&text)
                         }
                         Err(e) => {
-                            format!(
-                                "Agent error: {}",
-                                sanitize_error_for_user(&e.to_string())
-                            )
+                            format!("Agent error: {}", sanitize_error_for_user(&e.to_string()))
                         }
                     }
                 }

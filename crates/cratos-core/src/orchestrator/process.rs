@@ -16,7 +16,9 @@ use uuid::Uuid;
 
 use super::config::OrchestratorInput;
 use super::core::Orchestrator;
-use super::sanitize::{is_tool_refusal, sanitize_error_for_user, sanitize_for_session_memory, sanitize_response};
+use super::sanitize::{
+    is_tool_refusal, sanitize_error_for_user, sanitize_for_session_memory, sanitize_response,
+};
 use super::types::{ExecutionArtifact, ExecutionResult, ExecutionStatus};
 
 impl Orchestrator {
@@ -747,12 +749,8 @@ impl Orchestrator {
 
         // Update persona chronicle with the final response/result
         if !final_response.is_empty() {
-            self.update_persona_chronicle(
-                &effective_persona,
-                &final_response,
-                execution_id,
-            )
-            .await;
+            self.update_persona_chronicle(&effective_persona, &final_response, execution_id)
+                .await;
         }
 
         // Sanitize response: strip leaked XML tags from weak models

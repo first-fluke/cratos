@@ -122,7 +122,9 @@ pub use telemetry::{
 };
 
 // Re-export Olympus hooks
-pub use olympus_hooks::{OlympusConfig, OlympusHooks, PostExecutionSummary, SyncSkillProficiencyResult};
+pub use olympus_hooks::{
+    OlympusConfig, OlympusHooks, PostExecutionSummary, SyncSkillProficiencyResult,
+};
 
 // Re-export pantheon module types (Olympus OS)
 pub use pantheon::{

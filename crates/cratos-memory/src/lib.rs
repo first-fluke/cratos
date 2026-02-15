@@ -40,8 +40,8 @@ pub use retriever::{GraphRagRetriever, VectorSearch};
 pub use scorer::ScoringWeights;
 pub use store::GraphStore;
 pub use types::{
-    Entity, EntityKind, ExplicitMemory, ExtractedEntity, RetrievedTurn, Turn, TurnEntityEdge,
-    TurnRole,
+    Entity, EntityKind, EntityRelation, ExplicitMemory, ExtractedEntity, RelationKind,
+    RetrievedTurn, Turn, TurnEntityEdge, TurnRole,
 };
 
 #[cfg(feature = "embeddings")]
@@ -196,6 +196,11 @@ impl GraphMemory {
         self.store.list_all_cooccurrences(limit).await
     }
 
+    /// List all entity relations (for graph visualization).
+    pub async fn list_relations(&self, limit: u32) -> Result<Vec<EntityRelation>> {
+        self.store.list_all_relations(limit).await
+    }
+
     // ── Explicit Memory API ──────────────────────────────────────
 
     /// Save an explicit memory with entity extraction and optional embedding.
@@ -232,8 +237,8 @@ impl GraphMemory {
         let mem_id = saved.id.clone();
 
         // 2. Extract entities and link them
-        let entities = extractor::extract(content);
-        for ext in &entities {
+        let extraction = extractor::extract(content);
+        for ext in &extraction.entities {
             let entity = types::Entity {
                 id: Uuid::new_v4().to_string(),
                 name: ext.name.clone(),
@@ -250,14 +255,29 @@ impl GraphMemory {
             }
         }
 
-        // 3. Embed content (if explicit vector bridge is available)
+        // 3. Link entity relations
+        for rel_ext in &extraction.relations {
+            if let (Some(from), Some(to)) = (
+                self.store.get_entity_by_name(&rel_ext.from_entity).await?,
+                self.store.get_entity_by_name(&rel_ext.to_entity).await?,
+            ) {
+                let rel = types::EntityRelation {
+                    from_entity_id: from.id,
+                    to_entity_id: to.id,
+                    kind: rel_ext.kind,
+                };
+                self.store.insert_relation(&rel).await?;
+            }
+        }
+
+        // 4. Embed content (if explicit vector bridge is available)
         if let Some(embedder) = &self.explicit_embed {
             if let Err(e) = embedder.embed_and_store(&mem_id, content).await {
                 warn!(error = %e, "Failed to embed explicit memory");
             }
         }
 
-        debug!(name, mem_id = %mem_id, entities = entities.len(), "Explicit memory saved");
+        debug!(name, mem_id = %mem_id, entities = extraction.entities.len(), "Explicit memory saved");
         Ok(mem_id)
     }
 
@@ -294,8 +314,8 @@ impl GraphMemory {
         }
 
         // 3. Entity graph: extract entities from query, find linked memories
-        let query_entities = extractor::extract(query);
-        for ext in &query_entities {
+        let extraction = extractor::extract(query);
+        for ext in &extraction.entities {
             if let Some(entity) = self.store.get_entity_by_name(&ext.name).await? {
                 match self.store.get_explicit_by_entity(&entity.id).await {
                     Ok(mems) => {

@@ -113,7 +113,11 @@ pub struct PersonaSkillBinding {
 
 impl PersonaSkillBinding {
     /// Create a new binding with default ownership type
-    pub fn new(persona_name: impl Into<String>, skill_id: Uuid, skill_name: impl Into<String>) -> Self {
+    pub fn new(
+        persona_name: impl Into<String>,
+        skill_id: Uuid,
+        skill_name: impl Into<String>,
+    ) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
@@ -158,9 +162,8 @@ impl PersonaSkillBinding {
 
         // Update average duration
         if let Some(avg) = self.avg_duration_ms {
-            self.avg_duration_ms = Some(
-                (avg * (self.usage_count - 1) + duration_ms) / self.usage_count,
-            );
+            self.avg_duration_ms =
+                Some((avg * (self.usage_count - 1) + duration_ms) / self.usage_count);
         } else {
             self.avg_duration_ms = Some(duration_ms);
         }
@@ -191,7 +194,10 @@ impl PersonaSkillBinding {
             return false;
         }
         // Already auto-assigned or claimed means no need to check
-        if matches!(self.ownership_type, OwnershipType::AutoAssigned | OwnershipType::Default) {
+        if matches!(
+            self.ownership_type,
+            OwnershipType::AutoAssigned | OwnershipType::Default
+        ) {
             return false;
         }
         self.consecutive_successes >= config.min_consecutive_successes
@@ -334,8 +340,14 @@ mod tests {
 
     #[test]
     fn test_ownership_type_from_str() {
-        assert_eq!("default".parse::<OwnershipType>().unwrap(), OwnershipType::Default);
-        assert_eq!("claimed".parse::<OwnershipType>().unwrap(), OwnershipType::Claimed);
+        assert_eq!(
+            "default".parse::<OwnershipType>().unwrap(),
+            OwnershipType::Default
+        );
+        assert_eq!(
+            "claimed".parse::<OwnershipType>().unwrap(),
+            OwnershipType::Claimed
+        );
         assert_eq!(
             "auto_assigned".parse::<OwnershipType>().unwrap(),
             OwnershipType::AutoAssigned

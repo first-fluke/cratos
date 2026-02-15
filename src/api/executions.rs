@@ -7,6 +7,8 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Path, Query},
+    http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
     Extension, Json, Router,
 };
@@ -171,12 +173,19 @@ pub async fn get_execution(
     RequireAuth(_auth): RequireAuth,
     Extension(store): Extension<Arc<EventStore>>,
     Path(id): Path<Uuid>,
-) -> Json<ApiResponse<ExecutionDetail>> {
+) -> impl IntoResponse {
     // Fetch execution
     let execution = match store.get_execution(id).await {
         Ok(e) => e,
         Err(e) => {
-            return Json(ApiResponse::error(format!("Execution not found: {}", e)));
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<()>::error(format!(
+                    "Execution not found: {}",
+                    e
+                ))),
+            )
+                .into_response();
         }
     };
 
@@ -184,7 +193,14 @@ pub async fn get_execution(
     let events = match store.get_execution_events(id).await {
         Ok(evts) => evts,
         Err(e) => {
-            return Json(ApiResponse::error(format!("Failed to load events: {}", e)));
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse::<()>::error(format!(
+                    "Failed to load events: {}",
+                    e
+                ))),
+            )
+                .into_response();
         }
     };
 
@@ -213,7 +229,7 @@ pub async fn get_execution(
         events: event_summaries,
     };
 
-    Json(ApiResponse::success(detail))
+    Json(ApiResponse::success(detail)).into_response()
 }
 
 /// Get replay timeline events for an execution (requires authentication)
@@ -235,14 +251,30 @@ pub async fn get_replay_events(
     RequireAuth(_auth): RequireAuth,
     Extension(store): Extension<Arc<EventStore>>,
     Path(id): Path<Uuid>,
-) -> Json<ApiResponse<Vec<cratos_replay::TimelineEntry>>> {
+) -> impl IntoResponse {
+    // Check if execution exists
+    if let Err(e) = store.get_execution(id).await {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<()>::error(format!(
+                "Execution not found: {}",
+                e
+            ))),
+        )
+            .into_response();
+    }
+
     let viewer = ExecutionViewer::new((*store).clone());
     match viewer.get_timeline(id).await {
-        Ok(timeline) => Json(ApiResponse::success(timeline)),
-        Err(e) => Json(ApiResponse::error(format!(
-            "Failed to get replay events: {}",
-            e
-        ))),
+        Ok(timeline) => Json(ApiResponse::success(timeline)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse::<()>::error(format!(
+                "Failed to get replay events: {}",
+                e
+            ))),
+        )
+            .into_response(),
     }
 }
 
@@ -266,14 +298,25 @@ pub async fn rerun_execution(
     Extension(store): Extension<Arc<EventStore>>,
     Path(id): Path<Uuid>,
     Json(options): Json<ReplayOptions>,
-) -> Json<ApiResponse<cratos_replay::ReplayResult>> {
+) -> impl IntoResponse {
     let viewer = ExecutionViewer::new((*store).clone());
     match viewer.rerun(id, options).await {
-        Ok(result) => Json(ApiResponse::success(result)),
-        Err(e) => Json(ApiResponse::error(format!(
-            "Failed to rerun execution: {}",
-            e
-        ))),
+        Ok(result) => Json(ApiResponse::success(result)).into_response(),
+        Err(e) => {
+            let status = if e.to_string().contains("not found") {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            (
+                status,
+                Json(ApiResponse::<()>::error(format!(
+                    "Failed to rerun execution: {}",
+                    e
+                ))),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -302,17 +345,14 @@ pub async fn get_execution_stats(
     let executions = match store.list_recent_executions(200).await {
         Ok(execs) => execs,
         Err(e) => {
-            return Json(ApiResponse::error(format!(
-                "Failed to fetch stats: {}",
-                e
-            )));
+            return Json(ApiResponse::error(format!("Failed to fetch stats: {}", e)));
         }
     };
 
     // Group by hour for the last 24 hours
     let now = Utc::now();
     let mut counts = std::collections::HashMap::new();
-    
+
     // Initialize last 24h buckets
     for i in 0..24 {
         let hour = now - chrono::Duration::hours(i);
@@ -334,26 +374,27 @@ pub async fn get_execution_stats(
     // Dashboard chart expects specific labels? No, generic Chart expects labels.
     // Let's return last 12 hours in 2-hour intervals or similar to match the mock data style
     // Mock data: 00:00, 04:00, 08:00... (4 hour intervals)
-    
+
     let mut labels = Vec::new();
     let mut series = Vec::new();
-    
+
     // Generate 6 points (every 4 hours) working backwards from now rounded to nearest 4h
     // Or just return the raw hourly data? The Chart component needs to handle it.
     // Le's simply return last 6 hours hourly? Or last 24h in 4h chunks.
-    
+
     let mut buckets = std::collections::BTreeMap::new();
-    for i in (0..=6).map(|x| x * 4).rev() { // 24, 20, 16... 0
-       let time = now - chrono::Duration::hours(i);
-       let label = time.format("%H:%M").to_string();
-       buckets.insert(time, (label, 0));
+    for i in (0..=6).map(|x| x * 4).rev() {
+        // 24, 20, 16... 0
+        let time = now - chrono::Duration::hours(i);
+        let label = time.format("%H:%M").to_string();
+        buckets.insert(time, (label, 0));
     }
-    
+
     // Re-aggregate into these buckets
     // This is approximate but fine for a dashboard
     // Better: just fetch all recent and let frontend decide?
     // No, backend aggregation is safer.
-    
+
     // Simple approach: Return last 7 hours hourly
     labels.clear();
     series.clear();

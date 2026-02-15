@@ -1,7 +1,7 @@
 //! Event operations for EventStore
 
-use super::helpers::row_to_event;
 use super::event_store::EventStore;
+use super::helpers::row_to_event;
 use crate::error::{Error, Result};
 use crate::event::{Event, EventType};
 use sqlx::Row;

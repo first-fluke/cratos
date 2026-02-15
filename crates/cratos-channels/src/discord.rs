@@ -3,9 +3,11 @@
 //! This module provides the Discord bot adapter using the serenity library.
 
 use crate::error::{Error, Result};
-use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingAttachment, OutgoingMessage};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use crate::message::{
+    ChannelAdapter, ChannelType, NormalizedMessage, OutgoingAttachment, OutgoingMessage,
+};
 use crate::util::{mask_for_logging, sanitize_error_for_user, DISCORD_MESSAGE_LIMIT};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use cratos_core::event_bus::OrchestratorEvent;
 use cratos_core::{Orchestrator, OrchestratorInput};
 use serde::Deserialize;
@@ -481,11 +483,7 @@ impl ChannelAdapter for DiscordAdapter {
         let discord_attachment = CreateAttachment::bytes(data, &attachment.filename);
 
         // Build message with attachment
-        let content = attachment
-            .caption
-            .as_deref()
-            .unwrap_or("")
-            .to_string();
+        let content = attachment.caption.as_deref().unwrap_or("").to_string();
 
         let mut builder = CreateMessage::new().add_file(discord_attachment);
 

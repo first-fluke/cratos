@@ -321,7 +321,10 @@ impl MatrixAdapter {
                         };
 
                         if let Err(e) = adapter
-                            .send_message(room_id.as_str(), crate::message::OutgoingMessage::text(response))
+                            .send_message(
+                                room_id.as_str(),
+                                crate::message::OutgoingMessage::text(response),
+                            )
                             .await
                         {
                             warn!(error = %e, "Failed to send Matrix response");
@@ -332,7 +335,9 @@ impl MatrixAdapter {
                         let _ = adapter
                             .send_message(
                                 room_id.as_str(),
-                                crate::message::OutgoingMessage::text("Sorry, I encountered an error."),
+                                crate::message::OutgoingMessage::text(
+                                    "Sorry, I encountered an error.",
+                                ),
                             )
                             .await;
                     }
@@ -455,7 +460,9 @@ impl ChannelAdapter for MatrixAdapter {
 
         // Upload media to Matrix homeserver
         let client = self.client.read().await;
-        let client = client.as_ref().ok_or_else(|| Error::Network("Not connected".to_string()))?;
+        let client = client
+            .as_ref()
+            .ok_or_else(|| Error::Network("Not connected".to_string()))?;
 
         // Parse MIME type or default to application/octet-stream
         let mime_type: mime::Mime = attachment
@@ -472,42 +479,39 @@ impl ChannelAdapter for MatrixAdapter {
         let mxc_uri: OwnedMxcUri = media_response.content_uri;
 
         // Create appropriate message content based on MIME type
-        let content = match attachment.mime_type.split('/').next().unwrap_or("application") {
+        let content = match attachment
+            .mime_type
+            .split('/')
+            .next()
+            .unwrap_or("application")
+        {
             "image" => {
-                let mut img_content = ImageMessageEventContent::plain(
-                    attachment.filename.clone(),
-                    mxc_uri,
-                );
+                let mut img_content =
+                    ImageMessageEventContent::plain(attachment.filename.clone(), mxc_uri);
                 if let Some(caption) = &attachment.caption {
                     img_content.body = format!("{} - {}", attachment.filename, caption);
                 }
                 RoomMessageEventContent::new(MessageType::Image(img_content))
             }
             "video" => {
-                let mut vid_content = VideoMessageEventContent::plain(
-                    attachment.filename.clone(),
-                    mxc_uri,
-                );
+                let mut vid_content =
+                    VideoMessageEventContent::plain(attachment.filename.clone(), mxc_uri);
                 if let Some(caption) = &attachment.caption {
                     vid_content.body = format!("{} - {}", attachment.filename, caption);
                 }
                 RoomMessageEventContent::new(MessageType::Video(vid_content))
             }
             "audio" => {
-                let mut audio_content = AudioMessageEventContent::plain(
-                    attachment.filename.clone(),
-                    mxc_uri,
-                );
+                let mut audio_content =
+                    AudioMessageEventContent::plain(attachment.filename.clone(), mxc_uri);
                 if let Some(caption) = &attachment.caption {
                     audio_content.body = format!("{} - {}", attachment.filename, caption);
                 }
                 RoomMessageEventContent::new(MessageType::Audio(audio_content))
             }
             _ => {
-                let mut file_content = FileMessageEventContent::plain(
-                    attachment.filename.clone(),
-                    mxc_uri,
-                );
+                let mut file_content =
+                    FileMessageEventContent::plain(attachment.filename.clone(), mxc_uri);
                 if let Some(caption) = &attachment.caption {
                     file_content.body = format!("{} - {}", attachment.filename, caption);
                 }
@@ -522,7 +526,10 @@ impl ChannelAdapter for MatrixAdapter {
             .map_err(|e| Error::Network(format!("Failed to send attachment: {e}")))?;
 
         let message_id = response.event_id.to_string();
-        debug!("Matrix: Sent attachment {} -> {}", attachment.filename, message_id);
+        debug!(
+            "Matrix: Sent attachment {} -> {}",
+            attachment.filename, message_id
+        );
 
         Ok(message_id)
     }

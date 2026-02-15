@@ -165,6 +165,31 @@ async fn check_cli_auth() -> bool {
 
     println!("Checking CLI auth tokens...");
 
+    // 1. Cratos Google OAuth (Standard)
+    let google_status = cli_auth::check_cratos_google_oauth_status();
+    match google_status {
+        cli_auth::CratosOAuthStatus::Valid => {
+            println!("  ✅ Google OAuth: valid");
+        }
+        cli_auth::CratosOAuthStatus::Expired => {
+            println!("  ⚠️  Google OAuth: expired (run 'cratos init' to refresh)");
+        }
+        cli_auth::CratosOAuthStatus::NotFound => {}
+    }
+
+    // 2. Cratos Google AI Pro OAuth
+    let google_pro_status = cli_auth::check_cratos_google_pro_oauth_status();
+    match google_pro_status {
+        cli_auth::CratosOAuthStatus::Valid => {
+            println!("  ✅ Google AI Pro: valid");
+        }
+        cli_auth::CratosOAuthStatus::Expired => {
+            println!("  ⚠️  Google AI Pro: expired (run 'cratos init' to refresh)");
+        }
+        cli_auth::CratosOAuthStatus::NotFound => {}
+    }
+
+    // 3. Gemini CLI (Third-party)
     let gemini_status = cli_auth::check_gemini_cli_status();
     match gemini_status {
         cli_auth::GeminiCliStatus::Valid => {
@@ -185,6 +210,7 @@ async fn check_cli_auth() -> bool {
         }
     }
 
+    // 4. Codex CLI (Third-party)
     let codex_status = cli_auth::check_codex_cli_status();
     match codex_status {
         cli_auth::CodexCliStatus::Valid => {

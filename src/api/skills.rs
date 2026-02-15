@@ -10,8 +10,8 @@ use axum::{
     Json, Router,
 };
 use cratos_skills::{
-    ExportFormat, PortableSkill, RegistryEntry, RemoteRegistry, Skill, SkillEcosystem,
-    SkillStatus, SkillStore,
+    ExportFormat, PortableSkill, RegistryEntry, RemoteRegistry, Skill, SkillEcosystem, SkillStatus,
+    SkillStore,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -289,7 +289,12 @@ async fn export_skill(
                 ),
             };
 
-            (StatusCode::OK, [(header::CONTENT_TYPE, content_type)], content).into_response()
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, content_type)],
+                content,
+            )
+                .into_response()
         }
         Err(e) => {
             error!(error = %e, "Failed to export skill");
@@ -317,7 +322,12 @@ async fn export_bundle(
     {
         Ok(bundle) => {
             let yaml = serde_yaml::to_string(&bundle).unwrap_or_default();
-            (StatusCode::OK, [(header::CONTENT_TYPE, "application/x-yaml")], yaml).into_response()
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/x-yaml")],
+                yaml,
+            )
+                .into_response()
         }
         Err(e) => {
             error!(error = %e, "Failed to export bundle");
@@ -412,9 +422,11 @@ async fn registry_install(
             }))
             .into_response()
         }
-        Err(e) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, format!("Install failed: {e}")).into_response()
-        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Install failed: {e}"),
+        )
+            .into_response(),
     }
 }
 

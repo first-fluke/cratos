@@ -791,10 +791,11 @@ impl ChannelAdapter for SlackAdapter {
             .map_err(|e| Error::Slack(format!("Failed to parse upload URL response: {}", e)))?;
 
         if !url_data["ok"].as_bool().unwrap_or(false) {
-            let error_msg = url_data["error"]
-                .as_str()
-                .unwrap_or("Unknown error");
-            return Err(Error::Slack(format!("Failed to get upload URL: {}", error_msg)));
+            let error_msg = url_data["error"].as_str().unwrap_or("Unknown error");
+            return Err(Error::Slack(format!(
+                "Failed to get upload URL: {}",
+                error_msg
+            )));
         }
 
         let upload_url = url_data["upload_url"]
@@ -858,10 +859,11 @@ impl ChannelAdapter for SlackAdapter {
             .map_err(|e| Error::Slack(format!("Failed to parse complete response: {}", e)))?;
 
         if !complete_data["ok"].as_bool().unwrap_or(false) {
-            let error_msg = complete_data["error"]
-                .as_str()
-                .unwrap_or("Unknown error");
-            return Err(Error::Slack(format!("Failed to complete upload: {}", error_msg)));
+            let error_msg = complete_data["error"].as_str().unwrap_or("Unknown error");
+            return Err(Error::Slack(format!(
+                "Failed to complete upload: {}",
+                error_msg
+            )));
         }
 
         info!(
@@ -997,7 +999,10 @@ mod tests {
         assert_eq!(attachment.filename, "test.pdf");
         assert_eq!(attachment.mime_type, "application/pdf");
         assert!(attachment.caption.is_some());
-        assert!(matches!(attachment.attachment_type, AttachmentType::Document));
+        assert!(matches!(
+            attachment.attachment_type,
+            AttachmentType::Document
+        ));
     }
 
     #[test]

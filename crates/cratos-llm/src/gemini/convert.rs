@@ -5,7 +5,9 @@ use super::types::*;
 use crate::router::{Message, MessageRole, ToolChoice, ToolDefinition};
 
 /// Convert messages to Gemini format, returning system instruction separately
-pub(crate) fn convert_messages(messages: &[Message]) -> (Option<GeminiContent>, Vec<GeminiContent>) {
+pub(crate) fn convert_messages(
+    messages: &[Message],
+) -> (Option<GeminiContent>, Vec<GeminiContent>) {
     let mut system_instruction = None;
     let mut gemini_contents = Vec::new();
 

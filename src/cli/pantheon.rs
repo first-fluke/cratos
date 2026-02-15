@@ -282,16 +282,23 @@ async fn skill_show(store: &PersonaSkillStore, persona: &str, skill: &str) -> Re
     match binding {
         Some(b) => {
             println!("\n📊 {} × {}\n", persona, b.skill_name);
-            println!("  Ownership:    {} ({})", b.ownership_type, match b.ownership_type {
-                cratos_skills::OwnershipType::Default => "from TOML",
-                cratos_skills::OwnershipType::Claimed => "manually assigned",
-                cratos_skills::OwnershipType::AutoAssigned => "earned through usage",
-            });
+            println!(
+                "  Ownership:    {} ({})",
+                b.ownership_type,
+                match b.ownership_type {
+                    cratos_skills::OwnershipType::Default => "from TOML",
+                    cratos_skills::OwnershipType::Claimed => "manually assigned",
+                    cratos_skills::OwnershipType::AutoAssigned => "earned through usage",
+                }
+            );
             println!("  Usage Count:  {}", b.usage_count);
             println!("  Successes:    {}", b.success_count);
             println!("  Failures:     {}", b.failure_count);
             println!("  Success Rate: {:.1}%", b.success_rate * 100.0);
-            println!("  Streak:       {} consecutive successes", b.consecutive_successes);
+            println!(
+                "  Streak:       {} consecutive successes",
+                b.consecutive_successes
+            );
 
             if let Some(avg) = b.avg_duration_ms {
                 println!("  Avg Duration: {}ms", avg);
@@ -332,7 +339,10 @@ async fn skill_claim(
         .claim_skill(persona, skill.id, &skill.name)
         .await?;
 
-    println!("\n✅ Claimed skill '{}' for {}\n", binding.skill_name, persona);
+    println!(
+        "\n✅ Claimed skill '{}' for {}\n",
+        binding.skill_name, persona
+    );
     Ok(())
 }
 
@@ -478,7 +488,10 @@ async fn skill_sync(store: &PersonaSkillStore, persona: &str) -> Result<()> {
     if result.success {
         println!("  ✅ Chronicle sync completed:");
         println!("    • Skills updated: {}", result.skills_updated);
-        println!("    • New auto-assignments recorded: {}", result.new_auto_assignments);
+        println!(
+            "    • New auto-assignments recorded: {}",
+            result.new_auto_assignments
+        );
     } else {
         println!("  ⚠️  No skills found to sync");
     }

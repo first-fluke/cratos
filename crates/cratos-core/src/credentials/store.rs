@@ -73,9 +73,7 @@ impl CredentialStore {
                 cache.insert(key, credential);
                 Ok(())
             }
-            CredentialBackend::Keychain => {
-                KeychainBackend::store(&full_service, account, value)
-            }
+            CredentialBackend::Keychain => KeychainBackend::store(&full_service, account, value),
             CredentialBackend::SecretService => {
                 SecretServiceBackend::store(self, &full_service, account, value)
             }

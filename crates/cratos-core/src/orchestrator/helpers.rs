@@ -80,17 +80,17 @@ impl Orchestrator {
                     } else {
                         content.to_string()
                     };
-                    chronicle.add_entry(
-                        &format!("Excuted task: {}", entry_text),
-                        None,
-                    );
+                    chronicle.add_entry(&format!("Excuted task: {}", entry_text), None);
 
                     // 2. Simple heuristic for Quest detection (can be improved with LLM later)
                     // If content starts with "Quest:" or contains "New Quest:", add it
                     if content.contains("Quest:") || content.contains("New Quest:") {
                         let lines: Vec<&str> = content.lines().collect();
                         for line in lines {
-                            if let Some(quest_desc) = line.strip_prefix("Quest:").or_else(|| line.strip_prefix("- Quest:")) {
+                            if let Some(quest_desc) = line
+                                .strip_prefix("Quest:")
+                                .or_else(|| line.strip_prefix("- Quest:"))
+                            {
                                 chronicle.add_quest(quest_desc.trim());
                             }
                         }
@@ -98,16 +98,24 @@ impl Orchestrator {
 
                     // 3. Simple heuristic for Quest Completion
                     // If content contains "Quest Completed:" mark matching quest as done
-                    if content.contains("Quest Completed:") || content.contains("Completed Quest:") {
-                         let lines: Vec<&str> = content.lines().collect();
-                         for line in lines {
-                            if let Some(quest_desc) = line.strip_prefix("Quest Completed:").or_else(|| line.strip_prefix("- Quest Completed:")) {
+                    if content.contains("Quest Completed:") || content.contains("Completed Quest:")
+                    {
+                        let lines: Vec<&str> = content.lines().collect();
+                        for line in lines {
+                            if let Some(quest_desc) = line
+                                .strip_prefix("Quest Completed:")
+                                .or_else(|| line.strip_prefix("- Quest Completed:"))
+                            {
                                 let target = quest_desc.trim();
-                                if let Some(idx) = chronicle.quests.iter().position(|q| q.description.contains(target) && !q.completed) {
+                                if let Some(idx) = chronicle
+                                    .quests
+                                    .iter()
+                                    .position(|q| q.description.contains(target) && !q.completed)
+                                {
                                     chronicle.complete_quest(idx);
                                 }
                             }
-                         }
+                        }
                     }
 
                     if let Err(e) = store.save(&chronicle) {
@@ -126,12 +134,12 @@ impl Orchestrator {
                     }
                 }
                 Ok(None) => {
-                     // No chronicle found - possibly create one? or just ignore.
-                     // For now, logging warning
-                     warn!(persona = %persona_name, "Chronicle not found for update");
+                    // No chronicle found - possibly create one? or just ignore.
+                    // For now, logging warning
+                    warn!(persona = %persona_name, "Chronicle not found for update");
                 }
                 Err(e) => {
-                     warn!(
+                    warn!(
                         persona = %persona_name,
                         error = %e,
                         "Failed to load chronicle for update"

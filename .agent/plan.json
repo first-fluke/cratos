@@ -1,32 +1,56 @@
 {
-    "goal": "Modern UI Overhaul for Dashboard, Memory, and Personas pages",
-    "priority": "P0",
     "tasks": [
         {
-            "id": "ui-dashboard",
+            "id": "TASK-01",
+            "title": "Google AI Pro OAuth Backend Integration",
+            "description": "Implement OAuth authentication flow for Google AI Pro users in `cratos-llm` and expose via API.",
             "priority": "P0",
-            "description": "Redesign Dashboard with glassmorphism, better widgets, and improved layout. Use 'theme' tokens.",
-            "agent_type": "frontend",
+            "agent": "backend",
             "dependencies": []
         },
         {
-            "id": "ui-personas",
+            "id": "TASK-02",
+            "title": "Fix Critical UI Bugs (Persona, History, Docs)",
+            "description": "Resolve Persona Details/Skills missing (Issue #2), History View 404 (Issue #3), and Docs 404 (Issue #5).",
             "priority": "P0",
-            "description": "Redesign Personas page. Create a 'Hero' style card for each persona, visualize stats better.",
-            "agent_type": "frontend",
+            "agent": "frontend",
             "dependencies": []
         },
         {
-            "id": "ui-memory",
-            "priority": "P0",
-            "description": "Redesign Memory Graph. Make it intuitive. Improve visualization of connections. Use 'Serena Bridge' data effectively.",
-            "agent_type": "frontend",
+            "id": "TASK-03",
+            "title": "Settings API & Memory Ontology Backend",
+            "description": "Fix Settings API sync issues (Issue #4, #6). Implement Ontology-based data structure for Memory RAG (Issue #7).",
+            "priority": "P1",
+            "agent": "backend",
+            "dependencies": []
+        },
+        {
+            "id": "TASK-04",
+            "title": "Settings UI & Google AI OAuth UI",
+            "description": "Fix Settings UI sync state (Issue #4, #6). Add Google AI Pro OAuth selection UI (Issue #1).",
+            "priority": "P1",
+            "agent": "frontend",
+            "dependencies": [
+                "TASK-01"
+            ]
+        },
+        {
+            "id": "TASK-05",
+            "title": "Memory Graph Visualization Improvement",
+            "description": "Enhance /memory graph visualization to reflect Ontology structure (Issue #7).",
+            "priority": "P2",
+            "agent": "frontend",
+            "dependencies": [
+                "TASK-03"
+            ]
+        },
+        {
+            "id": "TASK-06",
+            "title": "TUI Overhaul",
+            "description": "Completely improve or replace the existing TUI in `src/cli` (Issue #8).",
+            "priority": "P2",
+            "agent": "backend",
             "dependencies": []
         }
-    ],
-    "constraints": [
-        "Use semantic theme colors (theme-info, etc.)",
-        "Ensure responsive design",
-        "Maintain existing functionality"
     ]
 }

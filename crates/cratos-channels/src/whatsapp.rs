@@ -13,7 +13,9 @@
 //! For production/business use, consider the official WhatsApp Business API instead.
 
 use crate::error::{Error, Result};
-use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingAttachment, OutgoingMessage};
+use crate::message::{
+    ChannelAdapter, ChannelType, NormalizedMessage, OutgoingAttachment, OutgoingMessage,
+};
 use crate::util::{mask_for_logging, WHATSAPP_MESSAGE_LIMIT};
 use cratos_core::{Orchestrator, OrchestratorInput};
 use serde::{Deserialize, Serialize};
@@ -557,7 +559,11 @@ impl ChannelAdapter for WhatsAppAdapter {
             .map_err(|e| Error::Bridge(format!("Failed to parse upload response: {}", e)))?;
 
         let media_id = upload_resp.media_id.ok_or_else(|| {
-            Error::WhatsApp(upload_resp.error.unwrap_or_else(|| "Upload failed".to_string()))
+            Error::WhatsApp(
+                upload_resp
+                    .error
+                    .unwrap_or_else(|| "Upload failed".to_string()),
+            )
         })?;
 
         // Send media message
@@ -598,7 +604,10 @@ impl ChannelAdapter for WhatsAppAdapter {
             .map_err(|e| Error::Bridge(format!("Failed to parse response: {}", e)))?;
 
         resp.message_id.ok_or_else(|| {
-            Error::WhatsApp(resp.error.unwrap_or_else(|| "Send media failed".to_string()))
+            Error::WhatsApp(
+                resp.error
+                    .unwrap_or_else(|| "Send media failed".to_string()),
+            )
         })
     }
 }
@@ -655,7 +664,11 @@ mod tests {
                 "audio" => "audio",
                 _ => "document",
             };
-            assert_eq!(detected, expected, "MIME type {} should map to {}", mime_type, expected);
+            assert_eq!(
+                detected, expected,
+                "MIME type {} should map to {}",
+                mime_type, expected
+            );
         }
     }
 
@@ -678,7 +691,9 @@ mod tests {
         let encoded = base64::engine::general_purpose::STANDARD.encode(data);
 
         // Verify it's valid base64
-        assert!(base64::engine::general_purpose::STANDARD.decode(&encoded).is_ok());
+        assert!(base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .is_ok());
         assert!(!encoded.contains(' '));
     }
 

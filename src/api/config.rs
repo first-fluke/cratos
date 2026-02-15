@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 
 use crate::middleware::auth::{require_scope, RequireAuth};
 
-use crate::server::config::{AnthropicLlmConfig, AppConfig, OpenAiLlmConfig};
+use crate::server::config::{AnthropicLlmConfig, AppConfig, GeminiLlmConfig, OpenAiLlmConfig};
 
 /// Configuration state shared across API handlers
 #[derive(Clone)]
@@ -54,8 +54,24 @@ impl From<AppConfig> for AppConfigView {
     fn from(config: AppConfig) -> Self {
         // Determine default model based on provider
         let llm_model = match config.llm.default_provider.as_str() {
-            "openai" => config.llm.openai.map(|c| c.default_model).unwrap_or_else(|| "gpt-4o".to_string()),
-            "anthropic" => config.llm.anthropic.map(|c| c.default_model).unwrap_or_else(|| "claude-3-sonnet-20240229".to_string()),
+            "openai" => config
+                .llm
+                .openai
+                .as_ref()
+                .map(|c| c.default_model.clone())
+                .unwrap_or_else(|| "gpt-4o".to_string()),
+            "anthropic" => config
+                .llm
+                .anthropic
+                .as_ref()
+                .map(|c| c.default_model.clone())
+                .unwrap_or_else(|| "claude-3-sonnet-20240229".to_string()),
+            "gemini" | "google" | "google_pro" => config
+                .llm
+                .gemini
+                .as_ref()
+                .map(|c| c.default_model.clone())
+                .unwrap_or_else(|| "gemini-2.0-flash".to_string()),
             _ => "auto".to_string(),
         };
 
@@ -156,8 +172,8 @@ impl<T> ApiResponse<T> {
         }
     }
 
-    pub fn error(message: impl Into<String>) -> Self {
-        Self {
+    pub fn error(message: impl Into<String>) -> ApiResponse<T> {
+        ApiResponse {
             success: false,
             data: None,
             error: Some(message.into()),
@@ -222,25 +238,33 @@ pub async fn update_config(
         config.llm.default_provider = provider;
     }
 
-    // For LLM model, we try to update the default model for the *current* provider if set,
-    // or just assume we should update OpenAI/Anthropic based on simple heuristic or provider setting.
-    // Given AppConfig structure is complex, we'll just try to ensure common providers are updated.
+    // For LLM model, we try to update the default model for the *current* provider if set.
     if let Some(model) = request.llm_model {
         match config.llm.default_provider.as_str() {
             "openai" => {
-                let mut c = config.llm.openai.clone().unwrap_or(OpenAiLlmConfig { default_model: "gpt-4o".to_string() });
+                let mut c = config.llm.openai.clone().unwrap_or(OpenAiLlmConfig {
+                    default_model: "gpt-4o".to_string(),
+                });
                 c.default_model = model.clone();
                 config.llm.openai = Some(c);
             }
             "anthropic" => {
-                let mut c = config.llm.anthropic.clone().unwrap_or(AnthropicLlmConfig { default_model: "claude-3-sonnet-20240229".to_string() });
+                let mut c = config.llm.anthropic.clone().unwrap_or(AnthropicLlmConfig {
+                    default_model: "claude-3-sonnet-20240229".to_string(),
+                });
                 c.default_model = model.clone();
                 config.llm.anthropic = Some(c);
+            }
+            "gemini" | "google" | "google_pro" => {
+                let mut c = config.llm.gemini.clone().unwrap_or(GeminiLlmConfig {
+                    default_model: "gemini-2.0-flash".to_string(),
+                });
+                c.default_model = model.clone();
+                config.llm.gemini = Some(c);
             }
             _ => {
                 // For other providers or auto, we might not have a specific config struct to update easily here
                 // without refactoring LlmConfig.
-                // Log warning or ignored for now.
             }
         }
     }
@@ -300,7 +324,7 @@ pub async fn update_config(
         tracing::error!("Failed to save configuration: {}", e);
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
-    
+
     // Return the updated view
     let view = AppConfigView::from(config.clone());
     Ok(Json(ApiResponse::success(view)))
@@ -312,6 +336,8 @@ fn is_valid_provider(provider: &str) -> bool {
         "openai"
             | "anthropic"
             | "gemini"
+            | "google"
+            | "google_pro"
             | "groq"
             | "deepseek"
             | "ollama"
@@ -339,12 +365,6 @@ fn is_valid_approval_mode(mode: &str) -> bool {
     matches!(mode, "always" | "risky_only" | "never")
 }
 
-/// Create configuration routes
-/// Create configuration routes
-pub fn config_routes() -> Router {
-    config_routes_with_state(ConfigState::new())
-}
-
 /// Create configuration routes with explicit state
 pub fn config_routes_with_state(state: ConfigState) -> Router {
     Router::new()
@@ -360,6 +380,7 @@ mod tests {
     fn test_valid_providers() {
         assert!(is_valid_provider("openai"));
         assert!(is_valid_provider("anthropic"));
+        assert!(is_valid_provider("google_pro"));
         assert!(is_valid_provider("groq"));
         assert!(!is_valid_provider("invalid"));
     }

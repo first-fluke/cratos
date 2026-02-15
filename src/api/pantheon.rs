@@ -4,7 +4,9 @@
 
 use std::sync::Arc;
 
-use axum::{extract::Path, http::StatusCode, response::IntoResponse, routing::get, Extension, Json, Router};
+use axum::{
+    extract::Path, http::StatusCode, response::IntoResponse, routing::get, Extension, Json, Router,
+};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -225,7 +227,10 @@ pub async fn get_persona(
     let personas = get_core_personas();
 
     // Find persona info
-    let info = match personas.iter().find(|p| p.name.to_lowercase() == name.to_lowercase()) {
+    let info = match personas
+        .iter()
+        .find(|p| p.name.to_lowercase() == name.to_lowercase())
+    {
         Some(p) => p.clone(),
         None => {
             return (

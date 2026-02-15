@@ -761,7 +761,11 @@ mod tests {
             message: "Hello, World!".to_string(),
         };
         match action {
-            TaskAction::Notification { channel, channel_id, message } => {
+            TaskAction::Notification {
+                channel,
+                channel_id,
+                message,
+            } => {
                 assert_eq!(channel, "telegram");
                 assert_eq!(channel_id, "123456789");
                 assert_eq!(message, "Hello, World!");
@@ -779,7 +783,12 @@ mod tests {
             body: Some(serde_json::json!({"key": "value"})),
         };
         match action {
-            TaskAction::Webhook { url, method, headers, body } => {
+            TaskAction::Webhook {
+                url,
+                method,
+                headers,
+                body,
+            } => {
                 assert_eq!(url, "https://example.com/webhook");
                 assert_eq!(method, "POST");
                 assert!(headers.is_some());

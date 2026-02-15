@@ -68,11 +68,10 @@ async fn whatsapp_business_webhook(
 
 /// Create webhook routes
 pub fn webhooks_routes() -> Router {
-    Router::new()
-        .route(
-            "/api/v1/webhooks/whatsapp-business",
-            get(whatsapp_business_verify).post(whatsapp_business_webhook),
-        )
+    Router::new().route(
+        "/api/v1/webhooks/whatsapp-business",
+        get(whatsapp_business_verify).post(whatsapp_business_webhook),
+    )
 }
 
 #[cfg(test)]

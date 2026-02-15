@@ -6,8 +6,8 @@
 use crate::event_bus::OrchestratorEvent;
 use crate::memory::WorkingMemory;
 use crate::tool_policy::{PolicyAction, PolicyContext};
-use cratos_replay::EventType;
 use cratos_llm::ToolCall;
+use cratos_replay::EventType;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -279,7 +279,10 @@ impl Orchestrator {
                         "Failed to record persona-skill execution"
                     );
                 }
-                if let Err(e) = store.check_auto_assignment(persona, skill_id, &config).await {
+                if let Err(e) = store
+                    .check_auto_assignment(persona, skill_id, &config)
+                    .await
+                {
                     warn!(
                         persona = %persona,
                         skill_id = %skill_id,

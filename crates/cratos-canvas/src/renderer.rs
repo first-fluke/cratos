@@ -208,7 +208,11 @@ fn render_chart_svg(chart_type: crate::document::ChartType, data: &serde_json::V
     // Parse data
     let labels: Vec<String> = data["labels"]
         .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let datasets: Vec<(Vec<f64>, String)> = data["datasets"]
@@ -237,9 +241,16 @@ fn render_chart_svg(chart_type: crate::document::ChartType, data: &serde_json::V
         );
     }
 
-    let all_values: Vec<f64> = datasets.iter().flat_map(|(v, _)| v.iter().copied()).collect();
+    let all_values: Vec<f64> = datasets
+        .iter()
+        .flat_map(|(v, _)| v.iter().copied())
+        .collect();
     let max_val = all_values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let min_val = all_values.iter().copied().fold(f64::INFINITY, f64::min).min(0.0);
+    let min_val = all_values
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, f64::min)
+        .min(0.0);
     let range = (max_val - min_val).max(1.0);
 
     let mut svg = format!(
@@ -270,7 +281,9 @@ fn render_chart_svg(chart_type: crate::document::ChartType, data: &serde_json::V
 
             for (di, (values, color)) in datasets.iter().enumerate() {
                 for (i, &val) in values.iter().enumerate() {
-                    let x = (i as f64 / n as f64) * CHART_WIDTH + gap + (di as f64 * bar_width / datasets.len() as f64);
+                    let x = (i as f64 / n as f64) * CHART_WIDTH
+                        + gap
+                        + (di as f64 * bar_width / datasets.len() as f64);
                     let h = ((val - min_val) / range) * CHART_HEIGHT;
                     let y = CHART_HEIGHT - h;
                     svg.push_str(&format!(
@@ -302,7 +315,8 @@ fn render_chart_svg(chart_type: crate::document::ChartType, data: &serde_json::V
 
                 svg.push_str(&format!(
                     r#"<polyline points="{}" fill="none" stroke="{}" stroke-width="2"/>"#,
-                    points.trim(), color
+                    points.trim(),
+                    color
                 ));
 
                 // Data points
@@ -336,7 +350,9 @@ fn render_chart_svg(chart_type: crate::document::ChartType, data: &serde_json::V
                 let cy = CHART_HEIGHT / 2.0;
                 let r = CHART_HEIGHT.min(CHART_WIDTH) / 2.0 * 0.8;
 
-                let colors = ["#4299e1", "#48bb78", "#ed8936", "#e53e3e", "#805ad5", "#38b2ac"];
+                let colors = [
+                    "#4299e1", "#48bb78", "#ed8936", "#e53e3e", "#805ad5", "#38b2ac",
+                ];
                 let mut start_angle = -std::f64::consts::FRAC_PI_2;
 
                 for (i, &val) in values.iter().enumerate() {

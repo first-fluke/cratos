@@ -2,9 +2,7 @@
 
 use super::config::{DmPolicy, TelegramConfig};
 use crate::error::Result;
-use crate::message::{
-    Attachment, AttachmentType, ChannelType, MessageButton, NormalizedMessage,
-};
+use crate::message::{Attachment, AttachmentType, ChannelType, MessageButton, NormalizedMessage};
 use teloxide::{
     prelude::*,
     types::{InlineKeyboardButton, InlineKeyboardMarkup, Message as TelegramMessage},

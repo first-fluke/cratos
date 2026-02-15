@@ -3,10 +3,10 @@
 //! Contains all configuration structures for the Cratos server.
 
 use crate::middleware::rate_limit::RateLimitSettings;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use anyhow::{Context, Result};
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +154,7 @@ pub struct LlmConfig {
     pub default_provider: String,
     pub openai: Option<OpenAiLlmConfig>,
     pub anthropic: Option<AnthropicLlmConfig>,
+    pub gemini: Option<GeminiLlmConfig>,
     pub routing: Option<RoutingConfig>,
 }
 
@@ -168,6 +169,13 @@ pub struct OpenAiLlmConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct AnthropicLlmConfig {
+    pub default_model: String,
+}
+
+/// Gemini-specific config
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
+pub struct GeminiLlmConfig {
     pub default_model: String,
 }
 
@@ -206,6 +214,7 @@ impl Default for LlmConfig {
             default_provider: "auto".to_string(),
             openai: None,
             anthropic: None,
+            gemini: None,
             routing: None,
         }
     }

@@ -3,8 +3,8 @@
 //! This module contains the main LlmRouter struct that manages multiple providers
 //! and provides intelligent routing based on task types.
 
-use super::rules::RoutingRules;
 use super::provider::LlmProvider;
+use super::rules::RoutingRules;
 use super::types::TaskType;
 use crate::completion::{
     CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,

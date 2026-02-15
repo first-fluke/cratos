@@ -171,10 +171,10 @@ impl ModelTier {
             // ================================================================
             // Google Gemini - Gemini 2.5 family
             // ================================================================
-            (ModelTier::UltraBudget, "gemini") => "gemini-2.5-flash-lite",
-            (ModelTier::Fast, "gemini") => "gemini-2.5-flash",
-            (ModelTier::Standard, "gemini") => "gemini-2.5-pro",
-            (ModelTier::Premium, "gemini") => "gemini-2.5-pro",
+            (ModelTier::UltraBudget, "gemini" | "google_pro") => "gemini-2.5-flash-lite",
+            (ModelTier::Fast, "gemini" | "google_pro") => "gemini-2.5-flash",
+            (ModelTier::Standard, "gemini" | "google_pro") => "gemini-2.5-pro",
+            (ModelTier::Premium, "gemini" | "google_pro") => "gemini-2.5-pro",
 
             // ================================================================
             // GLM (ZhipuAI) - Chinese models

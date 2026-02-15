@@ -259,10 +259,10 @@ impl ModelRoutingConfig {
             ("anthropic", ModelTier::Standard) => 9.0, // Sonnet 4.5 avg
             ("anthropic", ModelTier::Premium) => 15.0, // Opus 4.5 avg
             // Gemini - Gemini 2.5 family
-            ("gemini", ModelTier::UltraBudget) => 0.175, // Flash avg
-            ("gemini", ModelTier::Fast) => 0.175,
-            ("gemini", ModelTier::Standard) => 1.25, // Pro avg
-            ("gemini", ModelTier::Premium) => 1.25,
+            ("gemini" | "google_pro", ModelTier::UltraBudget) => 0.175, // Flash avg
+            ("gemini" | "google_pro", ModelTier::Fast) => 0.175,
+            ("gemini" | "google_pro", ModelTier::Standard) => 1.25, // Pro avg
+            ("gemini" | "google_pro", ModelTier::Premium) => 1.25,
             // GLM
             ("glm", ModelTier::UltraBudget) => 0.086,
             ("glm", _) => 0.20,

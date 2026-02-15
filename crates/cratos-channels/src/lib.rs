@@ -39,7 +39,9 @@ pub use discord::{DiscordAdapter, DiscordConfig};
 
 // Re-export WhatsApp adapters
 pub use whatsapp::{WhatsAppAdapter, WhatsAppConfig};
-pub use whatsapp_business::{WhatsAppBusinessAdapter, WhatsAppBusinessConfig, WhatsAppBusinessWebhook};
+pub use whatsapp_business::{
+    WhatsAppBusinessAdapter, WhatsAppBusinessConfig, WhatsAppBusinessWebhook,
+};
 
 // Re-export Matrix adapter
 pub use matrix::{MatrixAdapter, MatrixConfig};

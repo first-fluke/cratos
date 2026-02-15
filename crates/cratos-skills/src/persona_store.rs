@@ -80,10 +80,7 @@ impl PersonaSkillStore {
         let store = Self { pool };
         store.run_migrations().await?;
 
-        info!(
-            "PersonaSkillStore initialized at {}",
-            db_path.display()
-        );
+        info!("PersonaSkillStore initialized at {}", db_path.display());
         Ok(store)
     }
 
@@ -250,21 +247,17 @@ impl PersonaSkillStore {
     /// Release a skill from a persona
     #[instrument(skip(self))]
     pub async fn release_skill(&self, persona_name: &str, skill_id: Uuid) -> Result<bool> {
-        let result = sqlx::query(
-            r#"DELETE FROM persona_skills WHERE persona_name = ?1 AND skill_id = ?2"#,
-        )
-        .bind(persona_name)
-        .bind(skill_id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Error::Database(e.to_string()))?;
+        let result =
+            sqlx::query(r#"DELETE FROM persona_skills WHERE persona_name = ?1 AND skill_id = ?2"#)
+                .bind(persona_name)
+                .bind(skill_id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(|e| Error::Database(e.to_string()))?;
 
         let released = result.rows_affected() > 0;
         if released {
-            info!(
-                "Released skill {} from persona {}",
-                skill_id, persona_name
-            );
+            info!("Released skill {} from persona {}", skill_id, persona_name);
         }
         Ok(released)
     }
@@ -691,9 +684,7 @@ impl PersonaSkillStore {
             skill_id,
             execution_id,
             success: row.get("success"),
-            duration_ms: row
-                .get::<Option<i64>, _>("duration_ms")
-                .map(|d| d as u64),
+            duration_ms: row.get::<Option<i64>, _>("duration_ms").map(|d| d as u64),
             error_message: row.get("error_message"),
             started_at,
         })
@@ -749,10 +740,7 @@ mod tests {
         let store = create_test_store().await;
         let skill_id = Uuid::new_v4();
 
-        store
-            .claim_skill("sindri", skill_id, "test")
-            .await
-            .unwrap();
+        store.claim_skill("sindri", skill_id, "test").await.unwrap();
 
         let released = store.release_skill("sindri", skill_id).await.unwrap();
         assert!(released);
@@ -771,10 +759,7 @@ mod tests {
         let store = create_test_store().await;
         let skill_id = Uuid::new_v4();
 
-        store
-            .claim_skill("sindri", skill_id, "test")
-            .await
-            .unwrap();
+        store.claim_skill("sindri", skill_id, "test").await.unwrap();
 
         // Record some executions
         store
@@ -790,7 +775,11 @@ mod tests {
             .await
             .unwrap();
 
-        let binding = store.get_binding("sindri", skill_id).await.unwrap().unwrap();
+        let binding = store
+            .get_binding("sindri", skill_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(binding.usage_count, 3);
         assert_eq!(binding.success_count, 2);
         assert_eq!(binding.failure_count, 1);
@@ -804,10 +793,7 @@ mod tests {
         let skill_id = Uuid::new_v4();
         let config = AutoAssignmentConfig::default();
 
-        store
-            .claim_skill("sindri", skill_id, "test")
-            .await
-            .unwrap();
+        store.claim_skill("sindri", skill_id, "test").await.unwrap();
 
         // Record 5 consecutive successes
         for _ in 0..5 {
@@ -825,7 +811,11 @@ mod tests {
         assert!(assigned);
 
         // Verify ownership changed
-        let binding = store.get_binding("sindri", skill_id).await.unwrap().unwrap();
+        let binding = store
+            .get_binding("sindri", skill_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(binding.ownership_type, OwnershipType::AutoAssigned);
         assert!(binding.auto_assigned_at.is_some());
     }
@@ -908,10 +898,7 @@ mod tests {
         let skill_id = Uuid::new_v4();
         let config = AutoAssignmentConfig::default();
 
-        store
-            .claim_skill("sindri", skill_id, "test")
-            .await
-            .unwrap();
+        store.claim_skill("sindri", skill_id, "test").await.unwrap();
 
         // Initially no auto-assigned skills
         let auto = store.get_auto_assigned_skills("sindri").await.unwrap();
@@ -967,10 +954,7 @@ mod tests {
         let store = create_test_store().await;
         let skill_id = Uuid::new_v4();
 
-        store
-            .claim_skill("sindri", skill_id, "test")
-            .await
-            .unwrap();
+        store.claim_skill("sindri", skill_id, "test").await.unwrap();
 
         for _ in 0..5 {
             store

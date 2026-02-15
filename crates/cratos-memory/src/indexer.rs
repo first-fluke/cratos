@@ -9,7 +9,7 @@
 use crate::decomposer;
 use crate::extractor;
 use crate::store::GraphStore;
-use crate::types::{Entity, EntityKind, TurnEntityEdge};
+use crate::types::{Entity, EntityKind, EntityRelation, TurnEntityEdge};
 use chrono::Utc;
 use cratos_llm::Message;
 use tracing::{debug, warn};
@@ -70,12 +70,12 @@ impl TurnIndexer {
             // 1. Insert turn
             self.store.insert_turn(turn).await?;
 
-            // 2. Extract entities
+            // 2. Extract entities and relations
             let extracted = extractor::extract(&turn.content);
 
             // 3. Persist entities + edges
-            let mut entity_ids = Vec::with_capacity(extracted.len());
-            for ext in &extracted {
+            let mut entity_ids = Vec::with_capacity(extracted.entities.len());
+            for ext in &extracted.entities {
                 let entity_id = self.resolve_entity(&ext.name, ext.kind).await?;
                 entity_ids.push(entity_id.clone());
 
@@ -87,12 +87,27 @@ impl TurnIndexer {
                 self.store.insert_edge(&edge).await?;
             }
 
-            // 4. Update co-occurrence
+            // 4. Persist relations
+            for rel_ext in &extracted.relations {
+                if let (Some(from), Some(to)) = (
+                    self.store.get_entity_by_name(&rel_ext.from_entity).await?,
+                    self.store.get_entity_by_name(&rel_ext.to_entity).await?,
+                ) {
+                    let rel = EntityRelation {
+                        from_entity_id: from.id,
+                        to_entity_id: to.id,
+                        kind: rel_ext.kind,
+                    };
+                    self.store.insert_relation(&rel).await?;
+                }
+            }
+
+            // 5. Update co-occurrence
             if entity_ids.len() > 1 {
                 self.store.update_cooccurrence(&entity_ids).await?;
             }
 
-            // 5. Embed summary → vector index
+            // 6. Embed summary → vector index
             if let Some(embedder) = &self.embedder {
                 if let Err(e) = embedder.embed_and_store(&turn.id, &turn.summary).await {
                     warn!(turn_id = %turn.id, error = %e, "Embedding failed, skipping");

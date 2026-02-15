@@ -1,7 +1,7 @@
 //! EventRecorder - Convenient event creation during execution
 
-use super::events::{get_next_sequence_num, record_event};
 use super::event_store::EventStore;
+use super::events::{get_next_sequence_num, record_event};
 use crate::error::Result;
 use crate::event::{Event, EventType};
 use uuid::Uuid;

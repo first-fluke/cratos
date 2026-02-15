@@ -58,8 +58,7 @@ fn test_diagnose_not_found_error() {
 #[test]
 fn test_diagnose_timeout_error() {
     let doctor = ToolDoctor::new();
-    let diagnosis =
-        doctor.diagnose("http_get", "Request timeout: operation timed out after 30s");
+    let diagnosis = doctor.diagnose("http_get", "Request timeout: operation timed out after 30s");
 
     assert_eq!(diagnosis.category, FailureCategory::Timeout);
     assert!(diagnosis.confidence > 0.8);

@@ -367,7 +367,11 @@ impl OutgoingAttachment {
 
     /// Create a document attachment
     #[must_use]
-    pub fn document(filename: impl Into<String>, mime_type: impl Into<String>, data: &[u8]) -> Self {
+    pub fn document(
+        filename: impl Into<String>,
+        mime_type: impl Into<String>,
+        data: &[u8],
+    ) -> Self {
         use base64::{engine::general_purpose::STANDARD, Engine};
         Self {
             filename: filename.into(),
@@ -476,11 +480,7 @@ pub trait ChannelAdapter: Send + Sync {
         reply_to: Option<&str>,
     ) -> crate::Result<String> {
         // Default: send text fallback
-        let caption = attachment
-            .caption
-            .as_deref()
-            .unwrap_or("")
-            .to_string();
+        let caption = attachment.caption.as_deref().unwrap_or("").to_string();
         let text = if caption.is_empty() {
             format!("[Attachment: {}]", attachment.filename)
         } else {
@@ -543,8 +543,8 @@ mod tests {
     #[test]
     fn test_outgoing_attachment() {
         let data = b"test image data";
-        let att = OutgoingAttachment::image("test.png", "image/png", data)
-            .with_caption("Test caption");
+        let att =
+            OutgoingAttachment::image("test.png", "image/png", data).with_caption("Test caption");
 
         assert_eq!(att.filename, "test.png");
         assert_eq!(att.mime_type, "image/png");

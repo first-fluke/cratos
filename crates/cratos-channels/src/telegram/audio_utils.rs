@@ -25,12 +25,17 @@ pub fn convert_ogg_to_wav(ogg_data: &[u8]) -> Result<Vec<u8>> {
 
     let mut child = Command::new("ffmpeg")
         .args([
-            "-i", "pipe:0",         // Read from stdin
-            "-f", "wav",            // Output format
-            "-ar", "16000",         // Sample rate (Whisper expects 16kHz)
-            "-ac", "1",             // Mono
-            "-acodec", "pcm_s16le", // 16-bit PCM
-            "pipe:1",               // Write to stdout
+            "-i",
+            "pipe:0", // Read from stdin
+            "-f",
+            "wav", // Output format
+            "-ar",
+            "16000", // Sample rate (Whisper expects 16kHz)
+            "-ac",
+            "1", // Mono
+            "-acodec",
+            "pcm_s16le", // 16-bit PCM
+            "pipe:1",    // Write to stdout
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -46,15 +51,15 @@ pub fn convert_ogg_to_wav(ogg_data: &[u8]) -> Result<Vec<u8>> {
 
     // Write input data
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(ogg_data).map_err(|e| {
-            Error::Audio(format!("Failed to write to ffmpeg stdin: {}", e))
-        })?;
+        stdin
+            .write_all(ogg_data)
+            .map_err(|e| Error::Audio(format!("Failed to write to ffmpeg stdin: {}", e)))?;
     }
 
     // Read output
-    let output = child.wait_with_output().map_err(|e| {
-        Error::Audio(format!("ffmpeg execution failed: {}", e))
-    })?;
+    let output = child
+        .wait_with_output()
+        .map_err(|e| Error::Audio(format!("ffmpeg execution failed: {}", e)))?;
 
     if !output.status.success() {
         return Err(Error::Audio(format!(
@@ -63,7 +68,10 @@ pub fn convert_ogg_to_wav(ogg_data: &[u8]) -> Result<Vec<u8>> {
         )));
     }
 
-    debug!(output_size = output.stdout.len(), "OGG to WAV conversion complete");
+    debug!(
+        output_size = output.stdout.len(),
+        "OGG to WAV conversion complete"
+    );
     Ok(output.stdout)
 }
 

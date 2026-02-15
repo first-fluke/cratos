@@ -71,9 +71,9 @@ impl GraphRagRetriever {
         max_tokens: u32,
     ) -> crate::Result<Vec<RetrievedTurn>> {
         // 1. Extract entities from the query
-        let query_entities = extractor::extract(query);
+        let extraction = extractor::extract(query);
         let query_entity_names: Vec<String> =
-            query_entities.iter().map(|e| e.name.clone()).collect();
+            extraction.entities.iter().map(|e| e.name.clone()).collect();
 
         // 2. Gather seed turn IDs
         let mut seed_scores: HashMap<String, f32> = HashMap::new();
@@ -87,7 +87,7 @@ impl GraphRagRetriever {
         }
 
         // 2b. Entity-graph seeds: find turns mentioning query entities
-        for ext in &query_entities {
+        for ext in &extraction.entities {
             if let Some(entity) = self.store.get_entity_by_name(&ext.name).await? {
                 let turn_ids = self.store.get_turn_ids_for_entity(&entity.id).await?;
                 for tid in turn_ids {

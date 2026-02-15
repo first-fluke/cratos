@@ -241,9 +241,7 @@ pub fn format_report(report: &CostReport) -> String {
     output.push_str("\n**Summary:**\n");
     output.push_str(&format!(
         "• Total Requests: {} ({} success, {} failed)\n",
-        report.stats.total_requests,
-        report.stats.successful_requests,
-        report.stats.failed_requests
+        report.stats.total_requests, report.stats.successful_requests, report.stats.failed_requests
     ));
     output.push_str(&format!(
         "• Total Tokens: {} input, {} output\n",

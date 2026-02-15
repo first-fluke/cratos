@@ -3,7 +3,10 @@
 //! Tables: `turns`, `entities`, `turn_entity_edges`, `entity_cooccurrence`.
 
 use crate::error::{Error, Result};
-use crate::types::{Entity, EntityKind, ExplicitMemory, Turn, TurnEntityEdge, TurnRole};
+use crate::types::{
+    Entity, EntityKind, EntityRelation, ExplicitMemory, RelationKind, Turn, TurnEntityEdge,
+    TurnRole,
+};
 use chrono::{DateTime, Utc};
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
@@ -116,6 +119,24 @@ impl GraphStore {
                 cooccurrence_count INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY (entity_a, entity_b)
             )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS entity_relations (
+                from_entity_id TEXT NOT NULL REFERENCES entities(id),
+                to_entity_id   TEXT NOT NULL REFERENCES entities(id),
+                kind           TEXT NOT NULL,
+                PRIMARY KEY (from_entity_id, to_entity_id, kind)
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_entity_relations_to
+             ON entity_relations(to_entity_id)",
         )
         .execute(&self.pool)
         .await?;
@@ -349,6 +370,83 @@ impl GraphStore {
             .await?;
 
         Ok(rows.iter().map(|r| r.get("turn_id")).collect())
+    }
+
+    // ── Entity Relations ────────────────────────────────────────
+
+    /// Insert an entity relation. No-op if already exists.
+    pub async fn insert_relation(&self, rel: &EntityRelation) -> Result<()> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO entity_relations (from_entity_id, to_entity_id, kind)
+             VALUES (?1, ?2, ?3)",
+        )
+        .bind(&rel.from_entity_id)
+        .bind(&rel.to_entity_id)
+        .bind(rel.kind.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Get all relations where the given entity is the source.
+    pub async fn get_relations_from_entity(&self, entity_id: &str) -> Result<Vec<EntityRelation>> {
+        let rows = sqlx::query(
+            "SELECT from_entity_id, to_entity_id, kind
+             FROM entity_relations WHERE from_entity_id = ?1",
+        )
+        .bind(entity_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|r| EntityRelation {
+                from_entity_id: r.get("from_entity_id"),
+                to_entity_id: r.get("to_entity_id"),
+                kind: RelationKind::from_str_lossy(r.get("kind")),
+            })
+            .collect())
+    }
+
+    /// Get all relations where the given entity is the target.
+    pub async fn get_relations_to_entity(&self, entity_id: &str) -> Result<Vec<EntityRelation>> {
+        let rows = sqlx::query(
+            "SELECT from_entity_id, to_entity_id, kind
+             FROM entity_relations WHERE to_entity_id = ?1",
+        )
+        .bind(entity_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|r| EntityRelation {
+                from_entity_id: r.get("from_entity_id"),
+                to_entity_id: r.get("to_entity_id"),
+                kind: RelationKind::from_str_lossy(r.get("kind")),
+            })
+            .collect())
+    }
+
+    /// List all entity relations (for graph visualization).
+    pub async fn list_all_relations(&self, limit: u32) -> Result<Vec<EntityRelation>> {
+        let rows = sqlx::query(
+            "SELECT from_entity_id, to_entity_id, kind
+             FROM entity_relations
+             LIMIT ?1",
+        )
+        .bind(limit as i32)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|r| EntityRelation {
+                from_entity_id: r.get("from_entity_id"),
+                to_entity_id: r.get("to_entity_id"),
+                kind: RelationKind::from_str_lossy(r.get("kind")),
+            })
+            .collect())
     }
 
     // ── Co-occurrence ───────────────────────────────────────────

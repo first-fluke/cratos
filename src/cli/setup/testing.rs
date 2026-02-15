@@ -70,6 +70,7 @@ pub async fn test_llm(provider: &Provider, api_key: &str) -> bool {
     if api_key.is_empty() {
         return match provider.name {
             "google" => test_gemini_oauth().await,
+            "google_pro" => test_gemini_pro_oauth().await,
             "openai" => test_openai_codex_auth().await,
             _ => false,
         };
@@ -242,6 +243,27 @@ async fn test_gemini_oauth() -> bool {
     if let Some(creds) = cratos_llm::cli_auth::read_gemini_oauth() {
         if test_gemini_bearer(&creds.access_token, None).await {
             return true;
+        }
+    }
+
+    false
+}
+
+/// Test Google Gemini Pro with OAuth token.
+async fn test_gemini_pro_oauth() -> bool {
+    // 1. Cratos Google AI Pro OAuth
+    if let Some(tokens) = cratos_llm::cli_auth::read_cratos_google_pro_oauth() {
+        if test_google_oauth_token(&tokens.access_token).await {
+            return true;
+        }
+        if let Some(ref rt) = tokens.refresh_token {
+            let config = cratos_llm::oauth_config::google_pro_oauth_config();
+            if let Ok(refreshed) = cratos_llm::oauth::refresh_token(&config, rt).await {
+                let _ = cratos_llm::oauth::save_tokens(&config.token_file, &refreshed);
+                if test_google_oauth_token(&refreshed.access_token).await {
+                    return true;
+                }
+            }
         }
     }
 

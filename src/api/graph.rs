@@ -24,6 +24,67 @@ fn default_limit() -> u32 {
     100
 }
 
+/// Entity kind for visualization
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeKind {
+    /// Source file
+    File,
+    /// Function or method
+    Function,
+    /// Rust crate
+    Crate,
+    /// Tool name
+    Tool,
+    /// Error type
+    Error,
+    /// Technical concept
+    Concept,
+    /// Configuration key
+    Config,
+}
+
+impl From<cratos_memory::types::EntityKind> for NodeKind {
+    fn from(kind: cratos_memory::types::EntityKind) -> Self {
+        match kind {
+            cratos_memory::types::EntityKind::File => Self::File,
+            cratos_memory::types::EntityKind::Function => Self::Function,
+            cratos_memory::types::EntityKind::Crate => Self::Crate,
+            cratos_memory::types::EntityKind::Tool => Self::Tool,
+            cratos_memory::types::EntityKind::Error => Self::Error,
+            cratos_memory::types::EntityKind::Concept => Self::Concept,
+            cratos_memory::types::EntityKind::Config => Self::Config,
+        }
+    }
+}
+
+/// Edge kind for visualization
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum EdgeKind {
+    /// Entities appearing in the same turn
+    Cooccurrence,
+    /// Entity A defines Entity B
+    Defines,
+    /// Entity A calls Entity B
+    Calls,
+    /// Entity A imports Entity B
+    Imports,
+    /// General relationship
+    Related,
+}
+
+impl From<cratos_memory::types::RelationKind> for EdgeKind {
+    fn from(kind: cratos_memory::types::RelationKind) -> Self {
+        match kind {
+            cratos_memory::types::RelationKind::Defines => Self::Defines,
+            cratos_memory::types::RelationKind::Calls => Self::Calls,
+            cratos_memory::types::RelationKind::Imports => Self::Imports,
+            cratos_memory::types::RelationKind::Related => Self::Related,
+        }
+    }
+}
+
 /// Graph node for visualization
 #[derive(Debug, Serialize, ToSchema)]
 pub struct GraphNode {
@@ -31,8 +92,8 @@ pub struct GraphNode {
     pub id: String,
     /// Entity name (label)
     pub label: String,
-    /// Entity kind (file, function, crate, tool, error, concept, config)
-    pub kind: String,
+    /// Entity kind
+    pub kind: NodeKind,
     /// Number of mentions
     pub mention_count: u32,
 }
@@ -44,8 +105,10 @@ pub struct GraphEdge {
     pub source: String,
     /// Target entity ID
     pub target: String,
-    /// Edge weight (co-occurrence count)
+    /// Edge weight (relevance or count)
     pub weight: u32,
+    /// Edge kind
+    pub kind: EdgeKind,
 }
 
 /// Complete graph data for visualization
@@ -53,7 +116,7 @@ pub struct GraphEdge {
 pub struct GraphData {
     /// Graph nodes (entities)
     pub nodes: Vec<GraphNode>,
-    /// Graph edges (co-occurrences)
+    /// Graph edges (co-occurrences and explicit relations)
     pub edges: Vec<GraphEdge>,
 }
 
@@ -83,7 +146,10 @@ pub async fn get_graph(
     let entities = match graph_memory.list_entities(query.limit).await {
         Ok(e) => e,
         Err(e) => {
-            return Json(ApiResponse::error(format!("Failed to fetch entities: {}", e)));
+            return Json(ApiResponse::error(format!(
+                "Failed to fetch entities: {}",
+                e
+            )));
         }
     };
 
@@ -92,10 +158,12 @@ pub async fn get_graph(
         .map(|e| GraphNode {
             id: e.id,
             label: e.name,
-            kind: e.kind.to_string(),
+            kind: NodeKind::from(e.kind),
             mention_count: e.mention_count,
         })
         .collect();
+
+    let mut edges = Vec::new();
 
     // Fetch co-occurrences
     let cooccurrences = match graph_memory.list_cooccurrences(query.limit * 2).await {
@@ -108,14 +176,34 @@ pub async fn get_graph(
         }
     };
 
-    let edges: Vec<GraphEdge> = cooccurrences
-        .into_iter()
-        .map(|(source, target, weight)| GraphEdge {
+    for (source, target, weight) in cooccurrences {
+        edges.push(GraphEdge {
             source,
             target,
             weight,
-        })
-        .collect();
+            kind: EdgeKind::Cooccurrence,
+        });
+    }
+
+    // Fetch explicit relations
+    let relations = match graph_memory.list_relations(query.limit * 2).await {
+        Ok(r) => r,
+        Err(e) => {
+            return Json(ApiResponse::error(format!(
+                "Failed to fetch relations: {}",
+                e
+            )));
+        }
+    };
+
+    for rel in relations {
+        edges.push(GraphEdge {
+            source: rel.from_entity_id,
+            target: rel.to_entity_id,
+            weight: 1, // Explicit relations have weight 1 for now
+            kind: EdgeKind::from(rel.kind),
+        });
+    }
 
     Json(ApiResponse::success(GraphData { nodes, edges }))
 }

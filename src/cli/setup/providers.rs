@@ -65,6 +65,16 @@ pub const PROVIDERS: &[Provider] = &[
         cost_ko: "무료 사용 가능",
     },
     Provider {
+        name: "google_pro",
+        display_en: "Google AI Pro (Gemini) - High quotas",
+        display_ko: "Google AI Pro (Gemini) - 높은 할당량",
+        env_var: "GOOGLE_API_KEY",
+        signup_url: "https://aistudio.google.com/apikey",
+        category: ProviderCategory::Paid,
+        cost_en: "Subscription / High quotas",
+        cost_ko: "구독형 / 높은 할당량",
+    },
+    Provider {
         name: "novita",
         display_en: "Novita AI - Free tier available",
         display_ko: "Novita AI - 무료 사용 가능",

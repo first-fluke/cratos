@@ -46,12 +46,7 @@ pub async fn canvas_handler(
     };
 
     // Delegate to cratos-canvas handler
-    cratos_canvas::canvas_ws_handler(
-        ws,
-        Path(session_uuid),
-        axum::extract::State(state),
-    )
-    .await
+    cratos_canvas::canvas_ws_handler(ws, Path(session_uuid), axum::extract::State(state)).await
 }
 
 #[cfg(test)]

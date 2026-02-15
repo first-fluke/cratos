@@ -111,6 +111,44 @@ impl EntityKind {
     }
 }
 
+/// Type of relation between two entities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RelationKind {
+    /// Entity A defines Entity B (e.g. File -> Function)
+    Defines,
+    /// Entity A calls Entity B (e.g. Function -> Function)
+    Calls,
+    /// Entity A imports Entity B (e.g. File -> Crate)
+    Imports,
+    /// General relationship
+    Related,
+}
+
+impl std::fmt::Display for RelationKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Defines => write!(f, "defines"),
+            Self::Calls => write!(f, "calls"),
+            Self::Imports => write!(f, "imports"),
+            Self::Related => write!(f, "related"),
+        }
+    }
+}
+
+impl RelationKind {
+    /// Parse from string.
+    pub fn from_str_lossy(s: &str) -> Self {
+        match s {
+            "defines" => Self::Defines,
+            "calls" => Self::Calls,
+            "imports" => Self::Imports,
+            "related" => Self::Related,
+            _ => Self::Related,
+        }
+    }
+}
+
 /// An edge connecting a turn to an entity it mentions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnEntityEdge {
@@ -120,6 +158,17 @@ pub struct TurnEntityEdge {
     pub entity_id: String,
     /// How relevant the entity is to this turn (0.0–1.0)
     pub relevance: f32,
+}
+
+/// An edge connecting two entities.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityRelation {
+    /// Source entity ID
+    pub from_entity_id: String,
+    /// Target entity ID
+    pub to_entity_id: String,
+    /// Type of relation
+    pub kind: RelationKind,
 }
 
 /// A turn retrieved by the graph search, with scoring metadata.
@@ -166,6 +215,17 @@ pub struct ExtractedEntity {
     pub kind: EntityKind,
     /// Relevance to the source turn (0.0–1.0)
     pub relevance: f32,
+}
+
+/// An extracted relation between two entities (before persistence).
+#[derive(Debug, Clone)]
+pub struct ExtractedRelation {
+    /// Source entity name
+    pub from_entity: String,
+    /// Target entity name
+    pub to_entity: String,
+    /// Type of relation
+    pub kind: RelationKind,
 }
 
 #[cfg(test)]

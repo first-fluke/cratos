@@ -228,11 +228,7 @@ impl EncryptedFileBackend {
         }
     }
 
-    pub fn delete(
-        credential_store: &CredentialStore,
-        service: &str,
-        account: &str,
-    ) -> Result<()> {
+    pub fn delete(credential_store: &CredentialStore, service: &str, account: &str) -> Result<()> {
         let key = credential_key(service, account);
 
         // Remove from cache

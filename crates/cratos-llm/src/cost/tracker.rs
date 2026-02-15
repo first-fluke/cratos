@@ -2,7 +2,9 @@
 //!
 //! This module contains the CostTracker for monitoring LLM usage.
 
-use super::pricing::{default_pricing, ModelPricing, DEFAULT_INPUT_COST_PER_MILLION, DEFAULT_OUTPUT_COST_PER_MILLION};
+use super::pricing::{
+    default_pricing, ModelPricing, DEFAULT_INPUT_COST_PER_MILLION, DEFAULT_OUTPUT_COST_PER_MILLION,
+};
 use super::record::{ModelStats, ProviderStats, UsageRecord, UsageStats};
 use super::report::{calculate_savings_potential, CostReport};
 use chrono::{DateTime, Utc};
