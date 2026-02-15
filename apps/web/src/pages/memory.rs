@@ -42,6 +42,8 @@ struct GraphEdge {
     target: String,
     #[serde(default)]
     weight: u32,
+    #[serde(default)]
+    kind: String,
 }
 
 /// Complete graph data
@@ -184,6 +186,21 @@ pub fn Memory() -> impl IntoView {
     }
 }
 
+/// Get theme-aware color for entity kinds
+fn get_entity_color(kind: &str) -> &'static str {
+    match kind.to_lowercase().as_str() {
+        "file" | "module" => "var(--color-info)",
+        "function" | "method" => "var(--color-success)",
+        "crate" | "package" => "#a855f7", // Purple
+        "tool" | "action" => "var(--color-warning)",
+        "error" | "issue" => "var(--color-error)",
+        "config" | "setting" => "#ec4899", // Pink
+        "concept" | "thought" => "#6366f1", // Indigo
+        "persona" | "user" => "#f59e0b", // Amber
+        _ => "var(--color-primary-600)",
+    }
+}
+
 /// Force-directed graph visualization
 #[component]
 fn ForceGraph(
@@ -242,7 +259,6 @@ fn ForceGraph(
                 });
             }
         }
-        gloo_console::log!("Initialized positions for", ns.len(), "nodes. Width:", w, "Height:", h);
     });
 
     let node_positions_anim = node_positions.clone();
@@ -405,7 +421,6 @@ fn ForceGraph(
     };
     
     // Resize Observer
-    // Resize Observer
     create_effect(move |_| {
          if let Some(div) = container_ref.get() {
             if resize_observer.get_untracked().is_some() { return; }
@@ -421,7 +436,6 @@ fn ForceGraph(
                         if w > 0.0 && h > 0.0 {
                             set_w.set(w);
                             set_h.set(h);
-                            gloo_console::log!("ForceGraph Rezized:", w, h);
                         }
                     }
                 }
@@ -431,8 +445,6 @@ fn ForceGraph(
                 observer.observe(&div);
                 set_resize_observer.set(Some(observer));
                 set_resize_closure.set(Some(closure));
-            } else {
-                gloo_console::error!("Failed to create ResizeObserver");
             }
         }
     });
@@ -495,12 +507,47 @@ fn ForceGraph(
                         key=|(e, ..)| format!("{}-{}", e.source, e.target)
                         let:edge_data
                     >
-                        <line
-                            x1=edge_data.1 y1=edge_data.2 x2=edge_data.3 y2=edge_data.4
-                            stroke="rgba(100, 116, 139, 0.3)"
-                            stroke-width="1.5"
-                            class="transition-opacity"
-                        />
+                        {
+                            let (e, x1, y1, x2, y2) = edge_data;
+                            let mid_x = (x1 + x2) / 2.0;
+                            let mid_y = (y1 + y2) / 2.0;
+                            let angle = (y2 - y1).atan2(x2 - x1) * 180.0 / std::f64::consts::PI;
+                            
+                            view! {
+                                <g class="transition-opacity">
+                                    <line
+                                        x1=x1 y1=y1 x2=x2 y2=y2
+                                        stroke="rgba(100, 116, 139, 0.3)"
+                                        stroke-width="1.5"
+                                    />
+                                    {
+                                        let text_angle = if angle > 90.0 || angle < -90.0 { angle + 180.0 } else { angle };
+                                        let label = e.kind.clone();
+                                        let label_width = (label.len() as f64 * 6.0).max(30.0);
+                                        view! {
+                                            <g transform=format!("translate({}, {}) rotate({})", mid_x, mid_y, text_angle)>
+                                                // Background for label to improve readability
+                                                <rect 
+                                                    x=-(label_width / 2.0) y="-12" 
+                                                    width=label_width height="10" 
+                                                    fill="rgba(10, 10, 15, 0.8)" 
+                                                    rx="2"
+                                                />
+                                                <text
+                                                    y="-5"
+                                                    text-anchor="middle"
+                                                    font-size="8"
+                                                    fill="rgba(255, 255, 255, 0.7)"
+                                                    class="pointer-events-none select-none font-mono tracking-tight"
+                                                >
+                                                    {label}
+                                                </text>
+                                            </g>
+                                        }
+                                    }
+                                </g>
+                            }
+                        }
                     </For>
 
                     // Nodes
@@ -513,14 +560,8 @@ fn ForceGraph(
                             let (node, x, y) = data;
                             let id = node.id.clone();
                             let is_selected = selected_node_id.get() == Some(id.clone());
-                            // Use semantic colors
-                            let color = match node.kind.as_str() {
-                                "file" => "var(--color-info)",
-                                "function" => "var(--color-success)",
-                                "tool" => "var(--color-warning)",
-                                "error" => "var(--color-error)",
-                                _ => "var(--color-primary-600)",
-                            };
+                            // Use semantic colors based on EntityKind
+                            let color = get_entity_color(&node.kind);
                             let radius = if is_selected { 16.0 } else { 12.0 + (node.mention_count as f64).sqrt() * 2.0 };
                             
                             let on_mousedown = on_mouse_down_node_template.clone();
@@ -565,12 +606,16 @@ fn ForceGraph(
 
             // Legend
             <div class="absolute bottom-6 right-6 bg-black/60 backdrop-blur border border-white/10 rounded-xl p-4 pointer-events-auto">
-                <div class="text-[10px] font-bold text-white/50 uppercase mb-3">"Semantic Types"</div>
+                <div class="text-[10px] font-bold text-white/50 uppercase mb-3">"Semantic Entities"</div>
                 <div class="grid grid-cols-2 gap-x-6 gap-y-2">
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-info shadow-[0_0_5px_var(--color-info)]"></div><span class="text-xs text-white/80">"File"</span></div>
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-success shadow-[0_0_5px_var(--color-success)]"></div><span class="text-xs text-white/80">"Function"</span></div>
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-info shadow-[0_0_5px_var(--color-info)]"></div><span class="text-xs text-white/80">"File/Mod"</span></div>
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-success shadow-[0_0_5px_var(--color-success)]"></div><span class="text-xs text-white/80">"Func/Meth"</span></div>
                     <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-warning shadow-[0_0_5px_var(--color-warning)]"></div><span class="text-xs text-white/80">"Tool"</span></div>
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_5px_#a855f7]"></div><span class="text-xs text-white/80">"System"</span></div>
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-error shadow-[0_0_5px_var(--color-error)]"></div><span class="text-xs text-white/80">"Error"</span></div>
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#a855f7] shadow-[0_0_5px_#a855f7]"></div><span class="text-xs text-white/80">"Crate"</span></div>
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#ec4899] shadow-[0_0_5px_#ec4899]"></div><span class="text-xs text-white/80">"Config"</span></div>
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#6366f1] shadow-[0_0_5px_#6366f1]"></div><span class="text-xs text-white/80">"Concept"</span></div>
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#f59e0b] shadow-[0_0_5px_#f59e0b]"></div><span class="text-xs text-white/80">"Persona"</span></div>
                 </div>
             </div>
             

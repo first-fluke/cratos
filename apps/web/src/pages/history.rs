@@ -3,6 +3,7 @@
 //! Displays execution history from /api/v1/executions.
 
 use leptos::*;
+use leptos_router::A;
 use serde::Deserialize;
 use uuid::Uuid;
 use wasm_bindgen::JsCast;
@@ -334,12 +335,12 @@ fn ExecutionRow(execution: Execution) -> impl IntoView {
                 {duration_display}
             </td>
             <td class="px-6 py-4 text-right">
-                <a
+                <A
                     href={format!("/history/{}", exec_id)}
                     class="text-theme-primary hover:text-theme-primary/80 text-sm font-medium mr-4 transition-colors"
                 >
                     "View"
-                </a>
+                </A>
                 <button
                     class="text-theme-muted hover:text-theme-text-primary text-sm transition-colors"
                     on:click=move |_| {

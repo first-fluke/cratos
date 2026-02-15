@@ -5,7 +5,7 @@ use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
 
-use crate::pages::{Chat, Dashboard, History, Memory, Personas, Settings, Tools};
+use crate::pages::{Chat, Dashboard, Docs, History, HistoryDetail, Memory, Personas, Settings, Tools};
 
 /// Theme provider context
 #[derive(Clone, Copy)]
@@ -63,10 +63,12 @@ pub fn App() -> impl IntoView {
                         <Route path="/dashboard" view=Dashboard />
                         <Route path="/chat" view=Chat />
                         <Route path="/chat/:session_id" view=Chat />
+                        <Route path="/history/:id" view=HistoryDetail />
                         <Route path="/history" view=History />
                         <Route path="/personas" view=Personas />
                         <Route path="/memory" view=Memory />
                         <Route path="/tools" view=Tools />
+                        <Route path="/docs" view=Docs />
                         <Route path="/settings" view=Settings />
                         <Route path="/*any" view=NotFound />
                     </Routes>

@@ -1,6 +1,7 @@
 //! Card Components
 
 use leptos::*;
+use leptos_router::A;
 
 /// Generic card component with glassmorphism support
 #[component]
@@ -134,9 +135,9 @@ where
 
     match href {
         Some(link) => view! {
-            <a href=link class=base_class>
+            <A href=link class=base_class>
                 {content}
-            </a>
+            </A>
         }.into_view(),
         None => view! {
             <div class=base_class>

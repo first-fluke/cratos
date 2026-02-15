@@ -18,30 +18,40 @@ pub struct PersonaSummary {
     pub domain: String,
     #[serde(default, alias = "rating_score")]
     pub rating: Option<f32>,
-    #[serde(default, alias = "objectivesCount")]
+    #[serde(default, alias = "objectives_count", alias = "objectivesCount")]
     pub objectives_count: usize,
-    #[serde(default, alias = "questsCompleted")]
+    #[serde(default, alias = "quests_completed", alias = "questsCompleted")]
     pub quests_completed: usize,
-    #[serde(default, alias = "questsTotal")]
+    #[serde(default, alias = "quests_total", alias = "questsTotal")]
     pub quests_total: usize,
-    #[serde(default, alias = "skillCount")]
+    #[serde(default, alias = "skill_count", alias = "skillCount")]
     pub skill_count: usize,
+    // Fallback list fields
+    #[serde(default)]
+    pub objectives: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub quests: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub skills: Option<Vec<serde_json::Value>>,
 }
 
 /// API response
 #[derive(Debug, Clone, Deserialize, Default)]
 struct ApiResponse {
     #[serde(default)]
-    #[allow(dead_code)]
     success: bool,
     #[serde(default)]
     data: Vec<PersonaSummary>,
+    #[serde(default)]
+    error: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 struct PersonaDetailData {
     pub persona: PersonaInfo,
+    #[serde(default)]
     pub chronicle: Option<Chronicle>,
+    #[serde(default)]
     pub skills: Vec<String>,
 }
 
@@ -54,10 +64,31 @@ struct PersonaInfo {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+struct Quest {
+    pub description: String,
+    pub completed: bool,
+    #[serde(alias = "completedAt")]
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct ChronicleEntry {
+    pub timestamp: String,
+    pub achievement: String,
+    #[serde(alias = "lawReference")]
+    pub law_reference: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
 struct Chronicle {
+    #[serde(alias = "personaName")]
+    pub persona_name: String,
+    pub level: u8,
+    pub status: String,
     pub rating: Option<f32>,
-    pub objectives: Vec<String>, // Simplified for display
-    pub quests: Vec<String>, // Simplified
+    pub objectives: Vec<String>,
+    pub quests: Vec<Quest>,
+    pub log: Vec<ChronicleEntry>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -219,12 +250,12 @@ pub fn Personas() -> impl IntoView {
                                                 </h3>
                                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
                                                     <For
-                                                        each=move || skills_vec.clone()
-                                                        key=|s| s.clone()
-                                                        let:skill
+                                                        each=move || skills_vec.clone().into_iter().enumerate()
+                                                        key=|(i, _)| *i
+                                                        let:skill_tuple
                                                     >
                                                         <div class="px-3 py-2 bg-theme-elevated rounded border border-theme-border-default text-sm flex items-center justify-between group hover:border-theme-info/50 transition-colors">
-                                                            <span>{skill}</span>
+                                                            <span>{skill_tuple.1}</span>
                                                             <span class="opacity-0 group-hover:opacity-100 text-theme-info text-xs">"READY"</span>
                                                         </div>
                                                     </For>
@@ -234,19 +265,99 @@ pub fn Personas() -> impl IntoView {
                                                 </div>
                                             </div>
 
-                                            // Chronicle Summary (Placeholder if empty)
+                                            // Chronicle Summary (Detailed)
                                             <div>
                                                 <h3 class="text-lg font-bold mb-3 flex items-center gap-2">
                                                     <span class="w-2 h-2 rounded-full bg-theme-success"></span>
-                                                    "Chronicle Log"
+                                                    "Chronicle & Log"
                                                 </h3>
-                                                <div class="bg-black/30 rounded-xl p-4 font-mono text-xs text-theme-secondary h-32 overflow-y-auto">
-                                                    <div>"// Recent activity log"</div>
-                                                    <div>"// Accessing secure archives..."</div>
-                                                    {if data.chronicle.is_none() { 
-                                                        view! { <div>"No chronicle data available."</div> }.into_view()
+                                                <div class="space-y-4">
+                                                    {if let Some(chronicle) = data.chronicle.clone() {
+                                                        let objectives = chronicle.objectives.clone();
+                                                        let quests = chronicle.quests.clone();
+                                                        let logs = chronicle.log.clone();
+                                                        
+                                                        let objectives_empty = objectives.is_empty();
+                                                        let quests_empty = quests.is_empty();
+                                                        let logs_empty = logs.is_empty();
+                                                        
+                                                        view! {
+                                                            <div class="space-y-6">
+                                                                // Objectives
+                                                                <div class="space-y-2">
+                                                                    <div class="text-xs font-bold text-theme-muted uppercase tracking-wider">"Core Objectives"</div>
+                                                                    <div class="flex flex-wrap gap-2">
+                                                                        <For
+                                                                            each=move || objectives.clone()
+                                                                            key=|o| o.clone()
+                                                                            let:obj
+                                                                        >
+                                                                            <span class="px-2 py-1 bg-theme-success/10 text-theme-success border border-theme-success/20 rounded text-xs">
+                                                                                {obj}
+                                                                            </span>
+                                                                        </For>
+                                                                        <Show when=move || objectives_empty>
+                                                                            <span class="text-theme-muted text-xs italic">"No objectives set."</span>
+                                                                        </Show>
+                                                                    </div>
+                                                                </div>
+
+                                                                // Quests
+                                                                <div class="space-y-2">
+                                                                    <div class="text-xs font-bold text-theme-muted uppercase tracking-wider">"Active Quests"</div>
+                                                                    <div class="grid grid-cols-1 gap-2">
+                                                                        <For
+                                                                            each=move || quests.clone()
+                                                                            key=|q| q.description.clone()
+                                                                            let:quest
+                                                                        >
+                                                                            <div class="flex items-center gap-3 p-2 bg-black/20 rounded border border-theme-border-default/50 text-xs">
+                                                                                <div class={format!("w-1.5 h-1.5 rounded-full {}", if quest.completed { "bg-theme-success" } else { "bg-theme-warning animate-pulse" })}></div>
+                                                                                <span class={if quest.completed { "line-through text-theme-muted" } else { "text-theme-secondary" }}>
+                                                                                    {quest.description}
+                                                                                </span>
+                                                                            </div>
+                                                                        </For>
+                                                                        <Show when=move || quests_empty>
+                                                                            <div class="text-theme-muted text-xs italic">"No quests in progress."</div>
+                                                                        </Show>
+                                                                    </div>
+                                                                </div>
+
+                                                                // Log
+                                                                <div class="space-y-2">
+                                                                    <div class="text-xs font-bold text-theme-muted uppercase tracking-wider">"Recent Achievements"</div>
+                                                                    <div class="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                                                                        <For
+                                                                            each=move || logs.clone()
+                                                                            key=|l| format!("{}-{}", l.timestamp, l.achievement)
+                                                                            let:entry
+                                                                        >
+                                                                            <div class="p-2 bg-theme-elevated rounded border-l-2 border-theme-info text-xs">
+                                                                                <div class="flex justify-between mb-1">
+                                                                                    <span class="text-theme-info font-mono">{entry.timestamp.split('T').next().unwrap_or("").to_string()}</span>
+                                                                                    {if let Some(law) = entry.law_reference {
+                                                                                        view! { <span class="text-purple-400">"Article " {law}</span> }.into_view()
+                                                                                    } else {
+                                                                                        view! { }.into_view()
+                                                                                    }}
+                                                                                </div>
+                                                                                <div class="text-theme-primary">{entry.achievement}</div>
+                                                                            </div>
+                                                                        </For>
+                                                                        <Show when=move || logs_empty>
+                                                                            <div class="text-theme-muted text-xs italic text-center py-4">"No logs recorded yet."</div>
+                                                                        </Show>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        }.into_view()
                                                     } else {
-                                                        view! { <div>"Chronicle sync active. Stats updated."</div> }.into_view()
+                                                        view! {
+                                                            <div class="bg-black/30 rounded-xl p-4 font-mono text-xs text-theme-secondary h-32 flex items-center justify-center italic">
+                                                                "No chronicle data available for this persona."
+                                                            </div>
+                                                        }.into_view()
                                                     }}
                                                 </div>
                                             </div>
@@ -317,81 +428,198 @@ where F: Fn() + 'static + Clone
         _ => "bg-theme-muted",
     };
 
-    let rating_display = persona.rating.unwrap_or(0.0);
+        let rating_display = persona.rating.unwrap_or(0.0);
+
+        
+
+        // Fallback counts from lists if needed
+
+        let objectives_display = if persona.objectives_count > 0 {
+
+            persona.objectives_count
+
+        } else {
+
+            persona.objectives.as_ref().map(|l| l.len()).unwrap_or(0)
+
+        };
+
     
-    // Quest Progress
-    let quest_pct = if persona.quests_total > 0 {
-        (persona.quests_completed as f32 / persona.quests_total as f32) * 100.0
-    } else {
-        0.0
-    };
 
-    view! {
-        <div 
-            class="group relative bg-theme-card hover:bg-theme-elevated transition-all duration-300 rounded-2xl border border-theme-border-default hover:border-theme-border-hover overflow-hidden shadow-xl hover:shadow-2xl hover:-translate-y-1 cursor-pointer"
-            on:click=move |_| on_click()
-        >
-            // Decorative background glow
-            <div class={format!("absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-transparent to-current opacity-5 rounded-bl-full pointer-events-none {}", level_color)}></div>
+        let quests_total_display = if persona.quests_total > 0 {
 
-            <div class="p-6 space-y-6">
-                // Header
-                <div class="flex items-start justify-between">
-                    <div class="flex items-center gap-4">
-                        // Avatar placeholder
-                        <div class={format!("w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold bg-theme-base border {}", border_color)}>
-                            <span class={level_color}>{persona.name.chars().next().unwrap_or('?')}</span>
-                        </div>
-                        <div>
-                            <h3 class="text-xl font-bold text-theme-primary">{persona.name.clone()}</h3>
-                            <div class="flex items-center gap-2 text-sm text-theme-secondary">
-                                <span>{persona.role}</span>
-                                <span class="text-theme-muted">"·"</span>
-                                <span>{persona.domain}</span>
+            persona.quests_total
+
+        } else {
+
+            persona.quests.as_ref().map(|l| l.len()).unwrap_or(0)
+
+        };
+
+    
+
+        let skills_display = if persona.skill_count > 0 {
+
+            persona.skill_count
+
+        } else {
+
+            persona.skills.as_ref().map(|l| l.len()).unwrap_or(0)
+
+        };
+
+    
+
+        // Quest Progress
+
+        let quest_pct = if quests_total_display > 0 {
+
+            (persona.quests_completed as f32 / quests_total_display as f32) * 100.0
+
+        } else {
+
+            0.0
+
+        };
+
+    
+
+        view! {
+
+            <div 
+
+                class="group relative bg-theme-card hover:bg-theme-elevated transition-all duration-300 rounded-2xl border border-theme-border-default hover:border-theme-border-hover overflow-hidden shadow-xl hover:shadow-2xl hover:-translate-y-1 cursor-pointer"
+
+                on:click=move |_| on_click()
+
+            >
+
+                // Decorative background glow
+
+                <div class={format!("absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-transparent to-current opacity-5 rounded-bl-full pointer-events-none {}", level_color)}></div>
+
+    
+
+                <div class="p-6 space-y-6">
+
+                    // Header
+
+                    <div class="flex items-start justify-between">
+
+                        <div class="flex items-center gap-4">
+
+                            // Avatar placeholder
+
+                            <div class={format!("w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold bg-theme-base border {}", border_color)}>
+
+                                <span class={level_color}>{persona.name.chars().next().unwrap_or('?')}</span>
+
                             </div>
+
+                            <div>
+
+                                <h3 class="text-xl font-bold text-theme-primary">{persona.name.clone()}</h3>
+
+                                <div class="flex items-center gap-2 text-sm text-theme-secondary">
+
+                                    <span>{persona.role}</span>
+
+                                    <span class="text-theme-muted">"·"</span>
+
+                                    <span>{persona.domain}</span>
+
+                                </div>
+
+                            </div>
+
                         </div>
+
+                        <div class="text-right">
+
+                            <div class={format!("text-2xl font-black {}", level_color)}>
+
+                                "Lv " {persona.level}
+
+                            </div>
+
+                            <div class="flex items-center justify-end gap-1.5 mt-1">
+
+                                <div class={format!("w-2 h-2 rounded-full {}", status_indicator)}></div>
+
+                                <span class="text-xs font-medium text-theme-secondary uppercase">{persona.status}</span>
+
+                            </div>
+
+                        </div>
+
                     </div>
-                    <div class="text-right">
-                        <div class={format!("text-2xl font-black {}", level_color)}>
-                            "Lv " {persona.level}
+
+    
+
+                    // Stats Grid
+
+                    <div class="grid grid-cols-3 gap-2 py-2">
+
+                        <div class="bg-theme-base/50 rounded-lg p-3 text-center border border-theme-border-default">
+
+                            <div class="text-lg font-bold text-theme-primary">{format!("{:.1}", rating_display)}</div>
+
+                            <div class="text-[10px] uppercase tracking-wider text-theme-muted">"Rating"</div>
+
                         </div>
-                        <div class="flex items-center justify-end gap-1.5 mt-1">
-                            <div class={format!("w-2 h-2 rounded-full {}", status_indicator)}></div>
-                            <span class="text-xs font-medium text-theme-secondary uppercase">{persona.status}</span>
+
+                        <div class="bg-theme-base/50 hover:bg-theme-elevated transition-colors rounded-lg p-3 text-center border border-theme-border-default block">
+
+                            <div class="text-lg font-bold text-theme-primary">{skills_display}</div>
+
+                            <div class="text-[10px] uppercase tracking-wider text-theme-muted">"Skills"</div>
+
                         </div>
+
+                        <div class="bg-theme-base/50 rounded-lg p-3 text-center border border-theme-border-default">
+
+                            <div class="text-lg font-bold text-theme-primary">{objectives_display}</div>
+
+                            <div class="text-[10px] uppercase tracking-wider text-theme-muted">"Goals"</div>
+
+                        </div>
+
                     </div>
+
+    
+
+                    // Quest Progress Bar
+
+                    <div class="space-y-2">
+
+                        <div class="flex justify-between text-xs font-medium">
+
+                            <span class="text-theme-secondary">"Quest Progress"</span>
+
+                            <span class="text-theme-primary">{format!("{}/{}", persona.quests_completed, quests_total_display)}</span>
+
+                        </div>
+
+                        <div class="h-2 bg-theme-base rounded-full overflow-hidden">
+
+                            <div 
+
+                                class="h-full bg-gradient-to-r from-theme-info to-theme-success transition-all duration-500 rounded-full"
+
+                                style=format!("width: {}%", quest_pct)
+
+                            ></div>
+
+                        </div>
+
+                    </div>
+
                 </div>
 
-                // Stats Grid
-                <div class="grid grid-cols-3 gap-2 py-2">
-                    <div class="bg-theme-base/50 rounded-lg p-3 text-center border border-theme-border-default">
-                        <div class="text-lg font-bold text-theme-primary">{format!("{:.1}", rating_display)}</div>
-                        <div class="text-[10px] uppercase tracking-wider text-theme-muted">"Rating"</div>
-                    </div>
-                    <div class="bg-theme-base/50 hover:bg-theme-elevated transition-colors rounded-lg p-3 text-center border border-theme-border-default block">
-                        <div class="text-lg font-bold text-theme-primary">{persona.skill_count}</div>
-                        <div class="text-[10px] uppercase tracking-wider text-theme-muted">"Skills"</div>
-                    </div>
-                    <div class="bg-theme-base/50 rounded-lg p-3 text-center border border-theme-border-default">
-                        <div class="text-lg font-bold text-theme-primary">{persona.objectives_count}</div>
-                        <div class="text-[10px] uppercase tracking-wider text-theme-muted">"Goals"</div>
-                    </div>
-                </div>
-
-                // Quest Progress Bar
-                <div class="space-y-2">
-                    <div class="flex justify-between text-xs font-medium">
-                        <span class="text-theme-secondary">"Quest Progress"</span>
-                        <span class="text-theme-primary">{format!("{}/{}", persona.quests_completed, persona.quests_total)}</span>
-                    </div>
-                    <div class="h-2 bg-theme-base rounded-full overflow-hidden">
-                        <div 
-                            class="h-full bg-gradient-to-r from-theme-info to-theme-success transition-all duration-500 rounded-full"
-                            style=format!("width: {}%", quest_pct)
-                        ></div>
-                    </div>
-                </div>
             </div>
-        </div>
+
+        }
+
     }
-}
+
+    

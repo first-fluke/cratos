@@ -25,6 +25,10 @@ rewrite = "/api/"
 backend = "http://127.0.0.1:19527/api/"
 
 [[proxy]]
+rewrite = "/docs/"
+backend = "http://127.0.0.1:19527/docs/"
+
+[[proxy]]
 rewrite = "/health/"
 backend = "http://127.0.0.1:19527/health/"
 

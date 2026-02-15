@@ -72,11 +72,36 @@ struct ChannelsConfig {
 /// Settings page
 #[component]
 pub fn Settings() -> impl IntoView {
-    let (config, set_config) = create_signal(ServerConfig::default());
     let (loading, set_loading) = create_signal(true);
     let (saving, set_saving) = create_signal(false);
     let (error, set_error) = create_signal::<Option<String>>(None);
     let (success, set_success) = create_signal(false);
+
+    // Config resource
+    let config_resource = create_resource(
+        || (),
+        |_| async move {
+            let client = ApiClient::new();
+            match client.get::<ApiResponse<ServerConfig>>("/api/v1/config").await {
+                Ok(resp) => Ok(resp.data),
+                Err(e) => Err(e),
+            }
+        },
+    );
+
+    // Derived signal for config
+    let (config, set_config) = create_signal(ServerConfig::default());
+
+    // Sync config signal when resource loads
+    create_effect(move |_| {
+        if let Some(Ok(data)) = config_resource.get() {
+            set_config.set(data);
+            set_loading.set(false);
+        } else if let Some(Err(e)) = config_resource.get() {
+            set_error.set(Some(e));
+            set_loading.set(false);
+        }
+    });
 
     // UI preferences (localStorage)
     let initial_prefs: UiPreferences = LocalStorage::get(UI_PREFS_KEY).unwrap_or_default();
@@ -99,23 +124,6 @@ pub fn Settings() -> impl IntoView {
         }
     };
 
-    // Fetch config on mount
-    create_effect(move |_| {
-        spawn_local(async move {
-            let client = ApiClient::new();
-            match client.get::<ApiResponse<ServerConfig>>("/api/v1/config").await {
-                Ok(resp) => {
-                    set_config.set(resp.data);
-                }
-                Err(e) => {
-                    gloo_console::error!("Failed to fetch config:", e.clone());
-                    set_error.set(Some(e));
-                }
-            }
-            set_loading.set(false);
-        });
-    });
-
     // Save handler
     let save_config = move |_| {
         let cfg = config.get();
@@ -125,10 +133,21 @@ pub fn Settings() -> impl IntoView {
             set_success.set(false);
 
             let client = ApiClient::new();
-            match client.put::<ServerConfig, _>("/api/v1/config", &cfg).await {
-                Ok(_) => {
-                    set_success.set(true);
-                    gloo_console::log!("Config saved");
+            // Wrap in ApiResponse if the server returns success: true inside the response
+            match client.put::<ApiResponse<ServerConfig>, _>("/api/v1/config", &cfg).await {
+                Ok(resp) => {
+                    if resp.success {
+                        set_success.set(true);
+                        gloo_console::log!("Config saved successfully");
+                        
+                        // Refetch the resource to ensure UI is in sync with server state
+                        config_resource.refetch();
+                        
+                        // Auto-hide success message after 3 seconds
+                        set_timeout(move || set_success.set(false), std::time::Duration::from_secs(3));
+                    } else {
+                        set_error.set(Some("Server failed to save configuration".to_string()));
+                    }
                 }
                 Err(e) => {
                     gloo_console::error!("Failed to save config:", e.clone());
@@ -186,11 +205,14 @@ pub fn Settings() -> impl IntoView {
                         <SettingItem label="Language" description="Interface language">
                             <select
                                 class="px-3 py-2 bg-theme-card text-theme-primary border border-theme-default rounded-lg focus:outline-none focus:border-theme-info"
-                                prop:value=move || ui_prefs.get().language.clone()
+                                prop:value=move || config.get().language.clone()
                                 on:change=move |ev| {
                                     let value = event_target_value(&ev);
+                                    set_config.update(|c| c.language = value.clone());
+                                    // Also update local prefs for immediate UI feedback if needed, 
+                                    // but server config is the source of truth for persistence.
                                     let mut prefs = ui_prefs.get();
-                                    prefs.language = value;
+                                    prefs.language = value; // Keep local sync just in case
                                     save_ui_prefs(prefs);
                                 }
                             >
@@ -205,25 +227,27 @@ pub fn Settings() -> impl IntoView {
                         <SettingItem label="Default Provider" description="Primary LLM provider for requests">
                             <select
                                 class="px-3 py-2 bg-theme-card text-theme-primary border border-theme-default rounded-lg focus:outline-none focus:border-theme-info"
+                                prop:value=move || config.get().llm_provider.clone()
                                 on:change=move |ev| {
                                     let value = event_target_value(&ev);
                                     set_config.update(|c| c.llm_provider = value);
                                 }
                             >
-                                <option value="" selected=move || config.get().llm_provider.is_empty()>"Auto"</option>
-                                <option value="groq" selected=move || config.get().llm_provider == "groq">"Groq (Free)"</option>
-                                <option value="deepseek" selected=move || config.get().llm_provider == "deepseek">"DeepSeek (Low Cost)"</option>
-                                <option value="anthropic" selected=move || config.get().llm_provider == "anthropic">"Anthropic (Premium)"</option>
-                                <option value="openai" selected=move || config.get().llm_provider == "openai">"OpenAI"</option>
-                                <option value="gemini" selected=move || config.get().llm_provider == "gemini">"Gemini"</option>
-                                <option value="ollama" selected=move || config.get().llm_provider == "ollama">"Ollama (Local)"</option>
+                                <option value="">"Auto"</option>
+                                <option value="google_pro">"Google AI Pro (Gemini)"</option>
+                                <option value="gemini">"Google AI (Free)"</option>
+                                <option value="openai">"OpenAI"</option>
+                                <option value="anthropic">"Anthropic"</option>
+                                <option value="groq">"Groq (Free)"</option>
+                                <option value="deepseek">"DeepSeek (Low Cost)"</option>
+                                <option value="ollama">"Ollama (Local)"</option>
                             </select>
                         </SettingItem>
                         <SettingItem label="Model" description="Specific model to use (leave empty for provider default)">
                             <input
                                 type="text"
                                 class="px-3 py-2 bg-theme-card text-theme-primary border border-theme-default rounded-lg focus:outline-none focus:border-theme-info w-48 placeholder-theme-muted"
-                                placeholder="e.g., gpt-4o-mini"
+                                placeholder="e.g., gemini-2.0-flash"
                                 prop:value=move || config.get().llm_model.clone()
                                 on:input=move |ev| {
                                     let value = event_target_value(&ev);
@@ -260,19 +284,34 @@ pub fn Settings() -> impl IntoView {
                         </SettingItem>
                     </SettingsSection>
 
+                    <SettingsSection title="Integrations" id="integrations">
+                        <SettingItem label="Google AI Pro" description="Connect your Google Cloud account for higher quotas">
+                            <a
+                                href="/api/auth/google/login?pro=true"
+                                class="px-4 py-2 bg-theme-elevated hover:bg-theme-button-hover text-theme-primary rounded-lg border border-theme-border-default transition-colors flex items-center gap-2"
+                            >
+                                <svg class="w-5 h-5" viewBox="0 0 24 24">
+                                    <path fill="currentColor" d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
+                                </svg>
+                                "Connect"
+                            </a>
+                        </SettingItem>
+                    </SettingsSection>
+
                     <SettingsSection title="Security" id="security">
                         <SettingItem label="Approval Mode" description="When to require user approval for tool execution">
                             <select
                                 class="px-3 py-2 bg-theme-card text-theme-primary border border-theme-default rounded-lg focus:outline-none focus:border-theme-info"
+                                prop:value=move || config.get().approval_mode.clone()
                                 on:change=move |ev| {
                                     let value = event_target_value(&ev);
                                     set_config.update(|c| c.approval_mode = value);
                                 }
                             >
-                                <option value="" selected=move || config.get().approval_mode.is_empty()>"Default"</option>
-                                <option value="risky_only" selected=move || config.get().approval_mode == "risky_only">"Risky Operations Only"</option>
-                                <option value="always" selected=move || config.get().approval_mode == "always">"Always"</option>
-                                <option value="never" selected=move || config.get().approval_mode == "never">"Never"</option>
+                                <option value="">"Default"</option>
+                                <option value="risky_only">"Risky Operations Only"</option>
+                                <option value="always">"Always"</option>
+                                <option value="never">"Never"</option>
                             </select>
                         </SettingItem>
                         <SettingItem label="Scheduler" description="Enable proactive scheduled tasks">
@@ -354,4 +393,3 @@ where
         </button>
     }
 }
-

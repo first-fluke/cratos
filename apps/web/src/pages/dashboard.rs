@@ -3,6 +3,7 @@
 //! Real-time dashboard with API-fetched data and premium glassmorphism aesthetic.
 
 use leptos::*;
+use leptos_router::A;
 use serde::Deserialize;
 
 use crate::api::ApiClient;
@@ -266,9 +267,9 @@ pub fn Dashboard() -> impl IntoView {
                 <div class="xl:col-span-2 space-y-6">
                     <div class="flex items-center justify-between px-4">
                         <h2 class="text-2xl font-black tracking-tight text-theme-primary uppercase">"Recent Activity"</h2>
-                        <a href="/history" class="text-xs font-black text-blue-400 hover:text-blue-300 transition-colors tracking-widest uppercase bg-blue-500/10 px-4 py-2 rounded-full border border-blue-500/20">
+                        <A href="/history" class="text-xs font-black text-blue-400 hover:text-blue-300 transition-colors tracking-widest uppercase bg-blue-500/10 px-4 py-2 rounded-full border border-blue-500/20">
                             "History →"
-                        </a>
+                        </A>
                     </div>
                     <RecentActivityGrid executions=recent_executions />
                 </div>
@@ -423,7 +424,7 @@ fn ActionButton(
     };
 
     view! {
-        <a
+        <A
             href=href
             class=format!("group flex items-center p-5 glass-premium rounded-3xl border transition-all duration-500 hover:scale-[1.03] hover:shadow-2xl {}", color_class)
         >
@@ -441,7 +442,7 @@ fn ActionButton(
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7" />
                 </svg>
             </div>
-        </a>
+        </A>
     }
 }
 
