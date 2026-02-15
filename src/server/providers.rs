@@ -85,7 +85,15 @@ pub fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<LlmRouter>> {
             info!("Registered Anthropic provider");
         }
     }
-    match GeminiConfig::from_env() {
+
+    // Gemini provider resolution
+    let preferred_gemini = match llm_config.default_provider.as_str() {
+        "google_pro" => Some("google_pro"),
+        "google" | "gemini" => Some("google"),
+        _ => None,
+    };
+
+    match GeminiConfig::from_env(preferred_gemini) {
         Ok(config) => {
             let auth_source = config.auth_source;
             cratos_llm::cli_auth::register_auth_source("gemini", auth_source);
@@ -173,7 +181,7 @@ pub fn resolve_llm_provider(llm_config: &LlmConfig) -> Result<Arc<LlmRouter>> {
 
     // Normalize provider aliases (e.g., "google" -> "gemini")
     let normalized_provider = match llm_config.default_provider.as_str() {
-        "google" => "gemini".to_string(),
+        "google" | "google_pro" => "gemini".to_string(),
         "zhipu" | "zhipuai" => "glm".to_string(),
         other => other.to_string(),
     };

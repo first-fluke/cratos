@@ -67,6 +67,8 @@ pub enum AuthSource {
     ApiKey,
     /// OAuth token from Cratos browser login
     CratosOAuth,
+    /// OAuth token from Cratos (Google AI Pro)
+    GoogleAiPro,
     /// OAuth token from Gemini CLI (Antigravity Pro)
     GeminiCli,
     /// Bearer token from Codex CLI (ChatGPT Pro/Plus)
@@ -80,6 +82,7 @@ impl std::fmt::Display for AuthSource {
         match self {
             AuthSource::ApiKey => write!(f, "API key"),
             AuthSource::CratosOAuth => write!(f, "Cratos OAuth"),
+            AuthSource::GoogleAiPro => write!(f, "Google AI Pro"),
             AuthSource::GeminiCli => write!(f, "OAuth: Gemini CLI"),
             AuthSource::CodexCli => write!(f, "Codex CLI auth"),
             AuthSource::GcloudCli => write!(f, "Google Cloud SDK (gcloud)"),
@@ -183,6 +186,11 @@ pub fn read_cratos_google_oauth() -> Option<crate::oauth::OAuthTokens> {
     crate::oauth::read_tokens(crate::oauth_config::GOOGLE_TOKEN_FILE)
 }
 
+/// Read Cratos Google AI Pro OAuth tokens from `~/.cratos/google_pro_oauth.json`.
+pub fn read_cratos_google_pro_oauth() -> Option<crate::oauth::OAuthTokens> {
+    crate::oauth::read_tokens(crate::oauth_config::GOOGLE_PRO_TOKEN_FILE)
+}
+
 /// Read Cratos OpenAI OAuth tokens from `~/.cratos/openai_oauth.json`.
 pub fn read_cratos_openai_oauth() -> Option<crate::oauth::OAuthTokens> {
     crate::oauth::read_tokens(crate::oauth_config::OPENAI_TOKEN_FILE)
@@ -191,6 +199,20 @@ pub fn read_cratos_openai_oauth() -> Option<crate::oauth::OAuthTokens> {
 /// Check Cratos Google OAuth token status.
 pub fn check_cratos_google_oauth_status() -> CratosOAuthStatus {
     match read_cratos_google_oauth() {
+        Some(tokens) => {
+            if is_token_expired(tokens.expiry_date) {
+                CratosOAuthStatus::Expired
+            } else {
+                CratosOAuthStatus::Valid
+            }
+        }
+        None => CratosOAuthStatus::NotFound,
+    }
+}
+
+/// Check Cratos Google AI Pro OAuth token status.
+pub fn check_cratos_google_pro_oauth_status() -> CratosOAuthStatus {
+    match read_cratos_google_pro_oauth() {
         Some(tokens) => {
             if is_token_expired(tokens.expiry_date) {
                 CratosOAuthStatus::Expired

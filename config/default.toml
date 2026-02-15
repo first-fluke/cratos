@@ -99,7 +99,8 @@ default_model = "claude-sonnet-4-5-20250929"
 timeout_ms = 120000
 
 [llm.gemini]
-# API key loaded from GOOGLE_API_KEY environment variable
+# API key loaded from GOOGLE_API_KEY environment variable.
+# Also supports Google AI Pro OAuth (cratos init -> google_pro).
 default_model = "gemini-2.5-flash"
 timeout_ms = 60000
 
@@ -473,25 +474,3 @@ retry_delay_secs = 30
 max_concurrent = 10
 # Enable execution logging
 logging_enabled = true
-
-# Example scheduled tasks (uncomment to use)
-# [[scheduler.tasks]]
-# name = "daily_backup_reminder"
-# description = "Send daily backup reminder at 9 AM"
-# trigger = { type = "cron", expression = "0 9 * * *" }
-# action = { type = "notification", channel = "telegram", channel_id = "YOUR_CHAT_ID", message = "Time to backup!" }
-# enabled = true
-
-# [[scheduler.tasks]]
-# name = "hourly_health_check"
-# description = "Check system health every hour"
-# trigger = { type = "interval", seconds = 3600 }
-# action = { type = "natural_language", prompt = "Check system health and report any issues" }
-# enabled = true
-
-# [[scheduler.tasks]]
-# name = "cpu_alert"
-# description = "Alert when CPU usage is high for 5 minutes"
-# trigger = { type = "system", metric = "cpu_usage", threshold = 90.0, comparison = "greater_than", duration_secs = 300 }
-# action = { type = "notification", channel = "telegram", channel_id = "YOUR_CHAT_ID", message = "CPU usage is critically high!" }
-# enabled = true

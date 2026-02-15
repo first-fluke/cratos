@@ -9,6 +9,9 @@ use crate::oauth::OAuthProviderConfig;
 /// Token filename for Google OAuth tokens.
 pub const GOOGLE_TOKEN_FILE: &str = "google_oauth.json";
 
+/// Token filename for Google AI Pro OAuth tokens.
+pub const GOOGLE_PRO_TOKEN_FILE: &str = "google_pro_oauth.json";
+
 /// Token filename for OpenAI OAuth tokens.
 pub const OPENAI_TOKEN_FILE: &str = "openai_oauth.json";
 
@@ -23,6 +26,10 @@ const GOOGLE_CLIENT_ID_BYTES: &[u8] = &[
 // "notasecret"
 const GOOGLE_CLIENT_SECRET_BYTES: &[u8] =
     &[0x21, 0x30, 0x27, 0x36, 0x30, 0x26, 0x34, 0x21, 0x3A, 0x3B];
+
+// Google AI Pro credentials now require environment variables
+// CRATOS_GOOGLE_PRO_CLIENT_ID
+// CRATOS_GOOGLE_PRO_CLIENT_SECRET
 
 fn deobfuscate(bytes: &[u8]) -> String {
     let extracted: Vec<u8> = bytes.iter().map(|b| b ^ 0x55).rev().collect();
@@ -40,17 +47,10 @@ pub fn default_google_client_secret() -> String {
 }
 
 /// Build Google OAuth2 configuration.
-///
-/// Reads `CRATOS_GOOGLE_CLIENT_ID` / `CRATOS_GOOGLE_CLIENT_SECRET` from env.
-/// If they match the credentials extracted from Gemini CLI, we treat them as "default/CLI" credentials
-/// (which require Code Assist scopes).
-/// If no env vars are present, we try to extract from Gemini CLI.
 pub fn google_oauth_config() -> OAuthProviderConfig {
-    // 1. Env vars (User override)
     let env_id = std::env::var("CRATOS_GOOGLE_CLIENT_ID").ok();
     let env_secret = std::env::var("CRATOS_GOOGLE_CLIENT_SECRET").ok();
 
-    // Try to resolve Gemini CLI credentials for comparison/fallback
     let gemini_creds = crate::gemini_auth::resolve_gemini_cli_credentials();
 
     let (client_id, client_secret, is_gemini_cli) =
@@ -69,11 +69,7 @@ pub fn google_oauth_config() -> OAuthProviderConfig {
             (default_id, default_google_client_secret(), true)
         };
 
-    // Scopes for internal/CLI IDs (Gemini CLI, gcloud SDK).
-    // Include `generative-language` for Standard API compatibility.
     let restricted_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/userinfo.email";
-
-    // Standard scopes for Custom Client IDs (User created).
     let standard_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
 
     let scopes = if is_gemini_cli {
@@ -94,6 +90,45 @@ pub fn google_oauth_config() -> OAuthProviderConfig {
             ("prompt".to_string(), "consent".to_string()),
         ],
         token_file: GOOGLE_TOKEN_FILE.to_string(),
+    }
+}
+
+/// Get Google AI Pro Client ID from environment
+pub fn google_pro_client_id() -> String {
+    std::env::var("CRATOS_GOOGLE_PRO_CLIENT_ID")
+        .unwrap_or_else(|_| String::new()) 
+}
+
+/// Get Google AI Pro Client Secret from environment
+pub fn google_pro_client_secret() -> String {
+    std::env::var("CRATOS_GOOGLE_PRO_CLIENT_SECRET")
+        .unwrap_or_else(|_| String::new())
+}
+
+/// Build Google AI Pro OAuth2 configuration.
+pub fn google_pro_oauth_config() -> OAuthProviderConfig {
+    let client_id = google_pro_client_id();
+    let client_secret = google_pro_client_secret();
+    
+    if client_id.is_empty() {
+        tracing::warn!("CRATOS_GOOGLE_PRO_CLIENT_ID is not set. OAuth flow will fail.");
+    }
+
+    // Official Gemini CLI + Standard API scopes
+    let scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
+
+    OAuthProviderConfig {
+        client_id,
+        client_secret,
+        auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
+        token_url: "https://oauth2.googleapis.com/token".to_string(),
+        scopes: scopes.to_string(),
+        redirect_path: "/oauth2callback".to_string(),
+        extra_auth_params: vec![
+            ("access_type".to_string(), "offline".to_string()),
+            ("prompt".to_string(), "consent".to_string()),
+        ],
+        token_file: GOOGLE_PRO_TOKEN_FILE.to_string(),
     }
 }
 
@@ -141,6 +176,15 @@ mod tests {
         assert!(cfg.scopes.contains("cloud-platform"));
         assert_eq!(cfg.redirect_path, "/oauth2callback");
         assert_eq!(cfg.token_file, "google_oauth.json");
+    }
+
+    #[test]
+    fn test_google_pro_config() {
+        let cfg = google_pro_oauth_config();
+        assert!(cfg.client_id.contains("apps.googleusercontent.com"));
+        assert!(!cfg.client_secret.is_empty());
+        assert!(cfg.scopes.contains("userinfo.profile"));
+        assert_eq!(cfg.token_file, "google_pro_oauth.json");
     }
 
     #[test]

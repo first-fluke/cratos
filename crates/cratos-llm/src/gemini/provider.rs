@@ -60,10 +60,41 @@ impl GeminiProvider {
     /// If CratosOAuth fails (e.g. insufficient scopes), fall back to Gemini CLI OAuth.
     pub(crate) async fn try_refresh_cli_token(&self) -> bool {
         match self.config.auth_source {
+            AuthSource::GoogleAiPro => self.try_refresh_google_pro_token().await,
             AuthSource::GeminiCli => self.try_refresh_cli_token_inner().await,
             AuthSource::CratosOAuth => self.try_cratos_to_cli_fallback().await,
             _ => false,
         }
+    }
+
+    /// Try to refresh Google AI Pro OAuth token.
+    async fn try_refresh_google_pro_token(&self) -> bool {
+        if let Some(tokens) = cli_auth::read_cratos_google_pro_oauth() {
+            if !cli_auth::is_token_expired(tokens.expiry_date) && !tokens.access_token.is_empty() {
+                // Re-read from disk and valid
+                if let Ok(mut guard) = self.refreshed_auth.lock() {
+                    *guard = Some(GeminiAuth::OAuth(tokens.access_token));
+                }
+                return true;
+            }
+
+            if let Some(ref rt) = tokens.refresh_token {
+                let config = crate::oauth_config::google_pro_oauth_config();
+                match crate::oauth::refresh_token(&config, rt).await {
+                    Ok(new_tokens) => {
+                        let _ = crate::oauth::save_tokens(&config.token_file, &new_tokens);
+                        if let Ok(mut guard) = self.refreshed_auth.lock() {
+                            *guard = Some(GeminiAuth::OAuth(new_tokens.access_token));
+                        }
+                        return true;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Google AI Pro OAuth refresh failed: {}", e);
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// CratosOAuth → Gemini CLI OAuth fallback.
@@ -120,8 +151,7 @@ impl GeminiProvider {
         if let Some(creds) = cli_auth::read_gemini_oauth() {
             if !cli_auth::is_token_expired(creds.expiry_date) && !creds.access_token.is_empty() {
                 // Check if disk token is the same as the current one
-                let is_same =
-                    matches!(self.current_auth(), GeminiAuth::OAuth(ref t) if t == &creds.access_token);
+                let is_same = matches!(self.current_auth(), GeminiAuth::OAuth(ref t) if t == &creds.access_token);
                 if is_same {
                     tracing::debug!("Disk token same as current, skipping to Tier 2");
                 } else {
@@ -211,7 +241,7 @@ impl GeminiProvider {
 
     /// Create from environment variables
     pub fn from_env() -> Result<Self> {
-        let config = GeminiConfig::from_env()?;
+        let config = GeminiConfig::from_env(None)?;
         Self::new(config)
     }
 
