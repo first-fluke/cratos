@@ -15,9 +15,9 @@ pub fn MessageBubble(
     let is_user = role == MessageRole::User;
 
     let bubble_class = if is_user {
-        "bg-blue-900/50 ml-auto"
+        "bg-blue-50 dark:bg-blue-900/50 ml-auto text-theme-primary"
     } else {
-        "bg-gray-800"
+        "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-theme-primary"
     };
 
     let align_class = if is_user { "justify-end" } else { "justify-start" };
@@ -29,9 +29,8 @@ pub fn MessageBubble(
     view! {
         <div class={format!("flex {}", align_class)}>
             <div class={format!("max-w-[80%] rounded-lg p-4 {}", bubble_class)}>
-                // Role indicator
                 <div class="flex items-center space-x-2 mb-2">
-                    <span class="text-xs font-medium text-gray-400">
+                    <span class="text-xs font-medium text-theme-muted">
                         {match role {
                             MessageRole::User => "You",
                             MessageRole::Assistant => "Cratos",

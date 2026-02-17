@@ -51,13 +51,14 @@ pub fn Chat() -> impl IntoView {
                             // Check if we're updating a streaming message
                             if let Some(idx) = msgs.iter().position(|m| m.id == execution_id) {
                                 msgs[idx].content = text.clone();
-                                msgs[idx].blocks = vec![ContentBlock::Markdown(text)];
+                                // Do NOT overwrite blocks with text! Blocks might contain images/artifacts.
+                                // Text is already in `content` which MessageBubble renders.
                             } else {
                                 msgs.push(ChatMessage {
                                     id: execution_id,
                                     role: MessageRole::Assistant,
                                     content: text.clone(),
-                                    blocks: vec![ContentBlock::Markdown(text)],
+                                    blocks: vec![], // Initialize empty blocks
                                     persona: Some(persona),
                                 });
                             }
