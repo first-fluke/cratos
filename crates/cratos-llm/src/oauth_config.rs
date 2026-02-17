@@ -69,8 +69,8 @@ pub fn google_oauth_config() -> OAuthProviderConfig {
             (default_id, default_google_client_secret(), true)
         };
 
-    let restricted_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/userinfo.email";
-    let standard_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
+    let restricted_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email";
+    let standard_scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
 
     let scopes = if is_gemini_cli {
         restricted_scopes.to_string()
@@ -110,12 +110,15 @@ pub fn google_pro_oauth_config() -> OAuthProviderConfig {
     let client_id = google_pro_client_id();
     let client_secret = google_pro_client_secret();
     
-    if client_id.is_empty() {
-        tracing::warn!("CRATOS_GOOGLE_PRO_CLIENT_ID is not set. OAuth flow will fail.");
-    }
+    let (client_id, client_secret) = if client_id.is_empty() {
+        tracing::info!("CRATOS_GOOGLE_PRO_CLIENT_ID not set. Using public Google Cloud SDK client ID (OpenClaw style).");
+        (default_google_client_id(), default_google_client_secret())
+    } else {
+        (client_id, client_secret)
+    };
 
     // Official Gemini CLI + Standard API scopes
-    let scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
+    let scopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
 
     OAuthProviderConfig {
         client_id,
