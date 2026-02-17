@@ -149,20 +149,100 @@ pub fn mask_sensitive(value: &serde_json::Value) -> serde_json::Value {
 }
 ```
 
-## 데이터베이스 스키마
+## 데이터베이스 스키마 (SQLite)
+
+> **중요**: Cratos는 PostgreSQL이 아닌 **SQLite**를 사용합니다.
 
 ```sql
-CREATE TABLE execution_events (
-    id BIGSERIAL PRIMARY KEY,
-    execution_id UUID NOT NULL,
-    user_id VARCHAR(255) NOT NULL,
-    event_type VARCHAR(50) NOT NULL,
-    event_data JSONB NOT NULL,
-    timestamp TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+-- 실행 기록 테이블
+CREATE TABLE IF NOT EXISTS executions (
+    id TEXT PRIMARY KEY,                    -- UUID
+    user_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    input_text TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', -- pending, running, completed, failed
+    created_at TEXT NOT NULL,               -- ISO 8601
+    completed_at TEXT
 );
 
-CREATE INDEX idx_execution_events_execution_id ON execution_events(execution_id);
-CREATE INDEX idx_execution_events_user_id ON execution_events(user_id);
-CREATE INDEX idx_execution_events_timestamp ON execution_events(timestamp);
+-- 이벤트 테이블
+CREATE TABLE IF NOT EXISTS execution_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    execution_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    event_data TEXT NOT NULL,               -- JSON 문자열
+    timestamp TEXT NOT NULL,                -- ISO 8601
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (execution_id) REFERENCES executions(id)
+);
+
+-- 인덱스
+CREATE INDEX IF NOT EXISTS idx_events_execution_id ON execution_events(execution_id);
+CREATE INDEX IF NOT EXISTS idx_events_user_id ON execution_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_events_timestamp ON execution_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_executions_user_id ON executions(user_id);
+CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at);
 ```
+
+## sqlx 쿼리 예시
+
+```rust
+use sqlx::SqlitePool;
+
+// 이벤트 저장
+pub async fn insert_event(
+    pool: &SqlitePool,
+    execution_id: &str,
+    user_id: &str,
+    event: &ExecutionEvent,
+) -> Result<i64> {
+    let event_type = event.event_type_name();
+    let event_data = serde_json::to_string(event)?;
+    let timestamp = Utc::now().to_rfc3339();
+
+    let result = sqlx::query!(
+        r#"
+        INSERT INTO execution_events (execution_id, user_id, event_type, event_data, timestamp)
+        VALUES (?, ?, ?, ?, ?)
+        "#,
+        execution_id,
+        user_id,
+        event_type,
+        event_data,
+        timestamp
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(result.last_insert_rowid())
+}
+
+// 실행 기록 조회
+pub async fn get_events(
+    pool: &SqlitePool,
+    execution_id: &str,
+) -> Result<Vec<ExecutionEvent>> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT event_data FROM execution_events
+        WHERE execution_id = ?
+        ORDER BY timestamp ASC
+        "#,
+        execution_id
+    )
+    .fetch_all(pool)
+    .await?;
+
+    rows.iter()
+        .map(|r| serde_json::from_str(&r.event_data))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Into::into)
+}
+```
+
+## 데이터 위치
+
+- 이벤트 DB: `~/.cratos/cratos.db`
+- 스킬 DB: `~/.cratos/skills.db`
+- 메모리 DB: `~/.cratos/memory.db`

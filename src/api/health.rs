@@ -14,7 +14,7 @@ use cratos_core::scheduler::SchedulerEngine;
 use serde::Serialize;
 use std::sync::Arc;
 
-use crate::middleware::auth::RequireAuthStrict;
+use crate::middleware::auth::{RequireAuth, RequireAuthStrict};
 
 /// Simple health response
 #[derive(Debug, Serialize)]
@@ -90,9 +90,9 @@ async fn health_check() -> Json<HealthResponse> {
     })
 }
 
-/// Detailed health check with all component statuses (requires strict authentication — never bypassed)
+/// Detailed health check with all component statuses (requires authentication, but respects global disable)
 async fn detailed_health_check(
-    RequireAuthStrict(_auth): RequireAuthStrict,
+    RequireAuth(_auth): RequireAuth,
     redis_url: Extension<String>,
     orchestrator: Extension<Arc<Orchestrator>>,
     event_bus: Extension<Arc<EventBus>>,

@@ -21,7 +21,7 @@ Ask the user to describe what they want to build. Clarify:
 - Target users
 - Core features (must-have vs nice-to-have)
 - Constraints (tech stack, existing codebase)
-- Deployment target (web, mobile, both)
+- Deployment target (server, CLI, both)
 
 ---
 
@@ -37,7 +37,7 @@ If an existing codebase exists, use MCP code analysis tools to scan:
 ## Step 3: Define API Contracts
 
 // turbo
-Design API contracts between frontend/mobile and backend. Per endpoint:
+Design API contracts for REST/WebSocket endpoints. Per endpoint:
 - Method, path, request/response schemas
 - Auth requirements, error responses
 - Save to `.agent/skills/_shared/api-contracts/`.
@@ -48,7 +48,7 @@ Design API contracts between frontend/mobile and backend. Per endpoint:
 
 // turbo
 Break down the project into actionable tasks. Each task must have:
-- Assigned agent (frontend/backend/mobile/qa/debug)
+- Assigned agent (backend/channel/llm/qa/debug)
 - Title, acceptance criteria
 - Priority (P0-P3), dependencies
 

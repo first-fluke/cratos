@@ -288,6 +288,7 @@ pub fn Settings() -> impl IntoView {
                         <SettingItem label="Google AI Pro" description="Connect your Google Cloud account for higher quotas">
                             <a
                                 href="/api/auth/google/login?pro=true"
+                                rel="external"
                                 class="px-4 py-2 bg-theme-elevated hover:bg-theme-button-hover text-theme-primary rounded-lg border border-theme-border-default transition-colors flex items-center gap-2"
                             >
                                 <svg class="w-5 h-5" viewBox="0 0 24 24">

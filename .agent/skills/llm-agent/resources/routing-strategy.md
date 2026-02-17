@@ -13,16 +13,28 @@ pub enum TaskType {
 }
 ```
 
-## 라우팅 테이블
+## 라우팅 테이블 (2026 모델)
 
-| TaskType | Anthropic | OpenAI | 비용 |
-|----------|-----------|--------|------|
-| Classification | claude-3-haiku | gpt-4o-mini | $0.25/1M |
-| Summarization | claude-3-haiku | gpt-4o-mini | $0.25/1M |
-| Planning | claude-sonnet-4 | gpt-4o | $3/1M |
-| CodeGeneration | claude-sonnet-4 | gpt-4o | $3/1M |
-| ToolCalling | claude-sonnet-4 | gpt-4o | $3/1M |
-| Polishing | claude-3-haiku | gpt-4o-mini | $0.25/1M |
+| TaskType | Anthropic | OpenAI | Gemini | 비용 |
+|----------|-----------|--------|--------|------|
+| Classification | claude-haiku-4-5 | gpt-5.2-mini | gemini-2.5-flash | 낮음 |
+| Summarization | claude-haiku-4-5 | gpt-5.2-mini | gemini-2.5-flash | 낮음 |
+| Planning | claude-sonnet-4-5 | gpt-5.2 | gemini-2.5-pro | 중간 |
+| CodeGeneration | claude-sonnet-4-5 | gpt-5.2 | gemini-2.5-pro | 중간 |
+| ToolCalling | claude-sonnet-4-5 | gpt-5.2 | gemini-2.5-pro | 중간 |
+| Polishing | claude-haiku-4-5 | gpt-5.2-mini | gemini-2.5-flash | 낮음 |
+
+## 모델 비용 (2026 기준)
+
+| 모델 | Input $/1M | Output $/1M |
+|------|-----------|------------|
+| claude-haiku-4-5 | $0.25 | $1.25 |
+| claude-sonnet-4-5 | $3.00 | $15.00 |
+| claude-opus-4-5 | $15.00 | $75.00 |
+| gpt-5.2-mini | $0.15 | $0.60 |
+| gpt-5.2 | $2.50 | $10.00 |
+| gemini-2.5-flash | $0.075 | $0.30 |
+| gemini-2.5-pro | $1.25 | $5.00 |
 
 ## 라우터 구현
 
@@ -63,9 +75,9 @@ impl ModelRouter {
 ```rust
 pub fn estimate_cost(model: &str, input_tokens: u32, output_tokens: u32) -> f64 {
     let (input_rate, output_rate) = match model {
-        "claude-3-haiku" | "gpt-4o-mini" => (0.00025, 0.00125),
-        "claude-sonnet-4" | "gpt-4o" => (0.003, 0.015),
-        "claude-opus-4" => (0.015, 0.075),
+        "claude-haiku-4-5" | "gpt-5.2-mini" | "gemini-2.5-flash" => (0.00025, 0.00125),
+        "claude-sonnet-4-5" | "gpt-5.2" | "gemini-2.5-pro" => (0.003, 0.015),
+        "claude-opus-4-5" => (0.015, 0.075),
         _ => (0.003, 0.015), // 기본값
     };
 
@@ -86,12 +98,37 @@ pub async fn complete_with_fallback(
     // 1. 주 제공자 시도
     match self.primary.complete(&request).await {
         Ok(response) => return Ok(response),
-        Err(e) => {
+        Err(e) if is_fallback_eligible(&e) => {
             tracing::warn!("Primary provider failed: {}", e);
         }
+        Err(e) => return Err(e), // 폴백 불가 에러
     }
 
     // 2. 폴백 제공자 시도
     self.fallback.complete(&request).await
 }
+
+fn is_fallback_eligible(error: &LlmError) -> bool {
+    matches!(error,
+        LlmError::AuthError(_) |
+        LlmError::PermissionDenied(_) |
+        LlmError::NetworkError(_) |
+        LlmError::Timeout(_) |
+        LlmError::RateLimited(_)
+    )
+}
+```
+
+## 프로바이더 우선순위
+
+설정에서 지정:
+
+```toml
+[llm]
+default_provider = "anthropic"
+fallback_providers = ["openai", "gemini", "ollama"]
+
+[llm.routing]
+fast_model = "claude-haiku-4-5"
+smart_model = "claude-sonnet-4-5"
 ```

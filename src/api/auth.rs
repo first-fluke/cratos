@@ -116,7 +116,7 @@ async fn login_google(Query(params): Query<LoginParams>) -> Response {
     // 4. Build Redirect URI
     // Dynamic based on host? For now, we assume local development environment.
     // Ensure this matches the Authorized Redirect URIs in Google Cloud Console.
-    let redirect_uri = "http://localhost:19528/api/auth/google/callback";
+    let redirect_uri = "http://127.0.0.1:19527/api/auth/google/callback";
 
     // 5. Build Authorization URL
     let url = oauth::build_auth_url(&config, redirect_uri, &pkce, &state);
@@ -166,7 +166,7 @@ async fn callback_google(Query(params): Query<CallbackParams>) -> Response {
     };
 
     // 3. Exchange code for tokens
-    let redirect_uri = "http://localhost:19528/api/auth/google/callback";
+    let redirect_uri = "http://127.0.0.1:19527/api/auth/google/callback";
     match oauth::exchange_code(
         &config,
         &params.code,

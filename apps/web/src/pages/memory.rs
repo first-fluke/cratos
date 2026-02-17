@@ -166,7 +166,16 @@ pub fn Memory() -> impl IntoView {
                 >
                     <ForceGraph
                         nodes=Signal::derive(move || graph_data.get().nodes.clone())
-                        edges=Signal::derive(move || graph_data.get().edges.clone())
+                        edges=Signal::derive(move || {
+                            let mut edges = graph_data.get().edges.clone();
+                            // Filter out "cooccurrence" labels to reduce visual spam
+                            for edge in &mut edges {
+                                if edge.kind == "cooccurrence" {
+                                    edge.kind = String::new();
+                                }
+                            }
+                            edges
+                        })
                     />
                 </Show>
 

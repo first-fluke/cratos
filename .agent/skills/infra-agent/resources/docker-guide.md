@@ -1,5 +1,12 @@
 # Docker 가이드
 
+## Cratos 설치 특징
+
+> **중요**: Cratos는 **PostgreSQL이 필요 없습니다!**
+> - 내장 SQLite 사용 (`~/.cratos/cratos.db`)
+> - 단일 바이너리 배포
+> - Docker 없이도 실행 가능
+
 ## Rust 최적화 Dockerfile
 
 ```dockerfile
@@ -35,6 +42,9 @@ RUN apt-get update && apt-get install -y \
 RUN useradd -m -u 1000 cratos
 USER cratos
 
+# 데이터 디렉토리
+RUN mkdir -p /home/cratos/.cratos
+
 COPY --from=builder /app/target/release/cratos /usr/local/bin/
 
 EXPOSE 8080
@@ -45,7 +55,7 @@ ENTRYPOINT ["cratos"]
 CMD ["serve"]
 ```
 
-## docker-compose.yml
+## docker-compose.yml (최소 구성)
 
 ```yaml
 version: "3.8"
@@ -56,29 +66,37 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - DATABASE_URL=postgres://cratos:cratos@db:5432/cratos
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - TELOXIDE_TOKEN=${TELOXIDE_TOKEN}
+    volumes:
+      # SQLite 데이터 영속화
+      - cratos_data:/home/cratos/.cratos
+
+volumes:
+  cratos_data:
+```
+
+## docker-compose.yml (Redis 추가, 선택적)
+
+Redis는 세션 캐시/분산 환경에서만 필요합니다:
+
+```yaml
+version: "3.8"
+
+services:
+  cratos:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
       - REDIS_URL=redis://redis:6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELOXIDE_TOKEN=${TELOXIDE_TOKEN}
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: cratos
-      POSTGRES_PASSWORD: cratos
-      POSTGRES_DB: cratos
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cratos"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - cratos_data:/home/cratos/.cratos
+    depends_on:
+      - redis
 
   redis:
     image: redis:7-alpine
@@ -86,8 +104,27 @@ services:
       - redis_data:/data
 
 volumes:
-  postgres_data:
+  cratos_data:
   redis_data:
+```
+
+## 샌드박스 실행 (exec 도구)
+
+보안을 위해 `exec` 도구는 Docker 샌드박스에서 실행 가능:
+
+```yaml
+services:
+  cratos:
+    # ...
+    environment:
+      - CRATOS_EXEC__SANDBOX_IMAGE=debian:bookworm-slim
+      - CRATOS_EXEC__SANDBOX_MEMORY_LIMIT=512m
+      - CRATOS_EXEC__SANDBOX_CPU_LIMIT=1.0
+```
+
+샌드박스 보안 플래그:
+```
+--network=none --read-only --pids-limit=64 --security-opt=no-new-privileges
 ```
 
 ## .dockerignore
@@ -98,4 +135,17 @@ target/
 .env
 .env.local
 *.log
+~/.cratos/
 ```
+
+## 로컬 실행 (Docker 없이)
+
+```bash
+# 빌드
+cargo build --release
+
+# 실행
+./target/release/cratos serve
+```
+
+데이터는 `~/.cratos/`에 자동 생성됩니다.

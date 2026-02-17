@@ -30,7 +30,7 @@ description: Coordinate multiple agents for a complex multi-domain project using
 
 ## Step 1: Analyze Requirements
 
-Analyze the user's request and identify involved domains (frontend, backend, mobile, QA).
+Analyze the user's request and identify involved domains (backend, channel, llm, QA).
 
 - Single domain: suggest using the specific agent directly.
 - Multiple domains: proceed to Step 2.
@@ -69,9 +69,9 @@ Present the PM Agent's task breakdown to the user:
 Spawn agents using CLI for each task:
 
 ```bash
-# Example: spawn backend and frontend in parallel
+# Example: spawn backend and channel agents in parallel
 oh-my-ag agent:spawn backend "task description" session-id -w ./backend &
-oh-my-ag agent:spawn frontend "task description" session-id -w ./frontend &
+oh-my-ag agent:spawn channel "task description" session-id -w ./channels &
 wait
 ```
 

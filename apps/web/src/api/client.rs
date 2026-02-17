@@ -1,6 +1,7 @@
 //! HTTP API Client
 
 use gloo_net::http::Request;
+use gloo_storage::Storage;
 use serde::{de::DeserializeOwned, Serialize};
 
 /// API client for backend communication
@@ -22,9 +23,13 @@ impl ApiClient {
     /// Make a GET request
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, String> {
         let url = format!("{}{}", self.base_url, path);
+        let mut req = Request::get(&url);
 
-        Request::get(&url)
-            .send()
+        if let Ok(token) = gloo_storage::LocalStorage::get::<String>("auth_token") {
+            req = req.header("Authorization", &format!("Bearer {}", token));
+        }
+
+        req.send()
             .await
             .map_err(|e| e.to_string())?
             .json::<T>()
@@ -39,9 +44,13 @@ impl ApiClient {
         body: &B,
     ) -> Result<T, String> {
         let url = format!("{}{}", self.base_url, path);
+        let mut req = Request::post(&url);
 
-        Request::post(&url)
-            .header("Content-Type", "application/json")
+        if let Ok(token) = gloo_storage::LocalStorage::get::<String>("auth_token") {
+            req = req.header("Authorization", &format!("Bearer {}", token));
+        }
+
+        req.header("Content-Type", "application/json")
             .body(serde_json::to_string(body).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?
             .send()
@@ -59,9 +68,13 @@ impl ApiClient {
         body: &B,
     ) -> Result<T, String> {
         let url = format!("{}{}", self.base_url, path);
+        let mut req = Request::put(&url);
 
-        Request::put(&url)
-            .header("Content-Type", "application/json")
+        if let Ok(token) = gloo_storage::LocalStorage::get::<String>("auth_token") {
+            req = req.header("Authorization", &format!("Bearer {}", token));
+        }
+
+        req.header("Content-Type", "application/json")
             .body(serde_json::to_string(body).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?
             .send()
@@ -75,9 +88,13 @@ impl ApiClient {
     /// Make a DELETE request
     pub async fn delete(&self, path: &str) -> Result<(), String> {
         let url = format!("{}{}", self.base_url, path);
+        let mut req = Request::delete(&url);
 
-        Request::delete(&url)
-            .send()
+        if let Ok(token) = gloo_storage::LocalStorage::get::<String>("auth_token") {
+            req = req.header("Authorization", &format!("Bearer {}", token));
+        }
+
+        req.send()
             .await
             .map_err(|e| e.to_string())?;
 
