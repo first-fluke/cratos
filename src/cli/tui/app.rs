@@ -3,14 +3,32 @@
 use chrono::Local;
 use cratos_core::Orchestrator;
 use ratatui::style::Style;
-use ratatui::widgets::ScrollbarState;
+use ratatui::widgets::{ScrollbarState, ListState};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tui_textarea::TextArea;
 
 use super::command::CommandRegistry;
 
+/// Application mode (Vim-style)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppMode {
+    Normal,
+    Insert,
+    #[allow(dead_code)]
+    Command, // e.g. when typing ":" (future use)
+}
+
+/// UI Focus area
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    Chat,
+    Input,
+    Sidebar,
+}
+
 /// A single chat message displayed in the TUI.
+#[derive(Debug, Clone)]
 pub struct ChatMessage {
     pub role: Role,
     pub sender: String,
@@ -49,6 +67,10 @@ pub struct TuiState {
     pub tick_count: usize,
     pub history_index: Option<usize>,
     pub suggestions: Vec<&'static str>,
+    pub mode: AppMode,
+    pub focus: Focus,
+    // For selecting messages in Normal mode (future use)
+    pub list_state: ListState,
 }
 
 impl Default for TuiState {
@@ -63,6 +85,9 @@ impl Default for TuiState {
             tick_count: 0,
             history_index: None,
             suggestions: Vec::new(),
+            mode: AppMode::Insert, // Start in Insert mode for convenience
+            focus: Focus::Input,
+            list_state: ListState::default(),
         }
     }
 }
@@ -118,7 +143,7 @@ impl App {
         };
 
         app.push_system(format!(
-            "Welcome to Cratos TUI. Persona: {}. Type /help for commands, F1 for sidebar.",
+            "Welcome to Cratos TUI. Persona: {}. Type /help for commands.",
             persona,
         ));
         app
@@ -133,6 +158,7 @@ impl App {
             content,
             timestamp: Local::now(),
         });
+        self.scroll_to_bottom();
     }
 
     fn push_user(&mut self, content: String) {
@@ -142,14 +168,40 @@ impl App {
             content,
             timestamp: Local::now(),
         });
+        self.scroll_to_bottom();
     }
 
     pub fn scroll_to_bottom(&mut self) {
         self.ui_state.scroll_offset = 0;
+        // Also reset list state selection if we were browsing
+        self.ui_state.list_state.select(None);
     }
 
     pub fn toggle_sidebar(&mut self) {
         self.ui_state.show_sidebar = !self.ui_state.show_sidebar;
+        // If sidebar hidden while focused, move focus back to input
+        if !self.ui_state.show_sidebar && self.ui_state.focus == Focus::Sidebar {
+            self.ui_state.focus = Focus::Input;
+        }
+    }
+
+    pub fn set_mode(&mut self, mode: AppMode) {
+        self.ui_state.mode = mode;
+        match mode {
+            AppMode::Insert => {
+                self.ui_state.focus = Focus::Input;
+                // Cursor style: block/bar depending on terminal, usually default is fine
+                self.textarea.set_cursor_style(Style::default()); 
+            }
+            AppMode::Normal => {
+                self.ui_state.focus = Focus::Chat;
+                // Hide cursor in textarea when in normal mode
+                // (Though strictly textarea handles its own rendering, we just won't update it)
+            }
+            AppMode::Command => {
+                // Not fully implemented yet
+            }
+        }
     }
 
     // ── input handling ──────────────────────────────────────────────────
@@ -174,7 +226,7 @@ impl App {
         self.ui_state.history_index = Some(idx);
         let text = self.input_history[idx].clone();
         self.textarea = TextArea::new(vec![text]);
-        self.textarea.set_cursor_line_style(Style::default());
+        self.textarea.move_cursor(tui_textarea::CursorMove::End);
     }
 
     pub fn history_down(&mut self) {
@@ -188,7 +240,7 @@ impl App {
                 self.ui_state.history_index = Some(i + 1);
                 let text = self.input_history[i + 1].clone();
                 self.textarea = TextArea::new(vec![text]);
-                self.textarea.set_cursor_line_style(Style::default());
+                self.textarea.move_cursor(tui_textarea::CursorMove::End);
             }
         }
     }
@@ -240,8 +292,8 @@ impl App {
         self.push_user(text.clone());
         self.ui_state.is_loading = true;
         self.ui_state.loading_tick = 0;
-        self.scroll_to_bottom();
-
+        // Don't auto-scroll here, let the push_user handle it or user control
+        
         let orchestrator = self.orchestrator.clone();
         let session_id = self.session_id.clone();
         let persona = self.persona.clone();
@@ -330,6 +382,7 @@ impl App {
         while let Ok(msg) = self.response_rx.try_recv() {
             self.ui_state.is_loading = false;
             self.messages.push(msg);
+            // Auto-scroll to bottom on new message
             self.scroll_to_bottom();
         }
     }
@@ -427,7 +480,7 @@ impl App {
 fn new_textarea() -> TextArea<'static> {
     let mut ta = TextArea::default();
     ta.set_cursor_line_style(Style::default());
-    ta.set_placeholder_text("Type a message... (Enter to send)");
+    ta.set_placeholder_text("Type a message... (Enter to send, Esc for Normal Mode)");
     ta.set_max_histories(50);
     ta
 }
