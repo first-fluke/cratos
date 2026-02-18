@@ -8,12 +8,17 @@ use crate::completion::{
 };
 use crate::error::Result;
 
-/// A mock LLM provider that returns empty responses. Useful for testing.
-pub struct MockProvider;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+
+/// A mock LLM provider that returns queued responses or default empty ones.
+pub struct MockProvider {
+    responses: Arc<Mutex<VecDeque<ToolCompletionResponse>>>,
+}
 
 impl Default for MockProvider {
     fn default() -> Self {
-        Self
+        Self::new()
     }
 }
 
@@ -21,7 +26,14 @@ impl MockProvider {
     /// Create a new mock provider.
     #[must_use]
     pub fn new() -> Self {
-        Self
+        Self {
+            responses: Arc::new(Mutex::new(VecDeque::new())),
+        }
+    }
+
+    /// Add a response to the queue.
+    pub fn add_tool_response(&self, response: ToolCompletionResponse) {
+        self.responses.lock().unwrap().push_back(response);
     }
 }
 
@@ -44,6 +56,7 @@ impl LlmProvider for MockProvider {
     }
 
     async fn complete(&self, _request: CompletionRequest) -> Result<CompletionResponse> {
+        // Simple default for simple complete
         Ok(CompletionResponse {
             content: "mock response".to_string(),
             usage: None,
@@ -56,12 +69,18 @@ impl LlmProvider for MockProvider {
         &self,
         _request: ToolCompletionRequest,
     ) -> Result<ToolCompletionResponse> {
-        Ok(ToolCompletionResponse {
-            content: Some("mock response".to_string()),
-            tool_calls: vec![],
-            usage: None,
-            finish_reason: Some("stop".to_string()),
-            model: "mock-model".to_string(),
-        })
+        let mut responses = self.responses.lock().unwrap();
+        if let Some(resp) = responses.pop_front() {
+            Ok(resp)
+        } else {
+            // Default behavior if queue empty
+            Ok(ToolCompletionResponse {
+                content: Some("mock response".to_string()),
+                tool_calls: vec![],
+                usage: None,
+                finish_reason: Some("stop".to_string()),
+                model: "mock-model".to_string(),
+            })
+        }
     }
 }
