@@ -107,6 +107,9 @@ pub struct AnalyzerConfig {
     pub languages: Vec<String>,
     /// Path to a custom stop words JSON file (optional)
     pub custom_stop_words_file: Option<std::path::PathBuf>,
+    /// Directory containing additional stop word files (e.g., "fr.txt", "de.txt")
+    /// Each file should contain one stop word per line.
+    pub stop_words_dir: Option<std::path::PathBuf>,
 }
 
 impl Default for AnalyzerConfig {
@@ -118,6 +121,7 @@ impl Default for AnalyzerConfig {
             analysis_window_days: 30,
             languages: vec!["en".to_string(), "ko".to_string()],
             custom_stop_words_file: None,
+            stop_words_dir: None,
         }
     }
 }
@@ -203,39 +207,32 @@ impl PatternAnalyzer {
         Self::with_config(AnalyzerConfig::default())
     }
 
+    /// Create a new pattern analyzer with the custom configuration
     pub fn with_config(config: AnalyzerConfig) -> Self {
         let mut stop_words = std::collections::HashSet::new();
 
-        // Load custom stop words from file if provided
+        // 1. Load built-in languages
+        Self::load_builtin_stop_words(&config.languages, &mut stop_words);
+
+        // 2. Load legacy custom file
         if let Some(path) = &config.custom_stop_words_file {
-            match std::fs::read_to_string(path) {
-                Ok(content) => {
-                    match serde_json::from_str::<HashMap<String, Vec<String>>>(&content) {
-                        Ok(custom_map) => {
-                            for (lang, words) in custom_map {
-                                if config.languages.contains(&lang) {
-                                    for w in words {
-                                        stop_words.insert(w);
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to parse custom stop words JSON file {:?}: {}", path, e);
-                        }
-                    }
-                }
-                Err(e) => {
-                   tracing::warn!("Failed to read custom stop words file {:?}: {}", path, e);
-                }
-            }
+            Self::load_custom_stop_words_file(path, &config.languages, &mut stop_words);
         }
-        
+
+        // 3. Load from stop_words_dir (new extensibility feature)
+        if let Some(dir) = &config.stop_words_dir {
+            Self::load_stop_words_from_dir(dir, &mut stop_words);
+        }
+
+        Self { config, stop_words }
+    }
+
+    /// Load built-in stop words for supported languages
+    fn load_builtin_stop_words(languages: &[String], stop_words: &mut std::collections::HashSet<String>) {
         // Helper to convert &[&str] to Vec<String>
         let get_builtin = |l| stop_words::get(l).iter().map(|&s| s.to_string()).collect::<Vec<String>>();
 
-        // Load built-in defaults
-        for lang in &config.languages {
+        for lang in languages {
             let words = match lang.as_str() {
                 "en" => get_builtin(stop_words::LANGUAGE::English),
                 "ko" => get_builtin(stop_words::LANGUAGE::Korean),
@@ -254,8 +251,57 @@ impl PatternAnalyzer {
                 stop_words.insert(word);
             }
         }
+    }
 
-        Self { config, stop_words }
+    /// Load custom stop words from a JSON file (legacy format)
+    fn load_custom_stop_words_file(
+        path: &std::path::Path,
+        filter_languages: &[String],
+        stop_words: &mut std::collections::HashSet<String>,
+    ) {
+        match std::fs::read_to_string(path) {
+            Ok(content) => match serde_json::from_str::<HashMap<String, Vec<String>>>(&content) {
+                Ok(custom_map) => {
+                    for (lang, words) in custom_map {
+                        if filter_languages.contains(&lang) {
+                            for w in words {
+                                stop_words.insert(w);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse custom stop words JSON file {:?}: {}", path, e);
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Failed to read custom stop words file {:?}: {}", path, e);
+            }
+        }
+    }
+
+    /// Load stop words from all files in a directory (new format: one word per line)
+    fn load_stop_words_from_dir(dir: &std::path::Path, stop_words: &mut std::collections::HashSet<String>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    match std::fs::read_to_string(&path) {
+                        Ok(content) => {
+                            for line in content.lines() {
+                                let word = line.trim();
+                                if !word.is_empty() {
+                                    stop_words.insert(word.to_string());
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to read stop word file {:?}: {}", path, e);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Extract tool sequences from events
@@ -492,7 +538,7 @@ impl PatternAnalyzer {
     }
 
     /// Check if a word is a stop word
-    fn is_stop_word(&self, word: &str) -> bool {
+    pub fn is_stop_word(&self, word: &str) -> bool {
         self.stop_words.contains(word) || self.stop_words.contains(&word.to_lowercase())
     }
 
@@ -547,7 +593,8 @@ impl PatternAnalyzer {
 }
 
 /// Check if a sequence contains a subsequence
-fn contains_subsequence<T: PartialEq>(sequence: &[T], subsequence: &[T]) -> bool {
+#[doc(hidden)]
+pub fn contains_subsequence<T: PartialEq>(sequence: &[T], subsequence: &[T]) -> bool {
     if subsequence.is_empty() {
         return true;
     }
@@ -558,74 +605,4 @@ fn contains_subsequence<T: PartialEq>(sequence: &[T], subsequence: &[T]) -> bool
     sequence
         .windows(subsequence.len())
         .any(|w| w == subsequence)
-}
-
-/// Check if a word is a stop word
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_contains_subsequence() {
-        let seq = vec!["a", "b", "c", "d", "e"];
-        assert!(contains_subsequence(&seq, &["b", "c", "d"]));
-        assert!(contains_subsequence(&seq, &["a"]));
-        assert!(contains_subsequence(&seq, &["e"]));
-        assert!(contains_subsequence(&seq, &[]));
-        assert!(!contains_subsequence(&seq, &["a", "c"]));
-        assert!(!contains_subsequence(&seq, &["f"]));
-    }
-
-    #[test]
-    fn test_is_stop_word() {
-        let analyzer = PatternAnalyzer::default();
-        assert!(analyzer.is_stop_word("the"));
-        assert!(analyzer.is_stop_word("The"));
-        assert!(analyzer.is_stop_word("a"));
-        assert!(!analyzer.is_stop_word("file"));
-        assert!(!analyzer.is_stop_word("read"));
-    }
-
-    #[test]
-    fn test_find_frequent_ngrams() {
-        let analyzer = PatternAnalyzer::with_config(AnalyzerConfig {
-            min_occurrences: 2,
-            ..Default::default()
-        });
-
-        let sequences = vec![
-            vec!["file_read".to_string(), "git_commit".to_string()],
-            vec!["file_read".to_string(), "git_commit".to_string()],
-            vec!["file_read".to_string(), "git_commit".to_string()],
-            vec!["exec".to_string()],
-        ];
-
-        let ngrams = analyzer.find_frequent_ngrams(&sequences, 2);
-
-        assert_eq!(ngrams.len(), 1);
-        assert_eq!(
-            ngrams.get(&vec!["file_read".to_string(), "git_commit".to_string()]),
-            Some(&3)
-        );
-    }
-
-    #[test]
-    fn test_analyzer_config_default() {
-        let config = AnalyzerConfig::default();
-        assert_eq!(config.min_occurrences, 3);
-        assert_eq!(config.min_confidence, 0.6);
-        assert_eq!(config.max_sequence_length, 5);
-        assert_eq!(config.analysis_window_days, 30);
-    }
-
-    #[test]
-    fn test_pattern_status() {
-        assert_eq!(PatternStatus::Detected.as_str(), "detected");
-        assert_eq!(PatternStatus::Converted.as_str(), "converted");
-
-        let parsed: PatternStatus = "detected".parse().unwrap();
-        assert_eq!(parsed, PatternStatus::Detected);
-    }
 }
