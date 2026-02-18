@@ -49,6 +49,49 @@ use std::collections::HashMap;
 use tracing::{debug, info, instrument};
 use uuid::Uuid;
 
+/// Run automated pattern analysis on the default databases.
+///
+/// This is a convenience function for the orchestrator and scheduler.
+/// It opens the default EventStore and SkillStore, runs detection, and saves new patterns.
+pub async fn run_auto_analysis(dry_run: bool) -> Result<String> {
+    use crate::SkillStore;
+    use cratos_replay::{default_db_path, EventStore};
+
+    let replay_path = default_db_path();
+    let skill_path = crate::default_skill_db_path();
+
+    if !replay_path.exists() {
+        return Ok("Replay database not found, skipping analysis.".to_string());
+    }
+
+    let event_store = EventStore::from_path(&replay_path).await?;
+    let skill_store = SkillStore::from_path(&skill_path).await?;
+    let analyzer = PatternAnalyzer::default();
+
+    let patterns = analyzer.detect_patterns(&event_store).await?;
+    let count = patterns.len();
+
+    if count == 0 {
+        return Ok("No recurring patterns detected.".to_string());
+    }
+
+    if dry_run {
+        return Ok(format!("Detected {} potential patterns (dry run).", count));
+    }
+
+    let mut saved = 0;
+    for p in patterns {
+        if skill_store.save_pattern(&p).await.is_ok() {
+            saved += 1;
+        }
+    }
+
+    Ok(format!(
+        "Analysis complete: Detected {} patterns, Saved new: {}",
+        count, saved
+    ))
+}
+
 /// Configuration for the pattern analyzer
 #[derive(Debug, Clone)]
 pub struct AnalyzerConfig {
@@ -60,6 +103,8 @@ pub struct AnalyzerConfig {
     pub max_sequence_length: usize,
     /// Time window for analysis (in days)
     pub analysis_window_days: i64,
+    /// Languages for stop word removal (e.g., "en", "ko")
+    pub languages: Vec<String>,
 }
 
 impl Default for AnalyzerConfig {
@@ -69,6 +114,7 @@ impl Default for AnalyzerConfig {
             min_confidence: 0.6,
             max_sequence_length: 5,
             analysis_window_days: 30,
+            languages: vec!["en".to_string(), "ko".to_string()],
         }
     }
 }
@@ -139,19 +185,38 @@ impl std::str::FromStr for PatternStatus {
 /// Pattern analyzer for detecting tool usage patterns
 pub struct PatternAnalyzer {
     config: AnalyzerConfig,
+    stop_words: std::collections::HashSet<String>,
+}
+
+impl Default for PatternAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PatternAnalyzer {
     /// Create a new pattern analyzer with default configuration
     pub fn new() -> Self {
-        Self {
-            config: AnalyzerConfig::default(),
-        }
+        Self::with_config(AnalyzerConfig::default())
     }
 
     /// Create a pattern analyzer with custom configuration
     pub fn with_config(config: AnalyzerConfig) -> Self {
-        Self { config }
+        let mut stop_words = std::collections::HashSet::new();
+        
+        for lang in &config.languages {
+            let words = match lang.as_str() {
+                "en" => stop_words::get(stop_words::LANGUAGE::English).iter().map(|s| s.to_string()).collect(),
+                "ko" => stop_words::get(stop_words::LANGUAGE::Korean).iter().map(|s| s.to_string()).collect(),
+                // Add more as needed or handle dynamically if library supports string matching well
+                _ => Vec::new(),
+            };
+            for word in words {
+                stop_words.insert(word);
+            }
+        }
+
+        Self { config, stop_words }
     }
 
     /// Extract tool sequences from events
@@ -238,7 +303,7 @@ impl PatternAnalyzer {
                 let words: Vec<String> = text
                     .split_whitespace()
                     .filter(|w| w.len() > 2) // Skip short words
-                    .filter(|w| !is_stop_word(w))
+                    .filter(|w| !self.is_stop_word(w))
                     .map(|w| w.to_lowercase())
                     .collect();
 
@@ -387,6 +452,11 @@ impl PatternAnalyzer {
         keywords.into_iter().take(10).map(|(k, _)| k).collect()
     }
 
+    /// Check if a word is a stop word
+    fn is_stop_word(&self, word: &str) -> bool {
+        self.stop_words.contains(word) || self.stop_words.contains(&word.to_lowercase())
+    }
+
     /// Find sample user inputs that led to a tool sequence
     fn find_sample_inputs(
         &self,
@@ -437,12 +507,6 @@ impl PatternAnalyzer {
     }
 }
 
-impl Default for PatternAnalyzer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Check if a sequence contains a subsequence
 fn contains_subsequence<T: PartialEq>(sequence: &[T], subsequence: &[T]) -> bool {
     if subsequence.is_empty() {
@@ -458,102 +522,7 @@ fn contains_subsequence<T: PartialEq>(sequence: &[T], subsequence: &[T]) -> bool
 }
 
 /// Check if a word is a stop word
-fn is_stop_word(word: &str) -> bool {
-    const STOP_WORDS: &[&str] = &[
-        "the",
-        "a",
-        "an",
-        "and",
-        "or",
-        "but",
-        "in",
-        "on",
-        "at",
-        "to",
-        "for",
-        "of",
-        "with",
-        "by",
-        "is",
-        "are",
-        "was",
-        "were",
-        "be",
-        "been",
-        "being",
-        "have",
-        "has",
-        "had",
-        "do",
-        "does",
-        "did",
-        "will",
-        "would",
-        "could",
-        "should",
-        "may",
-        "might",
-        "must",
-        "shall",
-        "can",
-        "this",
-        "that",
-        "these",
-        "those",
-        "it",
-        "its",
-        "i",
-        "me",
-        "my",
-        "we",
-        "our",
-        "you",
-        "your",
-        "he",
-        "she",
-        "they",
-        "them",
-        "their",
-        "what",
-        "which",
-        "who",
-        "how",
-        "when",
-        "where",
-        "why",
-        "all",
-        "each",
-        "every",
-        "both",
-        "few",
-        "more",
-        "most",
-        "other",
-        "some",
-        "such",
-        "no",
-        "not",
-        "only",
-        "same",
-        "so",
-        "than",
-        "too",
-        "very",
-        "just",
-        "also",
-        "please",
-        "해줘",
-        "해주세요",
-        "좀",
-        "거",
-        "것",
-        "이",
-        "저",
-        "그",
-    ];
 
-    STOP_WORDS.contains(&word.to_lowercase().as_str())
-}
 
 #[cfg(test)]
 mod tests {
@@ -572,11 +541,12 @@ mod tests {
 
     #[test]
     fn test_is_stop_word() {
-        assert!(is_stop_word("the"));
-        assert!(is_stop_word("The"));
-        assert!(is_stop_word("a"));
-        assert!(!is_stop_word("file"));
-        assert!(!is_stop_word("read"));
+        let analyzer = PatternAnalyzer::default();
+        assert!(analyzer.is_stop_word("the"));
+        assert!(analyzer.is_stop_word("The"));
+        assert!(analyzer.is_stop_word("a"));
+        assert!(!analyzer.is_stop_word("file"));
+        assert!(!analyzer.is_stop_word("read"));
     }
 
     #[test]
