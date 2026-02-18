@@ -76,3 +76,8 @@ test_*.js
 # Lock files (bun preferred)
 package-lock.json
 **/package-lock.json
+
+# Agent Task
+.agent/tasks/
+.agent/plan.json
+
