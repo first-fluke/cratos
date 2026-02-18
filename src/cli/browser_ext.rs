@@ -122,6 +122,6 @@ pub async fn screenshot(output: Option<&str>, selector: Option<&str>) -> Result<
 /// Build server URL from env or default.
 fn server_url(path: &str) -> String {
     let base =
-        std::env::var("CRATOS_SERVER_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+        std::env::var("CRATOS_SERVER_URL").unwrap_or_else(|_| "http://127.0.0.1:19527".to_string());
     format!("{}{}", base.trim_end_matches('/'), path)
 }

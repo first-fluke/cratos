@@ -530,7 +530,7 @@ mod tests {
 
         let result = tool
             .execute(serde_json::json!({
-                "url": "http://localhost:8080/admin"
+                "url": "http://localhost:19527/admin"
             }))
             .await;
         assert!(result.is_err());
