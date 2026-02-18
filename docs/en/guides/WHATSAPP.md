@@ -6,27 +6,27 @@ Integrate Cratos with WhatsApp to use the AI assistant in your messaging app. Tw
 
 ### Integration Options Comparison
 
-| Feature | Baileys (Unofficial) | Business API (Official) |
-|---------|---------------------|-------------------------|
-| **Cost** | Free | Paid (per-message pricing) |
-| **Account Required** | Regular WhatsApp account | Meta Business account |
-| **Setup Difficulty** | Easy (QR scan) | Complex (Meta approval required) |
-| **Stability** | Unstable (may break on updates) | Stable |
-| **Account Ban Risk** | High | None |
-| **ToS Compliance** | Violates | Compliant |
-| **Production Recommended** | No | Yes |
+| Feature                    | Baileys (Unofficial)            | Business API (Official)          |
+| -------------------------- | ------------------------------- | -------------------------------- |
+| **Cost**                   | Free                            | Paid (per-message pricing)       |
+| **Account Required**       | Regular WhatsApp account        | Meta Business account            |
+| **Setup Difficulty**       | Easy (QR scan)                  | Complex (Meta approval required) |
+| **Stability**              | Unstable (may break on updates) | Stable                           |
+| **Account Ban Risk**       | High                            | None                             |
+| **ToS Compliance**         | Violates                        | Compliant                        |
+| **Production Recommended** | No                              | Yes                              |
 
 ### Key Features
 
-| Feature | Baileys | Business API |
-|---------|---------|--------------|
-| **Text Messages** | Yes | Yes |
-| **Typing Indicator** | Yes | No |
-| **Read Receipts** | No | Yes |
-| **Group Messages** | Yes | No |
-| **Number Filtering** | Yes | Yes |
-| **Message Editing** | No | No |
-| **Message Deletion** | No | No |
+| Feature              | Baileys | Business API |
+| -------------------- | ------- | ------------ |
+| **Text Messages**    | Yes     | Yes          |
+| **Typing Indicator** | Yes     | No           |
+| **Read Receipts**    | No      | Yes          |
+| **Group Messages**   | Yes     | No           |
+| **Number Filtering** | Yes     | Yes          |
+| **Message Editing**  | No      | No           |
+| **Message Deletion** | No      | No           |
 
 ## Architecture
 
@@ -165,7 +165,7 @@ async function connectWhatsApp() {
         // Forward to Cratos webhook
         for (const msg of messages) {
             if (!msg.key.fromMe && msg.message?.conversation) {
-                await fetch('http://localhost:8080/webhook/whatsapp', {
+                await fetch('http://localhost:19527/webhook/whatsapp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -359,22 +359,22 @@ pub struct WhatsAppBusinessConfig {
 
 #### Baileys
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `WHATSAPP_BRIDGE_URL` | No | `http://localhost:3001` | Bridge server URL |
-| `WHATSAPP_ALLOWED_NUMBERS` | No | empty | Comma-separated allowed numbers |
-| `WHATSAPP_TIMEOUT` | No | 30 | Request timeout (seconds) |
+| Variable                   | Required | Default                 | Description                     |
+| -------------------------- | -------- | ----------------------- | ------------------------------- |
+| `WHATSAPP_BRIDGE_URL`      | No       | `http://localhost:3001` | Bridge server URL               |
+| `WHATSAPP_ALLOWED_NUMBERS` | No       | empty                   | Comma-separated allowed numbers |
+| `WHATSAPP_TIMEOUT`         | No       | 30                      | Request timeout (seconds)       |
 
 #### Business API
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `WHATSAPP_ACCESS_TOKEN` | Yes | - | Meta Access Token |
-| `WHATSAPP_PHONE_NUMBER_ID` | Yes | - | Phone Number ID |
-| `WHATSAPP_BUSINESS_ACCOUNT_ID` | Yes | - | Business Account ID |
-| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | No | `cratos_webhook_verify` | Webhook verify token |
-| `WHATSAPP_ALLOWED_NUMBERS` | No | empty | Comma-separated allowed numbers |
-| `WHATSAPP_API_VERSION` | No | `v18.0` | Graph API version |
+| Variable                        | Required | Default                 | Description                     |
+| ------------------------------- | -------- | ----------------------- | ------------------------------- |
+| `WHATSAPP_ACCESS_TOKEN`         | Yes      | -                       | Meta Access Token               |
+| `WHATSAPP_PHONE_NUMBER_ID`      | Yes      | -                       | Phone Number ID                 |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID`  | Yes      | -                       | Business Account ID             |
+| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | No       | `cratos_webhook_verify` | Webhook verify token            |
+| `WHATSAPP_ALLOWED_NUMBERS`      | No       | empty                   | Comma-separated allowed numbers |
+| `WHATSAPP_API_VERSION`          | No       | `v18.0`                 | Graph API version               |
 
 ## Security
 
@@ -518,16 +518,16 @@ impl ChannelAdapter for WhatsAppAdapter {
 
 ### Feature Comparison
 
-| Feature | Baileys | Business API | Notes |
-|---------|---------|--------------|-------|
-| Send Messages | Yes | Yes | |
-| Edit Messages | No | No | WhatsApp doesn't support |
-| Delete Messages | No | No | Complex implementation |
-| Typing Indicator | Yes | No | API not provided |
-| Read Receipts | No | Yes | |
-| Group Messages | Yes | No | Requires separate approval |
-| Media Messages | No | No | Future support planned |
-| Template Messages | No | No | Future support planned |
+| Feature           | Baileys | Business API | Notes                      |
+| ----------------- | ------- | ------------ | -------------------------- |
+| Send Messages     | Yes     | Yes          |                            |
+| Edit Messages     | No      | No           | WhatsApp doesn't support   |
+| Delete Messages   | No      | No           | Complex implementation     |
+| Typing Indicator  | Yes     | No           | API not provided           |
+| Read Receipts     | No      | Yes          |                            |
+| Group Messages    | Yes     | No           | Requires separate approval |
+| Media Messages    | No      | No           | Future support planned     |
+| Template Messages | No      | No           | Future support planned     |
 
 ### Message Length Limits
 
@@ -600,12 +600,12 @@ If token expired:
 
 #### API Error Codes
 
-| Code | Meaning | Solution |
-|------|---------|----------|
-| 190 | Invalid Access Token | Regenerate token |
-| 368 | Rate Limit | Reduce request frequency |
-| 131030 | 24-hour window exceeded | Use template messages |
-| 131047 | Recipient blocked | Try different number |
+| Code   | Meaning                 | Solution                 |
+| ------ | ----------------------- | ------------------------ |
+| 190    | Invalid Access Token    | Regenerate token         |
+| 368    | Rate Limit              | Reduce request frequency |
+| 131030 | 24-hour window exceeded | Use template messages    |
+| 131047 | Recipient blocked       | Try different number     |
 
 ## Roadmap
 

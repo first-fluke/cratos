@@ -6,27 +6,27 @@ Cratos를 WhatsApp과 연동하여 메신저에서 AI 어시스턴트를 사용�
 
 ### 연동 옵션 비교
 
-| 기능 | Baileys (비공식) | Business API (공식) |
-|------|------------------|---------------------|
-| **비용** | 무료 | 유료 (메시지당 과금) |
-| **계정 요구** | 일반 WhatsApp 계정 | Meta Business 계정 |
-| **설정 난이도** | 쉬움 (QR 스캔) | 복잡 (Meta 승인 필요) |
-| **안정성** | 불안정 (업데이트 시 중단 가능) | 안정적 |
-| **계정 차단 위험** | ⚠️ 높음 | 없음 |
-| **ToS 준수** | ❌ 위반 | ✅ 준수 |
-| **프로덕션 권장** | ❌ | ✅ |
+| 기능               | Baileys (비공식)               | Business API (공식)   |
+| ------------------ | ------------------------------ | --------------------- |
+| **비용**           | 무료                           | 유료 (메시지당 과금)  |
+| **계정 요구**      | 일반 WhatsApp 계정             | Meta Business 계정    |
+| **설정 난이도**    | 쉬움 (QR 스캔)                 | 복잡 (Meta 승인 필요) |
+| **안정성**         | 불안정 (업데이트 시 중단 가능) | 안정적                |
+| **계정 차단 위험** | ⚠️ 높음                         | 없음                  |
+| **ToS 준수**       | ❌ 위반                         | ✅ 준수                |
+| **프로덕션 권장**  | ❌                              | ✅                     |
 
 ### 주요 기능
 
-| 기능 | Baileys | Business API |
-|------|---------|--------------|
-| **텍스트 메시지** | ✅ | ✅ |
-| **타이핑 표시** | ✅ | ❌ |
-| **읽음 표시** | ❌ | ✅ |
-| **그룹 메시지** | ✅ | ❌ |
-| **번호 제한** | ✅ | ✅ |
-| **메시지 수정** | ❌ | ❌ |
-| **메시지 삭제** | ❌ | ❌ |
+| 기능              | Baileys | Business API |
+| ----------------- | ------- | ------------ |
+| **텍스트 메시지** | ✅       | ✅            |
+| **타이핑 표시**   | ✅       | ❌            |
+| **읽음 표시**     | ❌       | ✅            |
+| **그룹 메시지**   | ✅       | ❌            |
+| **번호 제한**     | ✅       | ✅            |
+| **메시지 수정**   | ❌       | ❌            |
+| **메시지 삭제**   | ❌       | ❌            |
 
 ## 아키텍처
 
@@ -165,7 +165,7 @@ async function connectWhatsApp() {
         // Cratos 웹훅으로 전달
         for (const msg of messages) {
             if (!msg.key.fromMe && msg.message?.conversation) {
-                await fetch('http://localhost:8080/webhook/whatsapp', {
+                await fetch('http://localhost:19527/webhook/whatsapp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -359,22 +359,22 @@ pub struct WhatsAppBusinessConfig {
 
 #### Baileys
 
-| 변수 | 필수 | 기본값 | 설명 |
-|------|------|--------|------|
-| `WHATSAPP_BRIDGE_URL` | ❌ | `http://localhost:3001` | Bridge 서버 URL |
-| `WHATSAPP_ALLOWED_NUMBERS` | ❌ | 빈 값 | 쉼표로 구분된 허용 번호 |
-| `WHATSAPP_TIMEOUT` | ❌ | 30 | 요청 타임아웃 (초) |
+| 변수                       | 필수 | 기본값                  | 설명                    |
+| -------------------------- | ---- | ----------------------- | ----------------------- |
+| `WHATSAPP_BRIDGE_URL`      | ❌    | `http://localhost:3001` | Bridge 서버 URL         |
+| `WHATSAPP_ALLOWED_NUMBERS` | ❌    | 빈 값                   | 쉼표로 구분된 허용 번호 |
+| `WHATSAPP_TIMEOUT`         | ❌    | 30                      | 요청 타임아웃 (초)      |
 
 #### Business API
 
-| 변수 | 필수 | 기본값 | 설명 |
-|------|------|--------|------|
-| `WHATSAPP_ACCESS_TOKEN` | ✅ | - | Meta Access Token |
-| `WHATSAPP_PHONE_NUMBER_ID` | ✅ | - | 전화번호 ID |
-| `WHATSAPP_BUSINESS_ACCOUNT_ID` | ✅ | - | 비즈니스 계정 ID |
-| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | ❌ | `cratos_webhook_verify` | Webhook 검증 토큰 |
-| `WHATSAPP_ALLOWED_NUMBERS` | ❌ | 빈 값 | 쉼표로 구분된 허용 번호 |
-| `WHATSAPP_API_VERSION` | ❌ | `v18.0` | Graph API 버전 |
+| 변수                            | 필수 | 기본값                  | 설명                    |
+| ------------------------------- | ---- | ----------------------- | ----------------------- |
+| `WHATSAPP_ACCESS_TOKEN`         | ✅    | -                       | Meta Access Token       |
+| `WHATSAPP_PHONE_NUMBER_ID`      | ✅    | -                       | 전화번호 ID             |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID`  | ✅    | -                       | 비즈니스 계정 ID        |
+| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | ❌    | `cratos_webhook_verify` | Webhook 검증 토큰       |
+| `WHATSAPP_ALLOWED_NUMBERS`      | ❌    | 빈 값                   | 쉼표로 구분된 허용 번호 |
+| `WHATSAPP_API_VERSION`          | ❌    | `v18.0`                 | Graph API 버전          |
 
 ## 보안
 
@@ -518,16 +518,16 @@ impl ChannelAdapter for WhatsAppAdapter {
 
 ### 기능 제한 비교
 
-| 기능 | Baileys | Business API | 비고 |
-|------|---------|--------------|------|
-| 메시지 전송 | ✅ | ✅ | |
-| 메시지 수정 | ❌ | ❌ | WhatsApp 미지원 |
-| 메시지 삭제 | ❌ | ❌ | 구현 복잡 |
-| 타이핑 표시 | ✅ | ❌ | API 미제공 |
-| 읽음 표시 | ❌ | ✅ | |
-| 그룹 메시지 | ✅ | ❌ | 별도 권한 필요 |
-| 미디어 전송 | ❌ | ❌ | 향후 지원 예정 |
-| 템플릿 메시지 | ❌ | ❌ | 향후 지원 예정 |
+| 기능          | Baileys | Business API | 비고            |
+| ------------- | ------- | ------------ | --------------- |
+| 메시지 전송   | ✅       | ✅            |                 |
+| 메시지 수정   | ❌       | ❌            | WhatsApp 미지원 |
+| 메시지 삭제   | ❌       | ❌            | 구현 복잡       |
+| 타이핑 표시   | ✅       | ❌            | API 미제공      |
+| 읽음 표시     | ❌       | ✅            |                 |
+| 그룹 메시지   | ✅       | ❌            | 별도 권한 필요  |
+| 미디어 전송   | ❌       | ❌            | 향후 지원 예정  |
+| 템플릿 메시지 | ❌       | ❌            | 향후 지원 예정  |
 
 ### 메시지 길이 제한
 
@@ -600,12 +600,12 @@ curl "https://graph.facebook.com/v18.0/me?access_token=YOUR_TOKEN"
 
 #### API 에러 코드
 
-| 코드 | 의미 | 해결 방법 |
-|------|------|-----------|
-| 190 | Invalid Access Token | 토큰 재발급 |
-| 368 | Rate Limit | 요청 빈도 감소 |
-| 131030 | 24시간 윈도우 초과 | 템플릿 메시지 사용 |
-| 131047 | 수신자가 차단 | 다른 번호 시도 |
+| 코드   | 의미                 | 해결 방법          |
+| ------ | -------------------- | ------------------ |
+| 190    | Invalid Access Token | 토큰 재발급        |
+| 368    | Rate Limit           | 요청 빈도 감소     |
+| 131030 | 24시간 윈도우 초과   | 템플릿 메시지 사용 |
+| 131047 | 수신자가 차단        | 다른 번호 시도     |
 
 ## 향후 계획
 
