@@ -1,0 +1,32 @@
+[package]
+name = "appsdesktop"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+[workspace]
+
+[lib]
+name = "appsdesktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
+futures-util = "0.3"
+url = "2.4"
+log = "0.4"
+env_logger = "0.10"
+cpal = "0.15"
+rodio = { version = "0.17", default-features = false, features = ["symphonia-all"] } # Downgraded to 0.17 or use available 0.18.1
+dasp_sample = "0.11"
+ringbuf = "0.3" 
+anyhow = "1.0"
