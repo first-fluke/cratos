@@ -153,6 +153,11 @@ pub enum TaskAction {
         /// Request body
         body: Option<Value>,
     },
+    /// Analyze skills
+    RunSkillAnalysis {
+        /// Dry run mode
+        dry_run: bool,
+    },
 }
 
 impl TaskAction {
@@ -183,6 +188,11 @@ impl TaskAction {
             channel_id: channel_id.into(),
             message: message.into(),
         }
+    }
+
+    /// Create a skill analysis action
+    pub fn run_skill_analysis(dry_run: bool) -> Self {
+        Self::RunSkillAnalysis { dry_run }
     }
 }
 

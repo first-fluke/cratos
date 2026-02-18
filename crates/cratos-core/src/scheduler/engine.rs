@@ -289,6 +289,10 @@ impl SchedulerEngine {
                     debug!("Would call {} {}", method, url);
                     Ok(format!("Called: {} {}", method, url))
                 }
+                TaskAction::RunSkillAnalysis { dry_run } => {
+                    debug!("Would analyze skills (dry_run: {})", dry_run);
+                    Ok(format!("Analyzed skills (dry_run: {})", dry_run))
+                }
             }
         }
     }

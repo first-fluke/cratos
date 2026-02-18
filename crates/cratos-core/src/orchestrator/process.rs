@@ -1063,6 +1063,16 @@ impl Orchestrator {
             .inc(&[("status", "completed")]);
         crate::utils::metrics_global::gauge("cratos_active_executions").dec();
 
+        // Trigger auto skill detection if enabled
+        if self.config.auto_skill_detection {
+            tokio::spawn(async move {
+                match cratos_skills::analyzer::run_auto_analysis(false).await {
+                    Ok(msg) => debug!("Auto-skill analysis: {}", msg),
+                    Err(e) => warn!("Auto-skill analysis failed: {}", e),
+                }
+            });
+        }
+
         Ok(ExecutionResult {
             execution_id,
             status: ExecutionStatus::Completed,

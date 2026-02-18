@@ -92,6 +92,8 @@ pub struct OrchestratorConfig {
     pub max_consecutive_failures: usize,
     /// M4: Bail out after this many total failures across all iterations
     pub max_total_failures: usize,
+    /// Enable automatic skill pattern detection
+    pub auto_skill_detection: bool,
 }
 
 impl Default for OrchestratorConfig {
@@ -104,6 +106,7 @@ impl Default for OrchestratorConfig {
             max_execution_secs: 180,
             max_consecutive_failures: 3,
             max_total_failures: 6,
+            auto_skill_detection: true,
         }
     }
 }
@@ -140,6 +143,13 @@ impl OrchestratorConfig {
     #[must_use]
     pub fn with_runner_config(mut self, config: RunnerConfig) -> Self {
         self.runner_config = config;
+        self
+    }
+
+    /// Set auto skill detection (M6: Auto Skill Generation)
+    #[must_use]
+    pub fn with_auto_skill_detection(mut self, enabled: bool) -> Self {
+        self.auto_skill_detection = enabled;
         self
     }
 }
