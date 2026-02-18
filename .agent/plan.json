@@ -137,6 +137,15 @@
             "dependencies": [
                 "TASK-10"
             ]
+        },
+        {
+            "id": "TASK-16",
+            "title": "Auto Skill Generation & Scheduler",
+            "description": "Implement Pattern Analyzer, Skill Generator, and integrate into Scheduler for automated skill creation.",
+            "status": "in_progress",
+            "priority": "P1",
+            "agent": "backend",
+            "dependencies": []
         }
     ]
 }

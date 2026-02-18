@@ -76,4 +76,3 @@ test_*.js
 # Lock files (bun preferred)
 package-lock.json
 **/package-lock.json
-
