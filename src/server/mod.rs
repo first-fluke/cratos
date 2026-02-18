@@ -12,12 +12,18 @@
 //! - `cli`: CLI-specific orchestrator builder
 //! - `init`: Main server initialization and run loop
 
+mod a2ui_steering;
 mod adapters;
+mod background_tasks;
+mod channel_starters;
 mod cli;
 pub mod config;
 mod init;
+mod init_helpers;
+mod init_stores;
 mod loader;
 mod providers;
+mod skill_init;
 mod task_handler;
 mod validation;
 

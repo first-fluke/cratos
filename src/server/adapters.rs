@@ -4,7 +4,8 @@
 
 use cratos_llm::SharedEmbeddingProvider;
 use cratos_replay::SearchEmbedder;
-use cratos_skills::SkillEmbedder;
+use cratos_skills::{SemanticSkillRouter, SkillEmbedder};
+use std::sync::Arc;
 
 /// Adapter to use EmbeddingProvider as SearchEmbedder
 pub struct EmbeddingAdapter {
@@ -55,5 +56,20 @@ impl SkillEmbedder for SkillEmbeddingAdapter {
 
     fn dimensions(&self) -> usize {
         self.provider.dimensions()
+    }
+}
+
+/// Adapter to connect SemanticSkillRouter to Orchestrator's SkillRouting trait
+pub struct SkillRouterAdapter(pub Arc<SemanticSkillRouter<SkillEmbeddingAdapter>>);
+
+#[async_trait::async_trait]
+impl cratos_core::SkillRouting for SkillRouterAdapter {
+    async fn route_best(&self, input: &str) -> Option<cratos_core::SkillMatch> {
+        self.0.route_best(input).await.map(|m| cratos_core::SkillMatch {
+            skill_id: m.skill.id,
+            skill_name: m.skill.name,
+            description: m.skill.description,
+            score: m.score,
+        })
     }
 }
