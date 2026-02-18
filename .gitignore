@@ -65,5 +65,10 @@ tools/*/node_modules/
 tools/*/package-lock.json
 
 # Node
-node_modules/
-package-lock.json
+
+# Temporary test scripts
+test_*.js
+
+# Mimic data
+.mimic/
+
