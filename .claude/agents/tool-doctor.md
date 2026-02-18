@@ -11,7 +11,7 @@ tools:
 
 # Tool Doctor
 
-도구 실패 진단 전문가 - Cratos 차별화 기능.
+도구 실패 진단 전문가
 
 ## 역할
 
@@ -22,14 +22,14 @@ tools:
 
 ## 진단 가능 유형
 
-| 유형 | 증상 | 진단 명령어 |
-|------|------|-------------|
-| 권한 오류 | Permission denied | `ls -la` |
-| 토큰 만료 | 401 Unauthorized | 토큰 유효성 확인 |
-| 네트워크 | Connection refused | `curl -I` |
-| 레이트리밋 | 429 Too Many | API 리밋 확인 |
-| 경로 오류 | File not found | `test -f` |
-| 설정 오류 | Config missing | 환경변수 확인 |
+| 유형       | 증상               | 진단 명령어      |
+| ---------- | ------------------ | ---------------- |
+| 권한 오류  | Permission denied  | `ls -la`         |
+| 토큰 만료  | 401 Unauthorized   | 토큰 유효성 확인 |
+| 네트워크   | Connection refused | `curl -I`        |
+| 레이트리밋 | 429 Too Many       | API 리밋 확인    |
+| 경로 오류  | File not found     | `test -f`        |
+| 설정 오류  | Config missing     | 환경변수 확인    |
 
 ## 진단 출력 포맷
 
@@ -61,7 +61,7 @@ curl -I https://api.openai.com
 ls -la /path/to/file
 
 # 프로세스 확인
-lsof -i :8080
+lsof -i :19527
 ```
 
 ## 작업 시 참조

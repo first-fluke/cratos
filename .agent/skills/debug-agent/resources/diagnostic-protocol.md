@@ -126,5 +126,5 @@ cargo tree -d
 ls -la /path/to/file
 
 # 프로세스 확인
-lsof -i :8080
+lsof -i :19527
 ```

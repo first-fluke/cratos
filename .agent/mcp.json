@@ -1,7 +1,14 @@
 {
   "mcpServers": {
     "serena": {
-      "url": "http://localhost:12341/sse",
+      "command": "/Users/gahyun/.local/bin/serena",
+      "args": [
+        "start-mcp-server",
+        "--transport",
+        "stdio",
+        "--project",
+        "/Volumes/gahyun_ex/projects/cratos"
+      ],
       "disabled": false
     }
   },

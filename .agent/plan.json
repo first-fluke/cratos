@@ -51,6 +51,92 @@
             "priority": "P2",
             "agent": "backend",
             "dependencies": []
+        },
+        {
+            "id": "TASK-07",
+            "title": "Mobile (iOS, Android) Native App Scaffolding",
+            "description": "Implement initial project structures for Android (Gradle) and iOS (Sources) including WebSocket and A2UI WebView bridge.",
+            "status": "completed",
+            "priority": "P0",
+            "agent": "mobile",
+            "dependencies": []
+        },
+        {
+            "id": "TASK-08",
+            "title": "Android: Connect Hilt & WebSocket Bridge",
+            "description": "Set up Hilt DI, implement WebSocket connection logic, and bridge WebView events to ViewModel.",
+            "status": "completed",
+            "priority": "P1",
+            "agent": "mobile",
+            "dependencies": [
+                "TASK-07"
+            ]
+        },
+        {
+            "id": "TASK-10",
+            "title": "iOS: Project Setup & WebView Coordinator",
+            "description": "Configure Xcode project, import sources, and implement WKScriptMessageHandler for A2UI interaction.",
+            "status": "completed",
+            "priority": "P1",
+            "agent": "mobile",
+            "dependencies": [
+                "TASK-07"
+            ]
+        },
+        {
+            "id": "TASK-11",
+            "title": "Server: A2UI Bundle Distribution API",
+            "description": "Expose endpoint to serve compiled A2UI assets for mobile clients.",
+            "status": "completed",
+            "priority": "P0",
+            "agent": "backend",
+            "dependencies": []
+        },
+        {
+            "id": "TASK-12",
+            "title": "Android: Remote Bundle Streaming & Caching",
+            "description": "Download, unzip and cache A2UI bundle from server to internal storage.",
+            "status": "completed",
+            "priority": "P0",
+            "agent": "mobile",
+            "dependencies": [
+                "TASK-08",
+                "TASK-11"
+            ]
+        },
+        {
+            "id": "TASK-13",
+            "title": "Android: TTS Audio Streaming (ElevenLabs)",
+            "description": "Implement audio playback service for TTS messages received via WebSocket.",
+            "status": "completed",
+            "priority": "P1",
+            "agent": "mobile",
+            "dependencies": [
+                "TASK-08"
+            ]
+        },
+        {
+            "id": "TASK-14",
+            "title": "iOS: Remote Bundle Manager & Caching",
+            "description": "Implement bundle download and storage logic for iOS client.",
+            "status": "completed",
+            "priority": "P0",
+            "agent": "mobile",
+            "dependencies": [
+                "TASK-10",
+                "TASK-11"
+            ]
+        },
+        {
+            "id": "TASK-15",
+            "title": "iOS: TTS Audio Player Integration",
+            "description": "Implement AVFoundation audio playback for server-side TTS signals.",
+            "status": "completed",
+            "priority": "P1",
+            "agent": "mobile",
+            "dependencies": [
+                "TASK-10"
+            ]
         }
     ]
 }
