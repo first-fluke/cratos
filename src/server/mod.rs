@@ -18,6 +18,7 @@ pub mod config;
 mod init;
 mod loader;
 mod providers;
+mod task_handler;
 mod validation;
 
 // Re-export public API
