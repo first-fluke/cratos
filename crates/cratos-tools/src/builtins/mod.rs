@@ -21,7 +21,8 @@ mod http;
 mod send_file;
 mod web_search;
 mod wol;
-mod a2ui; // Added
+mod a2ui;
+mod image; // Added
 
 pub use agent_cli::AgentCliTool;
 pub use bash::{BashConfig, BashSecurityMode, BashTool};
@@ -36,13 +37,14 @@ pub use http::{HttpGetTool, HttpPostTool};
 pub use send_file::SendFileTool;
 pub use web_search::WebSearchTool;
 pub use wol::WolTool;
-pub use a2ui::{A2uiRenderTool, A2uiWaitEventTool}; // Added
+pub use a2ui::{A2uiRenderTool, A2uiWaitEventTool};
+pub use image::ImageGenerationTool; // Added
 
 use crate::browser::BrowserTool;
 use crate::registry::ToolRegistry;
 use std::collections::HashMap;
 use std::sync::Arc;
-use cratos_canvas::a2ui::{A2uiSessionManager, A2uiSecurityPolicy}; // Added
+use cratos_canvas::a2ui::{A2uiSessionManager, A2uiSecurityPolicy};
 
 /// Configuration for built-in tools
 #[derive(Debug, Clone, Default)]
@@ -54,7 +56,7 @@ pub struct BuiltinsConfig {
     /// Bash tool (PTY) security configuration
     pub bash: BashConfig,
     /// A2UI Session Manager (Optional, enables A2UI tools)
-    pub a2ui_manager: Option<Arc<A2uiSessionManager>>, // Added
+    pub a2ui_manager: Option<Arc<A2uiSessionManager>>,
 }
 
 /// Register all built-in tools with the registry (default config)
@@ -111,7 +113,10 @@ pub fn register_builtins_with_config(registry: &mut ToolRegistry, config: &Built
     // Send file tool (prepares files as artifacts for channel delivery)
     registry.register(Arc::new(SendFileTool::new()));
 
-    // A2UI Tools (Only if manager is provided) // Added
+    // Image generation tool
+    registry.register(Arc::new(ImageGenerationTool::new()));
+
+    // A2UI Tools (Only if manager is provided)
     if let Some(manager) = &config.a2ui_manager {
         // Use default security policy if not provided (could add to config later)
         let policy = Arc::new(A2uiSecurityPolicy::default_restrictive());
@@ -155,7 +160,8 @@ mod tests {
         assert!(registry.has("git_log"));
         assert!(registry.has("agent_cli"));
         assert!(registry.has("send_file"));
-        // A2UI tools are NOT registered by default, so count remains 21
-        assert_eq!(registry.len(), 21);
+        assert!(registry.has("image_generate"));
+        // A2UI tools are NOT registered by default, so count is 22 (21 + image)
+        assert_eq!(registry.len(), 22);
     }
 }

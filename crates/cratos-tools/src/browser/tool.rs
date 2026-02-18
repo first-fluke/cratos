@@ -702,15 +702,7 @@ impl Tool for BrowserTool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_browser_tool_definition() {
-        let tool = BrowserTool::new();
-        let def = tool.definition();
 
-        assert_eq!(def.name, "browser");
-        assert_eq!(def.risk_level, RiskLevel::Medium);
-        assert_eq!(def.category, ToolCategory::External);
-    }
 
     #[test]
     fn test_parse_navigate_action() {

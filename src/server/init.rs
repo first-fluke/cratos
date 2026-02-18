@@ -3,13 +3,12 @@
 //! Contains the main `run()` function that starts all server components.
 
 use super::a2ui_steering::start_a2ui_steering_loop;
-use super::adapters::{SkillEmbeddingAdapter, SkillRouterAdapter};
+use super::adapters::SkillRouterAdapter;
 use super::background_tasks::{start_cleanup_task, start_scheduler, start_skill_generation_task};
 use super::channel_starters::{
     start_discord_adapter, start_matrix_adapter, start_slack_adapter, start_telegram_adapter,
     start_whatsapp_adapter,
 };
-use super::config::AppConfig;
 use super::init_helpers::{init_auth, init_embedding_provider, init_graph_memory, init_vector_search};
 use super::init_stores::init_stores;
 use super::loader::load_config;
@@ -86,7 +85,7 @@ pub async fn run() -> Result<()> {
     }
 
     // ── Canvas State (live document editing) ──────────────────────────
-    let (a2ui_tx, mut a2ui_rx) = mpsc::channel(100);
+    let (a2ui_tx, a2ui_rx) = mpsc::channel(100);
 
     let canvas_state: Option<Arc<cratos_canvas::CanvasState>> = if config.canvas.enabled {
         let session_manager = Arc::new(cratos_canvas::CanvasSessionManager::new());

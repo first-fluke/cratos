@@ -1,15 +1,21 @@
 {
   "mcpServers": {
     "serena": {
-      "command": "/Users/gahyun/.local/bin/serena",
+      "command": "uvx",
       "args": [
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
         "start-mcp-server",
-        "--transport",
-        "stdio",
+        "--context",
+        "antigravity",
         "--project",
-        "/Volumes/gahyun_ex/projects/cratos"
+        "."
       ],
-      "disabled": false
+      "env": {
+        "SERENA_LOG_LEVEL": "info"
+      },
+      "available_tools": null
     }
   },
   "memoryConfig": {
@@ -43,10 +49,7 @@
       "insert_before_symbol",
       "rename_symbol"
     ],
-    "file-ops": [
-      "list_dir",
-      "find_file"
-    ],
+    "file-ops": ["list_dir", "find_file"],
     "project": [
       "activate_project",
       "get_current_config",
