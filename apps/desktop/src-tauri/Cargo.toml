@@ -30,3 +30,5 @@ rodio = { version = "0.17", default-features = false, features = ["symphonia-all
 dasp_sample = "0.11"
 ringbuf = "0.3" 
 anyhow = "1.0"
+tauri-plugin-notification = "2.3.3"
+tauri-plugin-global-shortcut = "2.3.1"
