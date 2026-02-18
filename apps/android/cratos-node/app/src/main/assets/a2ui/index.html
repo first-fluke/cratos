@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>A2UI Remote</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h1>A2UI Node</h1>
+        <p>This is a placeholder for the A2UI remote interface.</p>
+        <button onclick="testBridge()">Test Bridge</button>
+        <p id="result"></p>
+    </div>
+    <script>
+        function testBridge() {
+            if (window.a2uiBridge) {
+                window.a2uiBridge.postEvent("test-btn", "click", JSON.stringify({ timestamp: Date.now() }));
+                document.getElementById('result').innerText = "Event sent!";
+            } else {
+                document.getElementById('result').innerText = "Bridge not found";
+            }
+        }
+
+        window.handleA2uiMessage = function (message) {
+            console.log("Received via bridge:", message);
+            document.getElementById('result').innerText = "Msg: " + JSON.stringify(message);
+        };
+    </script>
+</body>
+
+</html>
