@@ -41,6 +41,7 @@ dirs = "5"
 
 # PTY-based bash execution
 pty-process = { version = "0.5", features = ["async"] }
+cratos-canvas = { version = "0.1.4", path = "../cratos-canvas" }
 
 # Docker sandbox (bollard for Docker API)
 # bollard = "0.18"  # Enable when Docker sandbox is fully implemented

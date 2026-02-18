@@ -23,6 +23,8 @@ authors = ["Cratos Team"]
 repository = "https://github.com/cratos/cratos"
 
 [workspace.dependencies]
+secrecy = { version = "0.10.3", features = ["serde"] }
+
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
 
@@ -164,6 +166,7 @@ serde.workspace = true
 redis.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
+sqlx.workspace = true
 
 clap = { version = "4", features = ["derive"] }
 inquire = "0.9"
@@ -194,6 +197,8 @@ cratos-channels.workspace = true
 cratos-tools.workspace = true
 cratos-llm.workspace = true
 cratos-replay.workspace = true
+ed25519-dalek.workspace = true
+rand.workspace = true
 
 [profile.release]
 lto = true

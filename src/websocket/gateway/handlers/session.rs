@@ -66,6 +66,8 @@ mod tests {
     use cratos_core::nodes::NodeRegistry;
     use cratos_core::{Orchestrator, OrchestratorConfig};
     use cratos_tools::ToolRegistry;
+    use sqlx::SqlitePool;
+    use sqlx::migrate;
     use std::sync::Arc;
 
     fn readonly_auth() -> AuthContext {
@@ -98,7 +100,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_operations_scope_check() {
-        let nr = NodeRegistry::new();
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        migrate!("./migrations").run(&pool).await.unwrap();
+        let nr = NodeRegistry::new(pool);
         let a2a = A2aRouter::new(100);
         let ro = readonly_auth();
         let br = test_browser_relay();

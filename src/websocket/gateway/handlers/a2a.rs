@@ -200,7 +200,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_a2a_send() {
-        let nr = NodeRegistry::new();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let nr = NodeRegistry::new(pool);
         let a2a = A2aRouter::new(100);
         let auth = admin_auth();
         let br = test_browser_relay();
@@ -246,7 +248,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_a2a_send_missing_fields() {
-        let nr = NodeRegistry::new();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let nr = NodeRegistry::new(pool);
         let a2a = A2aRouter::new(100);
         let auth = admin_auth();
         let br = test_browser_relay();
@@ -279,7 +283,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_a2a_list() {
-        let nr = NodeRegistry::new();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let nr = NodeRegistry::new(pool);
         let a2a = A2aRouter::new(100);
         let auth = admin_auth();
         let br = test_browser_relay();
@@ -321,7 +327,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_a2a_history() {
-        let nr = NodeRegistry::new();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let nr = NodeRegistry::new(pool);
         let a2a = A2aRouter::new(100);
         let auth = admin_auth();
         let br = test_browser_relay();
@@ -367,7 +375,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_a2a_send_without_scope() {
-        let nr = NodeRegistry::new();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let nr = NodeRegistry::new(pool);
         let a2a = A2aRouter::new(100);
         let auth = readonly_auth();
         let br = test_browser_relay();

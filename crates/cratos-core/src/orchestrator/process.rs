@@ -37,6 +37,26 @@ impl Orchestrator {
         self.active_executions
             .insert(execution_id, cancel_token.clone());
 
+        // Initialize steering context
+        let mut steering_ctx = crate::steering::SteeringContext::new(execution_id);
+        self.active_steer_handles
+            .insert(execution_id, steering_ctx.handle());
+
+        // Ensure steering handle cleanup
+        struct SteerCleanup {
+            handles: std::sync::Arc<dashmap::DashMap<Uuid, crate::steering::SteerHandle>>,
+            id: Uuid,
+        }
+        impl Drop for SteerCleanup {
+            fn drop(&mut self) {
+                self.handles.remove(&self.id);
+            }
+        }
+        let _steer_cleanup = SteerCleanup {
+            handles: self.active_steer_handles.clone(),
+            id: execution_id,
+        };
+
         info!(
             execution_id = %execution_id,
             text = %input.text,
@@ -408,6 +428,55 @@ impl Orchestrator {
                 });
             }
 
+            // ── Steering check ────────────────────────────────────────
+            // Check for pending steering messages (e.g. user text from previous iteration)
+            if let Some(msg) = steering_ctx.apply_after_tool().await {
+                info!(execution_id = %execution_id, "Applying pending steering message");
+                messages.push(cratos_llm::Message::user(format!("[User Intervention]: {}", msg)));
+            }
+
+            // Check for new steering signals (Abort, etc.)
+            match steering_ctx.check_before_tool().await {
+                Ok(crate::steering::SteerDecision::Abort(reason)) => {
+                    info!(execution_id = %execution_id, reason = ?reason, "Execution aborted by steering");
+                    self.active_executions.remove(&execution_id);
+                    // Cleanup DB status
+                    if let Some(store) = &self.event_store {
+                        let _ = store
+                            .update_execution_status(execution_id, "cancelled", reason.as_deref())
+                            .await;
+                    }
+                    crate::utils::metrics_global::labeled_counter("cratos_executions_total")
+                        .inc(&[("status", "cancelled")]);
+                    crate::utils::metrics_global::gauge("cratos_active_executions").dec();
+                    
+                    return Ok(ExecutionResult {
+                        execution_id,
+                        status: ExecutionStatus::Cancelled,
+                        response: reason.unwrap_or_else(|| "실행이 중단되었습니다.".to_string()),
+                        tool_calls: tool_call_records,
+                        artifacts: Vec::new(),
+                        iterations: iteration,
+                        duration_ms: start_time.elapsed().as_millis() as u64,
+                        model: model_used,
+                    });
+                }
+                Ok(crate::steering::SteerDecision::Skip(_)) => {
+                    // Skip implies skipping a tool call, but we are at the start of iteration.
+                    // Just ignore for now.
+                }
+                Ok(crate::steering::SteerDecision::Continue) => {
+                    // Check if a UserText was just processed and triggered Pending state
+                    if let Some(msg) = steering_ctx.apply_after_tool().await {
+                        info!(execution_id = %execution_id, "Applying new steering message");
+                        messages.push(cratos_llm::Message::user(format!("[User Intervention]: {}", msg)));
+                    }
+                }
+                Err(_) => {
+                    // Channel closed or other error, ignore
+                }
+            }
+
             // ── Total execution timeout ───────────────────────────────
             if self.config.max_execution_secs > 0 {
                 let elapsed = start_time.elapsed().as_secs();
@@ -690,7 +759,7 @@ impl Orchestrator {
                 ));
 
                 let pre_count = tool_call_records.len();
-                let results = self
+                let (results, steering_messages) = match self
                     .execute_tool_calls(
                         execution_id,
                         &filtered_calls,
@@ -698,8 +767,26 @@ impl Orchestrator {
                         &mut tool_call_records,
                         Some(effective_persona.as_str()),
                         matched_skill_id,
+                        &mut steering_ctx,
                     )
-                    .await;
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(crate::error::Error::Aborted(reason)) => {
+                        info!(execution_id = %execution_id, reason = %reason, "Execution aborted by steering");
+                        return Ok(ExecutionResult {
+                            execution_id,
+                            status: ExecutionStatus::Cancelled,
+                            response: format!("실행이 중단되었습니다: {}", reason),
+                            tool_calls: tool_call_records,
+                            artifacts: Vec::new(),
+                            iterations: iteration,
+                            duration_ms: start_time.elapsed().as_millis() as u64,
+                            model: model_used,
+                        });
+                    }
+                    Err(e) => return Err(e),
+                };
 
                 // Track consecutive all-fail iterations + total failures
                 let new_records = &tool_call_records[pre_count..];
@@ -725,6 +812,12 @@ impl Orchestrator {
                 // NOTE: Only added to the local `messages` vec (for the current execution loop).
                 // NOT persisted to session store individually — see post-loop summary below.
                 messages.extend(tool_messages);
+
+                // Add steering messages (user interventions)
+                for msg in steering_messages {
+                    info!(execution_id = %execution_id, msg = %msg, "Injecting user intervention");
+                    messages.push(Message::user(format!("[User Intervention]: {}", msg)));
+                }
             }
 
             // If there's content along with tool calls, save it

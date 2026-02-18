@@ -45,7 +45,11 @@ fn handle_insert_mode(app: &mut App, key: KeyEvent) {
     match (key.modifiers, key.code) {
         // ── Global Quit being available in Insert is debated, but let's keep Ctrl+C
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
-            app.should_quit = true;
+            if app.has_active_execution() {
+                app.abort_current_execution();
+            } else {
+                app.should_quit = true;
+            }
         }
 
         // ── Switch to Normal Mode ──
@@ -94,7 +98,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
     match (key.modifiers, key.code) {
         // ── Quit ──
         (KeyModifiers::CONTROL, KeyCode::Char('c')) | (_, KeyCode::Char('q')) => {
-            app.should_quit = true;
+            if app.has_active_execution() && key.code == KeyCode::Char('c') {
+                app.abort_current_execution();
+            } else {
+                app.should_quit = true;
+            }
         }
 
         // ── Switch to Insert Mode ──

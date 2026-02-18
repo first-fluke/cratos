@@ -31,6 +31,10 @@ pub struct CanvasState {
     pub llm_router: Option<Arc<LlmRouter>>,
     /// Cancellation token for active AI requests
     pub ai_cancel: CancellationToken,
+    /// Channel for forwarding A2UI messages to external handlers (e.g. Orchestrator)
+    pub a2ui_tx: Option<tokio::sync::mpsc::Sender<(Uuid, crate::a2ui::A2uiClientMessage)>>,
+    /// Internal broadcast for A2UI events (for tool waiting)
+    pub a2ui_notify: broadcast::Sender<(Uuid, crate::a2ui::A2uiClientMessage)>,
 }
 
 impl CanvasState {
@@ -38,12 +42,21 @@ impl CanvasState {
     #[must_use]
     pub fn new(session_manager: Arc<CanvasSessionManager>) -> Self {
         let (broadcast_tx, _) = broadcast::channel(1024);
+        let (a2ui_notify, _) = broadcast::channel(1024);
         Self {
             session_manager,
             broadcast_tx,
             llm_router: None,
             ai_cancel: CancellationToken::new(),
+            a2ui_tx: None,
+            a2ui_notify,
         }
+    }
+
+    /// Set the A2UI message channel
+    pub fn with_a2ui_tx(mut self, tx: tokio::sync::mpsc::Sender<(Uuid, crate::a2ui::A2uiClientMessage)>) -> Self {
+        self.a2ui_tx = Some(tx);
+        self
     }
 
     /// Create with LLM router for AI features
@@ -175,7 +188,7 @@ async fn send_message(
 }
 
 /// Handle a client message
-async fn handle_client_message(
+pub(crate) async fn handle_client_message(
     text: &str,
     session_id: Uuid,
     connection_id: Uuid,
@@ -425,6 +438,21 @@ async fn handle_client_message(
         ClientMessage::Join { .. } | ClientMessage::Leave => {
             // Already handled at connection level
         }
+
+        ClientMessage::A2ui(msg) => {
+            // Internal broadcast for tool waiting
+            let _ = state.a2ui_notify.send((session_id, msg.clone()));
+
+            // Forward A2UI messages to external handler if configured (e.g. Orchestrator Steering)
+            if let Some(tx) = &state.a2ui_tx {
+                if let Err(e) = tx.send((session_id, msg.clone())).await {
+                    warn!(error = %e, "Failed to forward A2UI message");
+                    return Err(format!("Internal error: {}", e));
+                }
+            } else {
+                debug!("Received A2UI message but no handler configured");
+            }
+        }
     }
 
     Ok(())
@@ -546,6 +574,10 @@ async fn execute_sandboxed_code(source: &str) -> String {
         Err(_) => "Execution timed out (30s limit)".to_string(),
     }
 }
+
+#[cfg(test)]
+#[path = "websocket_tests.rs"]
+mod ws_tests;
 
 #[cfg(test)]
 mod tests {

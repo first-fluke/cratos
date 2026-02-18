@@ -45,6 +45,8 @@ flate2 = "1.0"
 # Internal crates
 cratos-replay.workspace = true
 cratos-llm.workspace = true
+regex.workspace = true
+url = "2.5.8"
 
 [dev-dependencies]
 mockall.workspace = true

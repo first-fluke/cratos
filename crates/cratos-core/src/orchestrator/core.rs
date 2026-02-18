@@ -44,6 +44,8 @@ pub struct Orchestrator {
     pub(crate) config: OrchestratorConfig,
     /// Active executions with cancellation tokens for chat.cancel support
     pub(crate) active_executions: Arc<DashMap<Uuid, CancellationToken>>,
+    /// Active steering handles for agent steering
+    pub(crate) active_steer_handles: Arc<DashMap<Uuid, crate::steering::SteerHandle>>,
 }
 
 impl Orchestrator {
@@ -75,6 +77,7 @@ impl Orchestrator {
             doctor: ToolDoctor::new(),
             config,
             active_executions: Arc::new(DashMap::new()),
+            active_steer_handles: Arc::new(DashMap::new()),
         }
     }
 
@@ -217,5 +220,12 @@ impl Orchestrator {
         } else {
             false
         }
+    }
+
+    /// Get a steering handle for an active execution
+    pub fn get_steer_handle(&self, execution_id: Uuid) -> Option<crate::steering::SteerHandle> {
+        self.active_steer_handles
+            .get(&execution_id)
+            .map(|h| h.clone())
     }
 }

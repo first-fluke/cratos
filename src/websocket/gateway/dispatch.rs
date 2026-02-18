@@ -121,9 +121,19 @@ mod tests {
         }
     }
 
-    fn test_node_registry() -> NodeRegistry {
-        NodeRegistry::new()
+    #[tokio::test]
+    async fn test_dispatch_handler_routing() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let _nr = NodeRegistry::new(pool);
     }
+
+    async fn handle_message_test_node_registry() -> NodeRegistry {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        NodeRegistry::new(pool)
+    }
+
 
     fn test_a2a_router() -> A2aRouter {
         A2aRouter::new(100)
@@ -147,9 +157,73 @@ mod tests {
         Arc::new(EventBus::new(16))
     }
 
+    fn readonly_auth() -> AuthContext {
+         AuthContext {
+             user_id: "readonly".to_string(),
+             method: AuthMethod::ApiKey,
+             scopes: vec![Scope::SessionRead, Scope::ExecutionRead],
+             session_id: None,
+             device_id: None,
+         }
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_invalid_method() {
+        let nr = handle_message_test_node_registry().await;
+        let a2a = test_a2a_router();
+        let br = test_browser_relay();
+        let orch = test_orchestrator();
+        let eb = test_event_bus();
+
+        let ctx = DispatchContext {
+            auth: &readonly_auth(),
+            node_registry: &nr,
+            a2a_router: &a2a,
+             browser_relay: &br,
+             orchestrator: &orch,
+             event_bus: &eb,
+             approval_manager: None,
+        };
+
+        let result = dispatch_method("1", "invalid.method", serde_json::json!({}), &ctx).await;
+        match result {
+            GatewayFrame::Response { error: Some(e), .. } => {
+                assert_eq!(e.code, GatewayErrorCode::UnknownMethod);
+            }
+            _ => panic!("expected method not found"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_chat_method() {
+        let nr = handle_message_test_node_registry().await;
+        let a2a = test_a2a_router();
+        let br = test_browser_relay();
+        let orch = test_orchestrator();
+        let eb = test_event_bus();
+        let ctx = DispatchContext {
+            auth: &admin_auth(),
+            node_registry: &nr,
+            a2a_router: &a2a,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
+        };
+
+        // This test verifies routing to chat handler.
+        let result = dispatch_method("2", "chat.send", serde_json::json!({"text": "hello"}), &ctx).await;
+        match result {
+            GatewayFrame::Response { result: Some(v), .. } => {
+                assert_eq!(v["status"], "accepted");
+            }
+            _ => panic!("expected success from chat.send"),
+        }
+    }
+
     #[tokio::test]
     async fn test_ping() {
-        let nr = test_node_registry();
+        let nr = handle_message_test_node_registry().await;
         let a2a = test_a2a_router();
         let br = test_browser_relay();
         let orch = test_orchestrator();
@@ -176,7 +250,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_unknown_method() {
-        let nr = test_node_registry();
+        let nr = handle_message_test_node_registry().await;
         let a2a = test_a2a_router();
         let br = test_browser_relay();
         let orch = test_orchestrator();

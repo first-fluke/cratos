@@ -30,6 +30,7 @@ pub mod error;
 pub mod event_bus;
 pub mod external_auth;
 pub mod memory;
+/// Node management and permissions (secure remote execution graph).
 pub mod nodes;
 pub mod pairing;
 
@@ -43,6 +44,8 @@ pub mod scheduler;
 pub mod security;
 pub mod session_manager;
 pub mod shutdown;
+/// Steering control (abort, inject messages)
+pub mod steering;
 pub mod telemetry;
 pub mod tool_policy;
 pub mod utils;

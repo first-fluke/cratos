@@ -92,6 +92,14 @@ impl Default for TuiState {
     }
 }
 
+/// Internal event for the TUI event loop
+#[derive(Debug)]
+pub enum AppEvent {
+    Chat(ChatMessage),
+    ExecutionStarted(uuid::Uuid),
+    ExecutionEnded(uuid::Uuid),
+}
+
 /// Main application state.
 pub struct App {
     pub messages: Vec<ChatMessage>,
@@ -109,9 +117,11 @@ pub struct App {
     orchestrator: Arc<Orchestrator>,
     session_id: String,
     commands: Arc<CommandRegistry>,
+    
+    current_execution_id: Option<uuid::Uuid>,
 
-    response_tx: mpsc::UnboundedSender<ChatMessage>,
-    pub response_rx: mpsc::UnboundedReceiver<ChatMessage>,
+    response_tx: mpsc::UnboundedSender<AppEvent>,
+    pub response_rx: mpsc::UnboundedReceiver<AppEvent>,
 }
 
 impl App {
@@ -138,6 +148,7 @@ impl App {
             orchestrator,
             session_id,
             commands: Arc::new(CommandRegistry::new()),
+            current_execution_id: None,
             response_tx: tx,
             response_rx: rx,
         };
@@ -290,6 +301,26 @@ impl App {
 
     fn submit_message(&mut self, text: String) {
         self.push_user(text.clone());
+
+        // Check if we should steer an existing execution
+        if let Some(exec_id) = self.current_execution_id {
+            if let Some(handle) = self.orchestrator.get_steer_handle(exec_id) {
+                // Inject steering message
+                let tx = self.response_tx.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = handle.inject_message(text).await {
+                         let _ = tx.send(AppEvent::Chat(ChatMessage {
+                             role: Role::System,
+                             sender: "system".into(),
+                             content: format!("Failed to inject steering message: {}", e),
+                             timestamp: Local::now(),
+                        }));
+                    }
+                });
+                return;
+            }
+        }
+
         self.ui_state.is_loading = true;
         self.ui_state.loading_tick = 0;
         // Don't auto-scroll here, let the push_user handle it or user control
@@ -309,16 +340,22 @@ impl App {
                 Some(tokio::spawn(async move {
                     while let Ok(event) = rx.recv().await {
                         match event {
+                            cratos_core::event_bus::OrchestratorEvent::ExecutionStarted {
+                                execution_id,
+                                ..
+                            } => {
+                                let _ = etx.send(AppEvent::ExecutionStarted(execution_id));
+                            }
                             cratos_core::event_bus::OrchestratorEvent::ToolStarted {
                                 tool_name,
                                 ..
                             } => {
-                                let _ = etx.send(ChatMessage {
+                                let _ = etx.send(AppEvent::Chat(ChatMessage {
                                     role: Role::System,
                                     sender: "system".into(),
                                     content: format!("[{}] executing...", tool_name),
                                     timestamp: Local::now(),
-                                });
+                                }));
                             }
                             cratos_core::event_bus::OrchestratorEvent::ToolCompleted {
                                 tool_name,
@@ -327,7 +364,7 @@ impl App {
                                 ..
                             } => {
                                 let status = if success { "OK" } else { "FAILED" };
-                                let _ = etx.send(ChatMessage {
+                                let _ = etx.send(AppEvent::Chat(ChatMessage {
                                     role: Role::System,
                                     sender: "system".into(),
                                     content: format!(
@@ -335,14 +372,23 @@ impl App {
                                         tool_name, status, duration_ms
                                     ),
                                     timestamp: Local::now(),
-                                });
+                                }));
                             }
                             cratos_core::event_bus::OrchestratorEvent::ExecutionCompleted {
+                                execution_id,
                                 ..
                             }
                             | cratos_core::event_bus::OrchestratorEvent::ExecutionFailed {
+                                execution_id,
                                 ..
                             } => {
+                                let _ = etx.send(AppEvent::ExecutionEnded(execution_id));
+                                break;
+                            }
+                            cratos_core::event_bus::OrchestratorEvent::ExecutionCancelled {
+                                execution_id,
+                            } => {
+                                let _ = etx.send(AppEvent::ExecutionEnded(execution_id));
                                 break;
                             }
                             _ => {}
@@ -370,7 +416,7 @@ impl App {
                 },
             };
 
-            let _ = tx.send(msg);
+            let _ = tx.send(AppEvent::Chat(msg));
 
             if let Some(handle) = event_handle {
                 handle.abort();
@@ -379,11 +425,49 @@ impl App {
     }
 
     pub fn poll_responses(&mut self) {
-        while let Ok(msg) = self.response_rx.try_recv() {
-            self.ui_state.is_loading = false;
-            self.messages.push(msg);
-            // Auto-scroll to bottom on new message
-            self.scroll_to_bottom();
+        while let Ok(event) = self.response_rx.try_recv() {
+            match event {
+                AppEvent::Chat(msg) => {
+                    self.ui_state.is_loading = false;
+                    self.messages.push(msg);
+                    self.scroll_to_bottom();
+                }
+                AppEvent::ExecutionStarted(id) => {
+                    self.current_execution_id = Some(id);
+                    self.ui_state.is_loading = true; // Ensure loading state
+                }
+                AppEvent::ExecutionEnded(id) => {
+                    if self.current_execution_id == Some(id) {
+                        self.current_execution_id = None;
+                        self.ui_state.is_loading = false;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn has_active_execution(&self) -> bool {
+        self.current_execution_id.is_some()
+    }
+
+    pub fn abort_current_execution(&mut self) {
+        if let Some(exec_id) = self.current_execution_id {
+            if let Some(handle) = self.orchestrator.get_steer_handle(exec_id) {
+                let tx = self.response_tx.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = handle.abort(Some("Aborted by user via TUI".to_string())).await {
+                         let _ = tx.send(AppEvent::Chat(ChatMessage {
+                             role: Role::System,
+                             sender: "system".into(),
+                             content: format!("Failed to abort: {}", e),
+                             timestamp: Local::now(),
+                        }));
+                    }
+                });
+                self.push_system(format!("Sending abort signal to execution {}...", exec_id));
+            } else {
+                 self.push_system("No steering handle found for active execution.".to_string());
+            }
         }
     }
 
@@ -473,6 +557,30 @@ impl App {
         if self.ui_state.tick_count % 4 == 0 {
             self.refresh_quota();
             self.refresh_cost();
+        }
+    }
+
+    pub fn abort_execution(&mut self) {
+        if let Some(exec_id) = self.current_execution_id {
+            if let Some(handle) = self.orchestrator.get_steer_handle(exec_id) {
+                let tx = self.response_tx.clone();
+                // We spawn this because handle.abort is async
+                tokio::spawn(async move {
+                    if let Err(e) = handle.abort(Some("User requested abort via TUI".to_string())).await {
+                        let _ = tx.send(AppEvent::Chat(ChatMessage {
+                             role: Role::System,
+                             sender: "system".into(),
+                             content: format!("Failed to abort: {}", e),
+                             timestamp: Local::now(),
+                        }));
+                    }
+                });
+                self.push_system("Sending abort signal...".into());
+            } else {
+                 self.push_system("No active steering handle found for current execution.".into());
+            }
+        } else {
+            self.push_system("No active execution to abort.".into());
         }
     }
 }

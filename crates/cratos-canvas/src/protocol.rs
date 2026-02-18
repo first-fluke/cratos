@@ -72,12 +72,18 @@ pub enum ClientMessage {
 
     /// Ping to keep connection alive
     Ping,
+
+    /// A2UI Protocol - Client Message
+    A2ui(crate::a2ui::A2uiClientMessage),
 }
 
 /// Messages sent from server to client
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
+    /// A2UI Protocol - Server Message
+    A2ui(crate::a2ui::A2uiServerMessage),
+
     /// Welcome message with session state
     Welcome {
         /// Session ID

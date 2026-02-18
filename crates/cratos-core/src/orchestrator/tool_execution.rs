@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use super::core::Orchestrator;
 use super::types::ToolCallRecord;
+use crate::steering::{SteerDecision, SteeringContext};
 
 impl Orchestrator {
     /// Execute a list of tool calls
@@ -21,6 +22,7 @@ impl Orchestrator {
     ///
     /// When `matched_skill_id` is provided, records persona-skill metrics
     /// via `PersonaSkillStore` and checks for auto-assignment eligibility.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn execute_tool_calls(
         &self,
         execution_id: Uuid,
@@ -29,10 +31,30 @@ impl Orchestrator {
         records: &mut Vec<ToolCallRecord>,
         active_persona: Option<&str>,
         matched_skill_id: Option<Uuid>,
-    ) -> Vec<serde_json::Value> {
+        steering_ctx: &mut SteeringContext,
+    ) -> crate::error::Result<(Vec<serde_json::Value>, Vec<String>)> {
         let mut results = Vec::with_capacity(tool_calls.len());
+        let mut steering_messages = Vec::new();
 
         for call in tool_calls {
+            // Steering Check
+            match steering_ctx.check_before_tool().await? {
+                SteerDecision::Abort(reason) => {
+                    return Err(crate::error::Error::Aborted(
+                        reason.unwrap_or_else(|| "User aborted".to_string()),
+                    ));
+                }
+                SteerDecision::Skip(id) if id == call.id => {
+                    info!(
+                        execution_id = %execution_id,
+                        tool_call_id = %call.id,
+                        "Skipping tool by steering"
+                    );
+                    continue;
+                }
+                _ => {}
+            }
+
             info!(
                 execution_id = %execution_id,
                 tool = %call.name,
@@ -293,8 +315,12 @@ impl Orchestrator {
             }
 
             results.push(output);
+
+            if let Some(msg) = steering_ctx.apply_after_tool().await {
+                steering_messages.push(msg);
+            }
         }
 
-        results
+        Ok((results, steering_messages))
     }
 }

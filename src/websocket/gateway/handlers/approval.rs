@@ -201,7 +201,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_approval_respond_scope() {
-        let nr = NodeRegistry::new();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let nr = NodeRegistry::new(pool);
         let a2a = A2aRouter::new(100);
         let br = test_browser_relay();
         let orch = test_orchestrator();
@@ -249,7 +251,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_approval_respond_invalid_request_id() {
-        let nr = NodeRegistry::new();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let nr = NodeRegistry::new(pool);
         let a2a = A2aRouter::new(100);
         let br = test_browser_relay();
         let orch = test_orchestrator();
@@ -281,7 +285,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_approval_list_pending() {
-        let nr = NodeRegistry::new();
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let nr = NodeRegistry::new(pool);
         let a2a = A2aRouter::new(100);
         let br = test_browser_relay();
         let orch = test_orchestrator();

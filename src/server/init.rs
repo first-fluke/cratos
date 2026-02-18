@@ -29,8 +29,10 @@ use cratos_tools::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tower_http::{cors::CorsLayer, services::ServeDir};
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 /// Run the server
 pub async fn run() -> Result<()> {
@@ -142,6 +144,23 @@ pub async fn run() -> Result<()> {
         info!("Gemini quota poller started");
     }
 
+    // ── Canvas State (live document editing) ──────────────────────────
+    let (a2ui_tx, mut a2ui_rx) = mpsc::channel(100);
+
+    let canvas_state: Option<Arc<cratos_canvas::CanvasState>> = if config.canvas.enabled {
+        let session_manager = Arc::new(cratos_canvas::CanvasSessionManager::new());
+        let state = cratos_canvas::CanvasState::new(session_manager)
+            .with_a2ui_tx(a2ui_tx);
+        info!(
+            max_sessions = config.canvas.max_sessions,
+            "Canvas state initialized with A2UI Steering channel"
+        );
+        Some(Arc::new(state))
+    } else {
+        debug!("Canvas disabled by configuration");
+        None
+    };
+
     let mut tool_registry = ToolRegistry::new();
     // Convert security config to ExecConfig
     let exec_timeout_secs = config.security.exec.max_timeout_secs;
@@ -161,8 +180,15 @@ pub async fn run() -> Result<()> {
             ..ExecConfig::default()
         }
     };
+
+    // Initialize A2UI Session Manager if Canvas is enabled
+    let a2ui_manager = canvas_state.as_ref().map(|state| {
+        Arc::new(cratos_canvas::a2ui::A2uiSessionManager::new(state.clone()))
+    });
+
     let builtins_config = BuiltinsConfig {
         exec: exec_config,
+        a2ui_manager,
         ..BuiltinsConfig::default()
     };
     register_builtins_with_config(&mut tool_registry, &builtins_config);
@@ -189,20 +215,6 @@ pub async fn run() -> Result<()> {
         &mut tool_registry,
     )
     .await;
-
-    // ── Canvas State (live document editing) ──────────────────────────
-    let canvas_state: Option<Arc<cratos_canvas::CanvasState>> = if config.canvas.enabled {
-        let session_manager = Arc::new(cratos_canvas::CanvasSessionManager::new());
-        let state = cratos_canvas::CanvasState::new(session_manager);
-        info!(
-            max_sessions = config.canvas.max_sessions,
-            "Canvas state initialized"
-        );
-        Some(Arc::new(state))
-    } else {
-        debug!("Canvas disabled by configuration");
-        None
-    };
 
     let tool_count = tool_registry.len();
     let tool_registry = Arc::new(tool_registry);
@@ -339,6 +351,71 @@ pub async fn run() -> Result<()> {
     let orchestrator = Arc::new(orchestrator);
     info!("Orchestrator initialized");
 
+    // ── A2UI Steering Loop ─────────────────────────────────────────────
+    let steer_orchestrator = orchestrator.clone();
+    tokio::spawn(async move {
+        debug!("A2UI Steering Loop started");
+        while let Some((_session_id, msg)) = a2ui_rx.recv().await {
+            use cratos_canvas::a2ui::A2uiClientMessage;
+            if let A2uiClientMessage::Steer { action, payload } = msg {
+                // Determine Execution ID from payload
+                let execution_id = payload.as_ref()
+                    .and_then(|p| p.get("execution_id"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok());
+
+                if let Some(exec_id) = execution_id {
+                    if let Some(handle) = steer_orchestrator.get_steer_handle(exec_id) {
+                        debug!(execution_id = %exec_id, action = %action, "Processing Steer command");
+                        let result = match action.as_str() {
+                            "abort" => {
+                                let reason = payload.as_ref()
+                                    .and_then(|p| p.get("reason"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                handle.abort(reason).await
+                            },
+                            "skip" => {
+                                if let Some(tid) = payload.as_ref()
+                                    .and_then(|p| p.get("tool_call_id"))
+                                    .and_then(|v| v.as_str()) {
+                                    handle.skip_tool(tid.to_string()).await
+                                } else {
+                                    warn!("Skip action missing tool_call_id");
+                                    Ok(())
+                                }
+                            },
+                            "user_text" => {
+                                if let Some(content) = payload.as_ref()
+                                    .and_then(|p| p.get("content"))
+                                    .and_then(|v| v.as_str()) {
+                                    handle.inject_message(content.to_string()).await
+                                } else {
+                                    warn!("UserText action missing content");
+                                    Ok(()) 
+                                }
+                            },
+                            _ => {
+                                warn!("Unknown steer action: {}", action);
+                                Ok(())
+                            }
+                        };
+                        
+                        if let Err(e) = result {
+                            warn!(execution_id = %exec_id, error = %e, "Failed to send steering command");
+                        }
+                    } else {
+                        // This happens if execution finished or ID is wrong
+                        debug!(execution_id = %exec_id, "Steer handle not found (execution finished?)");
+                    }
+                } else {
+                    debug!("Steer message missing execution_id in payload, ignoring");
+                }
+            }
+        }
+        debug!("A2UI Steering Loop finished");
+    });
+
     // Dev Session Monitor (AI session detection) - created early for channel use
     let dev_monitor = Arc::new(cratos_core::DevSessionMonitor::new(
         std::time::Duration::from_secs(30),
@@ -435,7 +512,7 @@ pub async fn run() -> Result<()> {
     // ================================================================
     // Node Registry (Phase 9)
     // ================================================================
-    let node_registry = Arc::new(cratos_core::NodeRegistry::new());
+    let node_registry = Arc::new(cratos_core::NodeRegistry::new(event_store.pool().clone()));
     info!("Node registry initialized");
 
     // ================================================================

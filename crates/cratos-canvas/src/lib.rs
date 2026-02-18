@@ -56,6 +56,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+#![allow(missing_docs)] // TODO: Add documentation to all public items
+
+pub mod a2ui;
 pub mod document;
 pub mod error;
 pub mod events;

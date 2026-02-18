@@ -162,8 +162,15 @@ mod tests {
         }
     }
 
-    fn test_node_registry() -> NodeRegistry {
-        NodeRegistry::new()
+    pub(crate) async fn test_node_registry() -> NodeRegistry {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        NodeRegistry::new(pool)
+    }
+
+    #[tokio::test]
+    async fn test_chat_handler() {
+        let _nr = test_node_registry().await;
     }
 
     fn test_a2a_router() -> A2aRouter {
@@ -191,7 +198,7 @@ mod tests {
     #[tokio::test]
     async fn test_chat_send_with_scope() {
         let auth = admin_auth();
-        let nr = test_node_registry();
+        let nr = test_node_registry().await;
         let a2a = test_a2a_router();
         let br = test_browser_relay();
         let orch = test_orchestrator();
@@ -221,7 +228,7 @@ mod tests {
     #[tokio::test]
     async fn test_chat_send_without_scope() {
         let auth = readonly_auth();
-        let nr = test_node_registry();
+        let nr = test_node_registry().await;
         let a2a = test_a2a_router();
         let br = test_browser_relay();
         let orch = test_orchestrator();
@@ -248,7 +255,7 @@ mod tests {
     #[tokio::test]
     async fn test_chat_send_missing_text() {
         let auth = admin_auth();
-        let nr = test_node_registry();
+        let nr = test_node_registry().await;
         let a2a = test_a2a_router();
         let br = test_browser_relay();
         let orch = test_orchestrator();
@@ -274,7 +281,7 @@ mod tests {
     #[tokio::test]
     async fn test_chat_cancel_invalid_id() {
         let auth = admin_auth();
-        let nr = test_node_registry();
+        let nr = test_node_registry().await;
         let a2a = test_a2a_router();
         let br = test_browser_relay();
         let orch = test_orchestrator();

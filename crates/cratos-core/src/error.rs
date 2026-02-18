@@ -81,6 +81,14 @@ pub enum Error {
     /// Internal error (Redis, serialization, etc.)
     #[error("internal error: {0}")]
     Internal(String),
+
+    /// Execuction was aborted by steering
+    #[error("execution aborted: {0}")]
+    Aborted(String),
+
+    /// Detailed Steering Error
+    #[error("steering error: {0}")]
+    Steering(#[from] crate::steering::SteerError),
 }
 
 /// Result type alias
@@ -153,6 +161,12 @@ impl UserFriendlyError for Error {
             }
             Error::Internal(msg) => {
                 format!("❌ Internal error: {}", msg)
+            }
+            Error::Aborted(msg) => {
+                format!("🛑 Execution aborted: {}", msg)
+            }
+            Error::Steering(e) => {
+                format!("🛑 Steering error: {}", e)
             }
         }
     }

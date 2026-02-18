@@ -4,7 +4,7 @@
 
 use axum::{
     extract::Query,
-    response::{Html, IntoResponse, Redirect, Response},
+    response::{Html, IntoResponse, Response},
     routing::get,
     Router, Json,
 };

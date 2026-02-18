@@ -67,6 +67,14 @@ impl CommandRegistry {
                 Ok(())
             },
         });
+
+        self.commands.push(Command {
+            name: "abort",
+            handler: |app, _| {
+                app.abort_execution();
+                Ok(())
+            },
+        });
     }
 
     pub fn handle(&self, app: &mut App, input: &str) -> Result<()> {
