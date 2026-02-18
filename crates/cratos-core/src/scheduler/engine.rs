@@ -13,7 +13,8 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use super::store::{Result, ScheduledTask, SchedulerError, SchedulerStore, TaskAction};
+use super::store::SchedulerStore;
+use super::types::{Result, ScheduledTask, SchedulerError, TaskAction};
 use super::triggers::{IntervalTrigger, TriggerType};
 
 /// Callback type for executing task actions

@@ -64,11 +64,12 @@
 mod engine;
 mod store;
 mod triggers;
+mod types;
 
 pub use engine::{SchedulerConfig, SchedulerEngine, SchedulerEngineBuilder, TaskExecutor};
-pub use store::{
-    Result as SchedulerResult, ScheduledTask, SchedulerError, SchedulerStore, TaskAction,
-    TaskExecution,
+pub use store::SchedulerStore;
+pub use types::{
+    Result as SchedulerResult, ScheduledTask, SchedulerError, TaskAction, TaskExecution,
 };
 pub use triggers::{
     Comparison, CronTrigger, FileEvent, FileTrigger, IntervalTrigger, OneTimeTrigger, SystemMetric,
