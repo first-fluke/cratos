@@ -69,6 +69,15 @@ tools/*/package-lock.json
 # Temporary test scripts
 test_*.js
 
+
 # Mimic data
 .mimic/
+
+# Mobile apps (generated)
+apps/android/
+apps/ios/
+
+# Lock files (bun preferred)
+package-lock.json
+**/package-lock.json
 
