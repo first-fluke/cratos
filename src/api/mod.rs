@@ -25,6 +25,7 @@ pub mod skills;
 pub mod tools;
 pub mod webhooks;
 pub mod nodes;
+pub mod bundle;
 
 use axum::Router;
 
@@ -45,6 +46,7 @@ pub use skills::skills_routes;
 pub use tools::tools_routes;
 pub use webhooks::webhooks_routes;
 pub use nodes::nodes_routes;
+pub use bundle::bundle_routes;
 
 use crate::api::config::ConfigState;
 
@@ -72,4 +74,5 @@ pub fn api_router_with_state(session_state: SessionState, config_state: ConfigSt
         .merge(pantheon_routes())
         .merge(graph_routes())
         .merge(nodes_routes())
+        .merge(bundle_routes())
 }

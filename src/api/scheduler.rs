@@ -117,6 +117,10 @@ fn task_to_view(task: &ScheduledTask) -> TaskView {
             "webhook".to_string(),
             serde_json::to_value(&task.action).unwrap_or_default(),
         ),
+        TaskAction::RunSkillAnalysis { dry_run } => (
+            "run_skill_analysis".to_string(),
+            serde_json::json!({ "dry_run": dry_run }),
+        ),
     };
 
     TaskView {
@@ -208,6 +212,11 @@ fn parse_action(action_type: &str, config: &serde_json::Value) -> Result<TaskAct
                 .to_string();
             let cwd = config["cwd"].as_str().map(String::from);
             Ok(TaskAction::Shell { command, cwd })
+        }
+        "webhook" => serde_json::from_value(config.clone()).map_err(|e| e.to_string()),
+        "run_skill_analysis" => {
+            let dry_run = config["dry_run"].as_bool().unwrap_or(false);
+            Ok(TaskAction::RunSkillAnalysis { dry_run })
         }
         other => Err(format!("Invalid action type: {}", other)),
     }
