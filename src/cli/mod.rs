@@ -285,6 +285,21 @@ pub enum SkillCommands {
         #[arg(long)]
         registry: Option<String>,
     },
+    /// Analyze recent usage patterns for potential skills
+    Analyze {
+        /// Dry run mode (don't save analysis results)
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Generate skills from detected patterns
+    Generate {
+        /// Dry run mode (don't save generated skills)
+        #[arg(long)]
+        dry_run: bool,
+        /// Auto-enable generated skills
+        #[arg(long)]
+        enable: bool,
+    },
 }
 
 /// Pantheon subcommands

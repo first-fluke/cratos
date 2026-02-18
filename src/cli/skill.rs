@@ -5,7 +5,11 @@
 use super::SkillCommands;
 use anyhow::{Context, Result};
 use chrono::Utc;
-use cratos_skills::{RemoteRegistry, Skill, SkillEcosystem, SkillStatus, SkillStore};
+use cratos_replay::{EventStore, default_db_path as default_replay_db_path};
+use cratos_skills::{
+    PatternAnalyzer, SkillGenerator, RemoteRegistry, Skill, SkillEcosystem, SkillStatus, SkillStore,
+    PatternStatus,
+};
 
 /// Status indicator for active skill
 const ICON_ACTIVE: &str = "\u{1f7e2}"; // 🟢
@@ -31,7 +35,127 @@ pub async fn run(cmd: SkillCommands) -> Result<()> {
             token,
             registry,
         } => publish_remote(&store, &name, token, registry).await,
+        SkillCommands::Analyze { dry_run } => analyze_patterns(dry_run).await,
+        SkillCommands::Generate { dry_run, enable } => generate_skills(&store, dry_run, enable).await,
     }
+}
+
+/// Analyze recent usage patterns
+async fn analyze_patterns(dry_run: bool) -> Result<()> {
+    let db_path = default_replay_db_path();
+    let event_store = EventStore::from_path(&db_path).await?;
+    let skill_store = open_store().await?;
+
+    println!("Analyzing execution history for recurring patterns...");
+    println!("Database: {}", db_path.display());
+
+    // Use default config for now
+    let analyzer = PatternAnalyzer::default();
+    let patterns = analyzer.detect_patterns(&event_store).await?;
+
+    if patterns.is_empty() {
+        println!("No significant patterns detected.");
+        return Ok(());
+    }
+
+    println!("Detected {} potential patterns:", patterns.len());
+    
+    let mut saved_count = 0;
+    
+    for (i, p) in patterns.iter().enumerate() {
+        println!("\n[{}] Pattern Configuration:", i + 1);
+        println!("  Confidence: {:.1}% ({} occurrences)", 
+            p.confidence_score * 100.0, 
+            p.occurrence_count
+        );
+        println!("  Detected: {}", p.detected_at.format("%Y-%m-%d %H:%M:%S"));
+        
+        // Show sequence
+        println!("  Sequence: {:?}", p.tool_sequence);
+        
+        if !dry_run {
+            // Check if already exists (naive check by sequence? or just save and let DB handle unique constraint?)
+            // SkillStore logic handles uniqueness usually or upserts.
+            match skill_store.save_pattern(p).await {
+                Ok(_) => saved_count += 1,
+                Err(e) => println!("  ⚠️ Failed to save: {}", e),
+            }
+        }
+    }
+
+    if !dry_run {
+        println!("\nSaved {} patterns to skill store.", saved_count);
+        println!("Run 'cratos skill generate' to convert them into skills.");
+    } else {
+        println!("\nDry run: No patterns were saved.");
+    }
+
+    Ok(())
+}
+
+/// Generate skills from detected patterns
+async fn generate_skills(store: &SkillStore, dry_run: bool, auto_enable: bool) -> Result<()> {
+    // 1. Fetch pending patterns
+    let patterns = store.list_detected_patterns().await?;
+    let pending: Vec<_> = patterns
+        .into_iter()
+        .filter(|p| p.status == PatternStatus::Detected)
+        .collect();
+
+    if pending.is_empty() {
+        println!("No pending patterns found to generate skills from.");
+        println!("Run 'cratos skill analyze' first.");
+        return Ok(());
+    }
+
+    println!("Found {} pending patterns. Generating skills...", pending.len());
+    
+    let generator = SkillGenerator::default();
+    let mut generated_count = 0;
+
+    for pattern in pending {
+        println!("\nProcessing Pattern: {}", pattern.id);
+        
+        // Generate skill definition
+        match generator.generate_from_pattern(&pattern) {
+            Ok(mut skill) => {
+                println!("  Generated Skill: '{}'", skill.name);
+                println!("  Description: {:?}", skill.description);
+                
+                if auto_enable {
+                    skill.status = SkillStatus::Active;
+                    println!("  Status: Active (Auto-enabled)");
+                }
+
+                if !dry_run {
+                    // Save skill
+                    match store.save_skill(&skill).await {
+                        Ok(()) => {
+                            // Mark pattern converted
+                            if let Err(e) = store.mark_pattern_converted(pattern.id, skill.id).await {
+                                println!("  ⚠️ Failed to mark pattern converted: {}", e);
+                            } else {
+                                generated_count += 1;
+                                println!("  ✅ Saved and linked to pattern.");
+                            }
+                        }
+                        Err(e) => println!("  ❌ Failed to save skill: {}", e),
+                    }
+                } else {
+                    println!("  (Dry run: Skill not saved)");
+                }
+            }
+            Err(e) => {
+                println!("  ❌ Generation failed: {}", e);
+            }
+        }
+    }
+
+    if !dry_run {
+        println!("\nSuccessfully generated {} new skills.", generated_count);
+    }
+
+    Ok(())
 }
 
 /// Open the default skill store
