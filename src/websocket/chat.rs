@@ -112,17 +112,7 @@ pub async fn chat_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, orchestrator, event_bus, ciphers))
 }
 
-/// WebSocket upgrade handler for Web UI (no authentication - same-origin only)
-/// This is safe because Web UI is served from the same server.
-pub async fn chat_handler_public(
-    ws: WebSocketUpgrade,
-    Extension(orchestrator): Extension<Arc<Orchestrator>>,
-    Extension(event_bus): Extension<Arc<EventBus>>,
-    e2e_ciphers: Option<Extension<E2eCipherMap>>,
-) -> impl IntoResponse {
-    let ciphers = e2e_ciphers.map(|Extension(c)| c);
-    ws.on_upgrade(move |socket| handle_socket(socket, orchestrator, event_bus, ciphers))
-}
+
 
 /// Handle WebSocket connection
 async fn handle_socket(

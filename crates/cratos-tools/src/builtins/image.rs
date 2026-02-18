@@ -5,7 +5,7 @@
 
 use crate::error::{Error, Result};
 use crate::registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolResult};
-use reqwest::header::{CONTENT_TYPE};
+use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::Instant;
@@ -54,7 +54,7 @@ struct GoogleImagePrediction {
 struct GoogleError {
     code: i32,
     message: String,
-    status: String,
+    _status: String,
 }
 
 /// Tool for generating images via Google Gemini (NanoBanana)
@@ -63,6 +63,7 @@ pub struct ImageGenerationTool {
 }
 
 impl ImageGenerationTool {
+    /// Create a new ImageGenerationTool
     pub fn new() -> Self {
         let definition = ToolDefinition::new(
             "image_generate",
@@ -131,7 +132,7 @@ impl Tool for ImageGenerationTool {
         // If it's a nickname for Imagen 3, we use "imagen-3.0-generate-001" effectively via config?
         // Given explicit instruction, we target "NanoBanana" unless overridden by env var.
         let model = env::var("CRATOS_IMAGE_MODEL").unwrap_or_else(|_| "NanoBanana".to_string());
-        
+
         // Construct standard Google Generative AI URL: .../models/{model}:predict
         let url = format!("{}/{}:predict?key={}", GOOGLE_API_BASE, model, api_key);
 
@@ -178,9 +179,9 @@ impl Tool for ImageGenerationTool {
             )));
         }
 
-        let predictions = response_body.predictions.ok_or_else(|| {
-            Error::Execution("Google API returned no predictions".to_string())
-        })?;
+        let predictions = response_body
+            .predictions
+            .ok_or_else(|| Error::Execution("Google API returned no predictions".to_string()))?;
 
         let prediction = predictions.first().ok_or_else(|| {
             Error::Execution("Google API returned empty predictions list".to_string())

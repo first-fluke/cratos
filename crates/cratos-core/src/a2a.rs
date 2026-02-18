@@ -109,6 +109,7 @@ impl From<&A2aMessage> for A2aMessageSummary {
 ///
 /// Maintains per-agent message queues and per-session history.
 /// Thread-safe via `RwLock`.
+#[derive(Debug)]
 pub struct A2aRouter {
     /// Pending messages per agent: agent_id → queue
     queues: RwLock<HashMap<String, VecDeque<A2aMessage>>>,
@@ -206,6 +207,21 @@ impl A2aRouter {
                 queue.retain(|msg| msg.session_id != session_id);
             }
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl cratos_tools::builtins::MessageSender for A2aRouter {
+    async fn send(
+        &self,
+        from_agent: &str,
+        to_agent: &str,
+        content: &str,
+        session_id: &str,
+    ) -> anyhow::Result<()> {
+        let msg = A2aMessage::new(from_agent, to_agent, session_id, content);
+        self.send(msg).await;
+        Ok(())
     }
 }
 

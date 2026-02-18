@@ -9,6 +9,7 @@
 //! - Wake-on-LAN tool: wol
 //! - Config tool: config (natural language configuration)
 
+mod a2ui;
 mod agent_cli;
 mod bash;
 mod config;
@@ -18,12 +19,13 @@ mod file;
 mod git;
 mod github;
 mod http;
+mod image;
 mod send_file;
+mod session_send;
 mod web_search;
-mod wol;
-mod a2ui;
-mod image; // Added
+mod wol; // Added
 
+pub use a2ui::{A2uiRenderTool, A2uiWaitEventTool};
 pub use agent_cli::AgentCliTool;
 pub use bash::{BashConfig, BashSecurityMode, BashTool};
 pub use config::{ConfigAction, ConfigInput, ConfigTarget, ConfigTool};
@@ -34,17 +36,17 @@ pub use git::{
 };
 pub use github::GitHubApiTool;
 pub use http::{HttpGetTool, HttpPostTool};
+pub use image::ImageGenerationTool;
 pub use send_file::SendFileTool;
+pub use session_send::{MessageSender, SessionSendTool};
 pub use web_search::WebSearchTool;
-pub use wol::WolTool;
-pub use a2ui::{A2uiRenderTool, A2uiWaitEventTool};
-pub use image::ImageGenerationTool; // Added
+pub use wol::WolTool; // Added
 
 use crate::browser::BrowserTool;
 use crate::registry::ToolRegistry;
+use cratos_canvas::a2ui::{A2uiSecurityPolicy, A2uiSessionManager};
 use std::collections::HashMap;
 use std::sync::Arc;
-use cratos_canvas::a2ui::{A2uiSessionManager, A2uiSecurityPolicy};
 
 /// Configuration for built-in tools
 #[derive(Debug, Clone, Default)]
@@ -57,6 +59,10 @@ pub struct BuiltinsConfig {
     pub bash: BashConfig,
     /// A2UI Session Manager (Optional, enables A2UI tools)
     pub a2ui_manager: Option<Arc<A2uiSessionManager>>,
+    /// Session Message Sender (Optional, enables A2A messaging)
+    pub session_sender: Option<Arc<dyn MessageSender>>,
+    /// Current agent name (default: "agent")
+    pub agent_name: String,
 }
 
 /// Register all built-in tools with the registry (default config)
@@ -116,16 +122,21 @@ pub fn register_builtins_with_config(registry: &mut ToolRegistry, config: &Built
     // Image generation tool
     registry.register(Arc::new(ImageGenerationTool::new()));
 
+    // Session Send Tool (Only if sender is provided)
+    if let Some(sender) = &config.session_sender {
+        registry.register(Arc::new(SessionSendTool::new(
+            sender.clone(),
+            config.agent_name.clone(),
+        )));
+    }
+
     // A2UI Tools (Only if manager is provided)
     if let Some(manager) = &config.a2ui_manager {
         // Use default security policy if not provided (could add to config later)
         let policy = Arc::new(A2uiSecurityPolicy::default_restrictive());
-        
-        registry.register(Arc::new(A2uiRenderTool::new(
-            manager.clone(),
-            policy,
-        )));
-        
+
+        registry.register(Arc::new(A2uiRenderTool::new(manager.clone(), policy)));
+
         registry.register(Arc::new(A2uiWaitEventTool::new(manager.clone())));
     }
 }

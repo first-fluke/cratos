@@ -9,7 +9,9 @@ use super::channel_starters::{
     start_discord_adapter, start_matrix_adapter, start_slack_adapter, start_telegram_adapter,
     start_whatsapp_adapter,
 };
-use super::init_helpers::{init_auth, init_embedding_provider, init_graph_memory, init_vector_search};
+use super::init_helpers::{
+    init_auth, init_embedding_provider, init_graph_memory, init_vector_search,
+};
 use super::init_stores::init_stores;
 use super::loader::load_config;
 use super::providers::resolve_llm_provider;
@@ -89,8 +91,7 @@ pub async fn run() -> Result<()> {
 
     let canvas_state: Option<Arc<cratos_canvas::CanvasState>> = if config.canvas.enabled {
         let session_manager = Arc::new(cratos_canvas::CanvasSessionManager::new());
-        let state = cratos_canvas::CanvasState::new(session_manager)
-            .with_a2ui_tx(a2ui_tx);
+        let state = cratos_canvas::CanvasState::new(session_manager).with_a2ui_tx(a2ui_tx);
         info!(
             max_sessions = config.canvas.max_sessions,
             "Canvas state initialized with A2UI Steering channel"
@@ -122,13 +123,19 @@ pub async fn run() -> Result<()> {
     };
 
     // Initialize A2UI Session Manager if Canvas is enabled
-    let a2ui_manager = canvas_state.as_ref().map(|state| {
-        Arc::new(cratos_canvas::a2ui::A2uiSessionManager::new(state.clone()))
-    });
+    let a2ui_manager = canvas_state
+        .as_ref()
+        .map(|state| Arc::new(cratos_canvas::a2ui::A2uiSessionManager::new(state.clone())));
+
+    // ================================================================
+    // A2A Router (Phase 11) - Logically moved up for tool injection
+    // ================================================================
+    let a2a_router = Arc::new(cratos_core::A2aRouter::default());
 
     let builtins_config = BuiltinsConfig {
         exec: exec_config,
         a2ui_manager,
+        session_sender: Some(a2a_router.clone()), // Injected A2A router
         ..BuiltinsConfig::default()
     };
     register_builtins_with_config(&mut tool_registry, &builtins_config);
@@ -377,9 +384,9 @@ pub async fn run() -> Result<()> {
     info!("Node registry initialized");
 
     // ================================================================
-    // A2A Router (Phase 11)
+    // A2A Router (Phase 11) - Moved up
     // ================================================================
-    let a2a_router = Arc::new(cratos_core::A2aRouter::default());
+    // a2a_router is already initialized above
     info!("A2A router initialized");
 
     // ================================================================
