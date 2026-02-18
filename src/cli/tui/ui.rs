@@ -91,14 +91,14 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let remaining = width.saturating_sub(total_used);
     
     // Distribute remaining space roughly equally
-    let gap1 = remaining / 2;
-    let gap2 = remaining.saturating_sub(gap1);
+    let left_spacer = remaining / 2;
+    let right_spacer = remaining.saturating_sub(left_spacer);
 
-    if gap1 > 0 { spans.push(Span::raw(" ".repeat(gap1))); }
+    if left_spacer > 0 { spans.push(Span::raw(" ".repeat(left_spacer))); }
     if !center.is_empty() {
         spans.push(Span::styled(center, Style::default().fg(Color::Yellow).bold()));
     }
-    if gap2 > 0 { spans.push(Span::raw(" ".repeat(gap2))); }
+    if right_spacer > 0 { spans.push(Span::raw(" ".repeat(right_spacer))); }
     if !right.is_empty() {
         spans.push(Span::styled(right, Style::default().fg(Color::Cyan)));
     }
