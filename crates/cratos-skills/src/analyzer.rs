@@ -105,6 +105,8 @@ pub struct AnalyzerConfig {
     pub analysis_window_days: i64,
     /// Languages for stop word removal (e.g., "en", "ko")
     pub languages: Vec<String>,
+    /// Path to a custom stop words JSON file (optional)
+    pub custom_stop_words_file: Option<std::path::PathBuf>,
 }
 
 impl Default for AnalyzerConfig {
@@ -115,6 +117,7 @@ impl Default for AnalyzerConfig {
             max_sequence_length: 5,
             analysis_window_days: 30,
             languages: vec!["en".to_string(), "ko".to_string()],
+            custom_stop_words_file: None,
         }
     }
 }
@@ -200,15 +203,51 @@ impl PatternAnalyzer {
         Self::with_config(AnalyzerConfig::default())
     }
 
-    /// Create a pattern analyzer with custom configuration
     pub fn with_config(config: AnalyzerConfig) -> Self {
         let mut stop_words = std::collections::HashSet::new();
+
+        // Load custom stop words from file if provided
+        if let Some(path) = &config.custom_stop_words_file {
+            match std::fs::read_to_string(path) {
+                Ok(content) => {
+                    match serde_json::from_str::<HashMap<String, Vec<String>>>(&content) {
+                        Ok(custom_map) => {
+                            for (lang, words) in custom_map {
+                                if config.languages.contains(&lang) {
+                                    for w in words {
+                                        stop_words.insert(w);
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse custom stop words JSON file {:?}: {}", path, e);
+                        }
+                    }
+                }
+                Err(e) => {
+                   tracing::warn!("Failed to read custom stop words file {:?}: {}", path, e);
+                }
+            }
+        }
         
+        // Helper to convert &[&str] to Vec<String>
+        let get_builtin = |l| stop_words::get(l).iter().map(|&s| s.to_string()).collect::<Vec<String>>();
+
+        // Load built-in defaults
         for lang in &config.languages {
             let words = match lang.as_str() {
-                "en" => stop_words::get(stop_words::LANGUAGE::English).iter().map(|s| s.to_string()).collect(),
-                "ko" => stop_words::get(stop_words::LANGUAGE::Korean).iter().map(|s| s.to_string()).collect(),
-                // Add more as needed or handle dynamically if library supports string matching well
+                "en" => get_builtin(stop_words::LANGUAGE::English),
+                "ko" => get_builtin(stop_words::LANGUAGE::Korean),
+                "fr" => get_builtin(stop_words::LANGUAGE::French),
+                "de" => get_builtin(stop_words::LANGUAGE::German),
+                "es" => get_builtin(stop_words::LANGUAGE::Spanish),
+                "it" => get_builtin(stop_words::LANGUAGE::Italian),
+                "pt" => get_builtin(stop_words::LANGUAGE::Portuguese),
+                "ru" => get_builtin(stop_words::LANGUAGE::Russian),
+                "zh" => get_builtin(stop_words::LANGUAGE::Chinese),
+                "ja" => get_builtin(stop_words::LANGUAGE::Japanese),
+                // Add more common languages supported by stop-words crate
                 _ => Vec::new(),
             };
             for word in words {
