@@ -5,7 +5,7 @@
   "identifier": "com.cratos.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://localhost:19528",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../out"
   },
