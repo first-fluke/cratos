@@ -72,6 +72,9 @@ tokenizers = { workspace = true, optional = true }
 # Silero VAD (pure Rust ONNX inference)
 tract-onnx = { workspace = true, optional = true }
 
+tokio-stream = "0.1.18"
+bytes = "1.11.1"
+
 [dev-dependencies]
 tokio-test.workspace = true
 tempfile = "3.10"

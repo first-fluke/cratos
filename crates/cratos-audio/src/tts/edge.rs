@@ -7,6 +7,10 @@ use crate::error::{Error, Result};
 use reqwest::Client;
 use std::time::Duration;
 use tracing::{debug, info};
+use async_trait::async_trait;
+use bytes::Bytes;
+use tokio::sync::mpsc;
+use super::backend::{TtsBackend, TtsOptions, VoiceInfo};
 
 /// Edge TTS endpoint
 const EDGE_TTS_ENDPOINT: &str =
@@ -188,6 +192,57 @@ impl TextToSpeech {
             ("pt-BR", "Portuguese (Brazil)"),
             ("ru-RU", "Russian"),
         ]
+    }
+}
+
+#[async_trait::async_trait]
+impl super::backend::TtsBackend for TextToSpeech {
+    fn name(&self) -> &str {
+        "edge-tts"
+    }
+
+    fn is_available(&self) -> bool {
+        true
+    }
+
+    async fn list_voices(&self) -> crate::tts::error::Result<Vec<super::backend::VoiceInfo>> {
+        let mut voices = Vec::new();
+        for (id, name) in Self::korean_voices() {
+            voices.push(super::backend::VoiceInfo {
+                id: id.to_string(),
+                name: name.to_string(),
+                language: "ko".to_string(),
+                gender: None,
+                preview_url: None,
+                labels: std::collections::HashMap::new(),
+            });
+        }
+        for (id, name) in Self::english_voices() {
+            voices.push(super::backend::VoiceInfo {
+                id: id.to_string(),
+                name: name.to_string(),
+                language: "en".to_string(),
+                gender: None,
+                preview_url: None,
+                labels: std::collections::HashMap::new(),
+            });
+        }
+        Ok(voices)
+    }
+
+    async fn synthesize(&self, text: &str, voice: &str, _options: &super::backend::TtsOptions) -> crate::tts::error::Result<bytes::Bytes> {
+        let tts = TextToSpeech::with_voice(voice);
+        let audio = tts.synthesize(text).await.map_err(|e| crate::tts::error::TtsError::EdgeError(e.to_string()))?;
+        Ok(bytes::Bytes::from(audio))
+    }
+
+    async fn synthesize_stream(&self, text: &str, voice: &str, options: &super::backend::TtsOptions) 
+        -> crate::tts::error::Result<tokio::sync::mpsc::Receiver<crate::tts::error::Result<bytes::Bytes>>>
+    {
+        let bytes = <Self as super::backend::TtsBackend>::synthesize(self, text, voice, options).await?;
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        tx.send(Ok(bytes)).await.ok();
+        Ok(rx)
     }
 }
 

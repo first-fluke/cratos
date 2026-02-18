@@ -14,6 +14,8 @@ use cratos_core::{
 };
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use sqlx::SqlitePool;
+
 use tracing::{debug, info, warn};
 
 use super::protocol::AcpMessage;
@@ -213,9 +215,13 @@ pub async fn run_acp(token: Option<String>) -> anyhow::Result<()> {
     // Minimal setup: we need auth store, event bus, node registry
     // In a full implementation, these would be shared with a running server.
     // For standalone ACP, we create lightweight instances.
+    // For standalone ACP, we create lightweight instances.
+    let pool = SqlitePool::connect("sqlite::memory:").await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
+
     let auth_store = Arc::new(AuthStore::new(false)); // localhost trust by default
     let event_bus = Arc::new(EventBus::new(256));
-    let node_registry = Arc::new(NodeRegistry::new());
+    let node_registry = Arc::new(NodeRegistry::new(pool));
     let a2a_router = Arc::new(A2aRouter::default());
     let provider: Arc<dyn cratos_llm::LlmProvider> = Arc::new(cratos_llm::MockProvider::new());
     let registry = Arc::new(cratos_tools::ToolRegistry::new());
@@ -249,11 +255,15 @@ mod tests {
         ))
     }
 
-    #[test]
-    fn test_authenticate_disabled_auth() {
+    #[tokio::test]
+    async fn test_authenticate_disabled_auth() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
         let auth_store = Arc::new(AuthStore::new(false));
         let event_bus = Arc::new(EventBus::new(16));
-        let node_registry = Arc::new(NodeRegistry::new());
+        let node_registry = Arc::new(NodeRegistry::new(pool));
+
         let a2a_router = Arc::new(A2aRouter::default());
         let bridge = AcpBridge::new(
             auth_store,
@@ -268,14 +278,18 @@ mod tests {
         assert!(auth.has_scope(&Scope::Admin));
     }
 
-    #[test]
-    fn test_authenticate_with_token() {
+    #[tokio::test]
+    async fn test_authenticate_with_token() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
         let auth_store = Arc::new(AuthStore::new(true));
         let (key, _) = auth_store
             .generate_api_key("test", vec![Scope::SessionRead], "test")
             .unwrap();
         let event_bus = Arc::new(EventBus::new(16));
-        let node_registry = Arc::new(NodeRegistry::new());
+        let node_registry = Arc::new(NodeRegistry::new(pool));
+
         let a2a_router = Arc::new(A2aRouter::default());
         let bridge = AcpBridge::new(
             auth_store,
@@ -289,11 +303,14 @@ mod tests {
         assert_eq!(auth.user_id, "test");
     }
 
-    #[test]
-    fn test_authenticate_required_but_no_token() {
+    #[tokio::test]
+    async fn test_authenticate_required_but_no_token() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
         let auth_store = Arc::new(AuthStore::new(true));
         let event_bus = Arc::new(EventBus::new(16));
-        let node_registry = Arc::new(NodeRegistry::new());
+        let node_registry = Arc::new(NodeRegistry::new(pool));
         let a2a_router = Arc::new(A2aRouter::default());
         let bridge = AcpBridge::new(
             auth_store,
