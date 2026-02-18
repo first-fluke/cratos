@@ -20,8 +20,12 @@ mod core;
 mod helpers;
 mod multi_persona;
 mod planning;
+mod post_execution;
 mod process;
+mod result_builder;
+mod routing;
 mod sanitize;
+mod session_context;
 mod tool_execution;
 mod types;
 

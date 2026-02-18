@@ -130,3 +130,83 @@ pub fn sanitize_response(text: &str) -> String {
 
     result.trim().to_string()
 }
+
+/// Build a user-friendly fallback response when tool execution fails.
+///
+/// Analyzes tool call records to generate appropriate error messages:
+/// - If all failures are security blocks, shows security policy message
+/// - Otherwise, shows detailed error information
+pub fn build_fallback_response(
+    tool_call_records: &[crate::orchestrator::types::ToolCallRecord],
+) -> String {
+    let failed: Vec<&str> = tool_call_records
+        .iter()
+        .filter(|r| !r.success)
+        .map(|r| r.tool_name.as_str())
+        .collect();
+
+    if failed.is_empty() {
+        return "요청을 처리하는 중 응답 생성에 실패했습니다. 다시 시도해주세요.".to_string();
+    }
+
+    let errors: Vec<String> = tool_call_records
+        .iter()
+        .filter(|r| !r.success)
+        .map(|r| {
+            r.output
+                .get("stderr")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .or_else(|| r.output.get("error").and_then(|v| v.as_str()))
+                .unwrap_or("unknown error")
+                .to_string()
+        })
+        .collect();
+
+    // Deduplicate error messages
+    let mut unique_errors: Vec<String> = Vec::new();
+    for e in &errors {
+        if !unique_errors.iter().any(|u| u == e) {
+            unique_errors.push(e.clone());
+        }
+    }
+
+    // Check if all errors are security blocks
+    let all_security = unique_errors.iter().all(|e| {
+        let lower = e.to_lowercase();
+        lower.contains("blocked")
+            || lower.contains("denied")
+            || lower.contains("forbidden")
+            || lower.contains("restricted")
+            || lower.contains("not allowed")
+            || lower.contains("unauthorized")
+    });
+
+    if all_security {
+        let reasons: String = unique_errors
+            .iter()
+            .map(|e| {
+                let short: String = e.chars().take(120).collect();
+                format!("- {}", short)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "보안 정책에 의해 해당 명령어가 차단되었습니다.\n{}\n\n안전한 대체 도구(http_get, http_post 등)를 사용해주세요.",
+            reasons
+        )
+    } else {
+        let detail: String = unique_errors
+            .iter()
+            .map(|e| {
+                let short: String = e.chars().take(100).collect();
+                format!("- {}", sanitize_error_for_user(&short))
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "도구 실행에 실패했습니다:\n{}\n\n다른 방법으로 시도하거나 명령을 수정해 다시 요청해주세요.",
+            detail
+        )
+    }
+}

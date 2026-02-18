@@ -96,3 +96,48 @@ pub struct ToolCallRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub persona_name: Option<String>,
 }
+
+/// Extract artifacts from tool call records.
+///
+/// Scans tool outputs for known artifact patterns:
+/// - `screenshot`: PNG screenshot data
+/// - `image`: Generic image output
+/// - `artifact`: Structured artifact object with name, mime_type, data
+pub fn extract_artifacts(tool_call_records: &[ToolCallRecord]) -> Vec<ExecutionArtifact> {
+    let mut artifacts = Vec::new();
+    for record in tool_call_records {
+        // Check for screenshot
+        if let Some(screenshot) = record.output.get("screenshot").and_then(|s| s.as_str()) {
+            artifacts.push(ExecutionArtifact {
+                name: format!("{}_screenshot", record.tool_name),
+                mime_type: "image/png".to_string(),
+                data: screenshot.to_string(),
+            });
+        }
+
+        // Check for generic image output
+        if let Some(image) = record.output.get("image").and_then(|s| s.as_str()) {
+            artifacts.push(ExecutionArtifact {
+                name: format!("{}_image", record.tool_name),
+                mime_type: "image/png".to_string(),
+                data: image.to_string(),
+            });
+        }
+
+        // Check for send_file artifact (structured artifact object)
+        if let Some(artifact_obj) = record.output.get("artifact") {
+            if let (Some(name), Some(mime_type), Some(data)) = (
+                artifact_obj.get("name").and_then(|v| v.as_str()),
+                artifact_obj.get("mime_type").and_then(|v| v.as_str()),
+                artifact_obj.get("data").and_then(|v| v.as_str()),
+            ) {
+                artifacts.push(ExecutionArtifact {
+                    name: name.to_string(),
+                    mime_type: mime_type.to_string(),
+                    data: data.to_string(),
+                });
+            }
+        }
+    }
+    artifacts
+}

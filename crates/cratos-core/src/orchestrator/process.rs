@@ -8,7 +8,6 @@ use crate::event_bus::OrchestratorEvent;
 use crate::memory::WorkingMemory;
 use crate::planner::Planner;
 use cratos_llm::Message;
-use cratos_memory::GraphMemory;
 use cratos_replay::{EventType, Execution};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -17,9 +16,9 @@ use uuid::Uuid;
 use super::config::OrchestratorInput;
 use super::core::Orchestrator;
 use super::sanitize::{
-    is_tool_refusal, sanitize_error_for_user, sanitize_for_session_memory, sanitize_response,
+    build_fallback_response, is_tool_refusal, sanitize_error_for_user, sanitize_response,
 };
-use super::types::{ExecutionArtifact, ExecutionResult, ExecutionStatus};
+use super::types::{ExecutionResult, ExecutionStatus};
 
 impl Orchestrator {
     /// Process an input and return the result
@@ -101,126 +100,8 @@ impl Orchestrator {
         )
         .await;
 
-        // Get or create session
-        let messages = {
-            let mut session = match self.memory.get(&session_key).await {
-                Ok(Some(s)) => {
-                    debug!(session_key = %session_key, messages = s.get_messages().len(), "Session loaded");
-                    s
-                }
-                Ok(None) => {
-                    debug!(session_key = %session_key, "No existing session, creating new");
-                    crate::memory::SessionContext::new(&session_key)
-                }
-                Err(e) => {
-                    warn!(session_key = %session_key, error = %e, "Failed to load session, creating new");
-                    crate::memory::SessionContext::new(&session_key)
-                }
-            };
-
-            session.add_user_message(&input.text);
-
-            // Graph RAG: always-on context enrichment
-            if let Some(gm) = &self.graph_memory {
-                let remaining = session.remaining_tokens();
-                let total = session.token_count();
-
-                if total > 0 && remaining < session.max_tokens / 5 {
-                    // Token budget tight: REPLACE middle context
-                    debug!(
-                        remaining_tokens = remaining,
-                        total_tokens = total,
-                        "Token budget tight, replacing with Graph RAG context"
-                    );
-                    let budget = (session.max_tokens / 2) as u32;
-                    match gm.retrieve(&input.text, 20, budget).await {
-                        Ok(turns) if !turns.is_empty() => {
-                            let retrieved_msgs = GraphMemory::turns_to_messages(&turns);
-                            session.replace_with_retrieved(retrieved_msgs);
-                            info!(
-                                retrieved_turns = turns.len(),
-                                "Replaced session context with Graph RAG results"
-                            );
-                        }
-                        Ok(_) => debug!("No relevant Graph RAG turns found"),
-                        Err(e) => warn!(error = %e, "Graph RAG retrieval failed"),
-                    }
-                } else {
-                    // Normal: ADD supplementary context
-                    let rag_budget = std::cmp::min((session.max_tokens / 10) as u32, 8000);
-                    match gm.retrieve(&input.text, 5, rag_budget).await {
-                        Ok(turns) if !turns.is_empty() => {
-                            let retrieved_msgs = GraphMemory::turns_to_messages(&turns);
-                            session.insert_supplementary_context(retrieved_msgs);
-                            debug!(
-                                retrieved_turns = turns.len(),
-                                "Added supplementary RAG context"
-                            );
-                        }
-                        Ok(_) => {}
-                        Err(e) => warn!(error = %e, "Graph RAG supplementary retrieval failed"),
-                    }
-                }
-            }
-
-            // Explicit memory: auto-inject relevant saved memories
-            if let Some(gm) = &self.graph_memory {
-                match gm.recall_memories(&input.text, 3).await {
-                    Ok(memories) if !memories.is_empty() => {
-                        let memory_names: Vec<&str> =
-                            memories.iter().map(|m| m.name.as_str()).collect();
-                        let memory_context = memories
-                            .iter()
-                            .map(|m| format!("[Memory: {}] {}", m.name, m.content))
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        session.insert_supplementary_context(vec![Message::system(
-                            format!(
-                                "Relevant saved memories (use these to help the user):\n{memory_context}"
-                            ),
-                        )]);
-                        info!(
-                            count = memories.len(),
-                            names = ?memory_names,
-                            "Injected explicit memories into context"
-                        );
-                    }
-                    Ok(_) => {
-                        debug!(query = %input.text, "No explicit memories matched");
-                    }
-                    Err(e) => warn!(error = %e, "Explicit memory recall failed"),
-                }
-            }
-
-            // Save updated session
-            match self.memory.save(&session).await {
-                Ok(()) => {
-                    debug!(session_key = %session_key, messages = session.get_messages().len(), "Session saved (pre-execution)")
-                }
-                Err(e) => {
-                    warn!(session_key = %session_key, error = %e, "Failed to save session (pre-execution)")
-                }
-            }
-            let mut msgs = session.get_messages().to_vec();
-
-            // Attach inline images to the last user message (multimodal support)
-            if !input.images.is_empty() {
-                if let Some(last_user) = msgs
-                    .iter_mut()
-                    .rev()
-                    .find(|m| m.role == cratos_llm::MessageRole::User)
-                {
-                    last_user.images = input.images.clone();
-                    info!(
-                        image_count = input.images.len(),
-                        "Attached {} image(s) to user message",
-                        input.images.len()
-                    );
-                }
-            }
-
-            msgs
-        };
+        // Get or create session with RAG context enrichment
+        let messages = self.load_session_with_context(&session_key, &input).await;
 
         // ── Persona Routing (Phase 1 + Multi-Persona) ─────────────────
         // Memory-related requests bypass persona routing to ensure tool usage
@@ -297,73 +178,15 @@ impl Orchestrator {
             };
 
         // ── Skill Router (Phase 5) + Phase 8: skill_id extraction + persona bonus ─
-        let (skill_hint, matched_skill_id): (Option<String>, Option<Uuid>) =
-            if let Some(router) = &self.skill_router {
-                match router.route_best(&input.text).await {
-                    Some(mut m) => {
-                        // Apply persona skill proficiency bonus
-                        if let Some(store) = &self.persona_skill_store {
-                            let config = cratos_skills::AutoAssignmentConfig::default();
-                            if let Ok(proficiency_map) =
-                                store.get_skill_proficiency_map(&effective_persona).await
-                            {
-                                if let Some(&success_rate) = proficiency_map.get(&m.skill_name) {
-                                    if success_rate >= config.proficiency_threshold {
-                                        let old_score = m.score;
-                                        m.score = (m.score + config.persona_skill_bonus).min(1.0);
-                                        debug!(
-                                            persona = %effective_persona,
-                                            skill = %m.skill_name,
-                                            old_score = %old_score,
-                                            new_score = %m.score,
-                                            success_rate = %success_rate,
-                                            "Applied persona skill proficiency bonus"
-                                        );
-                                    }
-                                }
-                            }
-                        }
-
-                        // Only accept if score exceeds threshold (after bonus)
-                        if m.score > 0.7 {
-                            info!(
-                                skill = %m.skill_name,
-                                skill_id = %m.skill_id,
-                                score = %m.score,
-                                persona = %effective_persona,
-                                "Skill match found"
-                            );
-                            (
-                                Some(format!(
-                                    "\n## Matched Skill: {}\n{}",
-                                    m.skill_name, m.description
-                                )),
-                                Some(m.skill_id),
-                            )
-                        } else {
-                            (None, None)
-                        }
-                    }
-                    None => (None, None),
-                }
-            } else {
-                (None, None)
-            };
+        let skill_route = self.route_to_skill(&input.text, &effective_persona).await;
+        let (skill_hint, matched_skill_id) = (skill_route.skill_hint, skill_route.skill_id);
 
         // Combine system prompt overrides
-        // input.system_prompt_override takes highest priority (e.g., /develop workflow)
-        let effective_system_prompt: Option<String> = if let Some(ref override_prompt) =
-            input.system_prompt_override
-        {
-            Some(override_prompt.clone())
-        } else {
-            match (persona_system_prompt, skill_hint) {
-                (Some(p), Some(s)) => Some(format!("{}{}", p, s)),
-                (Some(p), None) => Some(p),
-                (None, Some(s)) => Some(format!("{}{}", self.planner.config().system_prompt, s)),
-                (None, None) => None,
-            }
-        };
+        let effective_system_prompt = self.combine_system_prompts(
+            input.system_prompt_override.as_deref(),
+            persona_system_prompt,
+            skill_hint,
+        );
 
         // Create working memory
         let mut working_memory = WorkingMemory::with_execution_id(execution_id);
@@ -550,68 +373,17 @@ impl Orchestrator {
             {
                 Ok(response) => response,
                 Err(e) => {
-                    error!(execution_id = %execution_id, error = %e, "Planning failed");
-                    self.log_event(
-                        execution_id,
-                        EventType::Error,
-                        &serde_json::json!({
-                            "error": e.to_string(),
-                            "phase": "planning"
-                        }),
-                    )
-                    .await;
-
-                    let user_msg = match &e {
-                        crate::error::Error::Llm(cratos_llm::Error::RateLimit) => {
-                            "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.".to_string()
-                        }
-                        crate::error::Error::Llm(cratos_llm::Error::Api(api_err))
-                            if api_err.contains("INVALID_ARGUMENT") =>
-                        {
-                            warn!("Gemini INVALID_ARGUMENT (likely function call/response mismatch): {}", api_err);
-                            "내부 처리 오류가 발생했습니다. 다시 시도해주세요.".to_string()
-                        }
-                        crate::error::Error::Llm(cratos_llm::Error::Api(api_err))
-                            if api_err.contains("authentication") || api_err.contains("401") =>
-                        {
-                            "API 인증 오류가 발생했습니다. 관리자에게 문의해주세요.".to_string()
-                        }
-                        crate::error::Error::Llm(cratos_llm::Error::ServerError(_)) => {
-                            "AI 서버에 일시적 장애가 발생했습니다. 잠시 후 다시 시도해주세요."
-                                .to_string()
-                        }
-                        _ => {
-                            let raw: String = e.to_string().chars().take(80).collect();
-                            format!(
-                                "오류가 발생했습니다. 다시 시도해주세요. ({})",
-                                sanitize_error_for_user(&raw)
-                            )
-                        }
-                    };
-                    let error_detail = format!("Error: {}", e);
-                    self.emit(OrchestratorEvent::ExecutionFailed {
-                        execution_id,
-                        error: error_detail.clone(),
-                    });
-                    // Update execution status in DB
-                    if let Some(store) = &self.event_store {
-                        let _ = store
-                            .update_execution_status(execution_id, "failed", Some(&error_detail))
-                            .await;
-                    }
-                    crate::utils::metrics_global::labeled_counter("cratos_executions_total")
-                        .inc(&[("status", "failed")]);
-                    crate::utils::metrics_global::gauge("cratos_active_executions").dec();
-                    return Ok(ExecutionResult {
-                        execution_id,
-                        status: ExecutionStatus::Failed,
-                        response: user_msg,
-                        tool_calls: tool_call_records,
-                        artifacts: Vec::new(),
-                        iterations: iteration,
-                        duration_ms: start_time.elapsed().as_millis() as u64,
-                        model: model_used,
-                    });
+                    self.active_executions.remove(&execution_id);
+                    return Ok(self
+                        .build_planning_failure_result(
+                            execution_id,
+                            &e,
+                            tool_call_records,
+                            iteration,
+                            start_time.elapsed().as_millis() as u64,
+                            model_used,
+                        )
+                        .await);
                 }
             };
 
@@ -853,140 +625,20 @@ impl Orchestrator {
         let final_response = if (final_response.is_empty() || final_response == "(empty response)")
             && !tool_call_records.is_empty()
         {
-            let failed: Vec<&str> = tool_call_records
-                .iter()
-                .filter(|r| !r.success)
-                .map(|r| r.tool_name.as_str())
-                .collect();
-            if failed.is_empty() {
-                "요청을 처리하는 중 응답 생성에 실패했습니다. 다시 시도해주세요.".to_string()
-            } else {
-                let errors: Vec<String> = tool_call_records
-                    .iter()
-                    .filter(|r| !r.success)
-                    .map(|r| {
-                        r.output
-                            .get("stderr")
-                            .and_then(|v| v.as_str())
-                            .filter(|s| !s.is_empty())
-                            .or_else(|| r.output.get("error").and_then(|v| v.as_str()))
-                            .unwrap_or("unknown error")
-                            .to_string()
-                    })
-                    .collect();
-                // Deduplicate error messages (e.g. same "blocked" from exec+bash)
-                let mut unique_errors: Vec<String> = Vec::new();
-                for e in &errors {
-                    if !unique_errors.iter().any(|u| u == e) {
-                        unique_errors.push(e.clone());
-                    }
-                }
-                // M3: Check if all errors are security blocks (expanded detection)
-                let all_security = unique_errors.iter().all(|e| {
-                    let lower = e.to_lowercase();
-                    lower.contains("blocked")
-                        || lower.contains("denied")
-                        || lower.contains("forbidden")
-                        || lower.contains("restricted")
-                        || lower.contains("not allowed")
-                        || lower.contains("unauthorized")
-                });
-                if all_security {
-                    let reasons: String = unique_errors
-                        .iter()
-                        .map(|e| {
-                            let short: String = e.chars().take(120).collect();
-                            format!("- {}", short)
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    format!("보안 정책에 의해 해당 명령어가 차단되었습니다.\n{}\n\n안전한 대체 도구(http_get, http_post 등)를 사용해주세요.", reasons)
-                } else {
-                    let detail: String = unique_errors
-                        .iter()
-                        .map(|e| {
-                            let short: String = e.chars().take(100).collect();
-                            format!("- {}", sanitize_error_for_user(&short))
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    format!("도구 실행에 실패했습니다:\n{}\n\n다른 방법으로 시도하거나 명령을 수정해 다시 요청해주세요.", detail)
-                }
-            }
+            build_fallback_response(&tool_call_records)
         } else {
             final_response
         };
 
         // Update session with assistant response + execution summary
-        // We persist a concise summary of tool usage (not individual tool messages)
-        // to keep the session clean and avoid orphaned tool results that confuse LLMs.
-        if let Ok(Some(mut session)) = self.memory.get(&session_key).await {
-            if !tool_call_records.is_empty() {
-                let tool_summary: Vec<String> = tool_call_records
-                    .iter()
-                    .map(|r| {
-                        if r.success {
-                            format!("{}:OK", r.tool_name)
-                        } else {
-                            let err_hint = r
-                                .output
-                                .get("stderr")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("failed");
-                            let err_short: String = err_hint.chars().take(60).collect();
-                            // M2: Sanitize to prevent prompt injection via session memory
-                            format!(
-                                "{}:FAIL({})",
-                                r.tool_name,
-                                sanitize_for_session_memory(&err_short)
-                            )
-                        }
-                    })
-                    .collect();
-                let summary = format!(
-                    "[Used {} tools: {}]\n{}",
-                    tool_call_records.len(),
-                    tool_summary.join(", "),
-                    final_response
-                );
-                session.add_assistant_message(&summary);
-            } else {
-                session.add_assistant_message(&final_response);
-            }
-            match self.memory.save(&session).await {
-                Ok(()) => {
-                    debug!(session_key = %session_key, messages = session.get_messages().len(), "Session saved (post-execution)")
-                }
-                Err(e) => {
-                    warn!(session_key = %session_key, error = %e, "Failed to save session (post-execution)")
-                }
-            }
-        }
+        self.save_session_with_summary(&session_key, &final_response, &tool_call_records)
+            .await;
 
         // Run Olympus OS post-execution hooks (fire-and-forget)
-        if let Some(hooks) = &self.olympus_hooks {
-            let task_completed = !final_response.is_empty();
-            if let Err(e) = hooks.post_execute(&effective_persona, &final_response, task_completed)
-            {
-                warn!(error = %e, "Olympus post-execute hook failed");
-            }
-        }
+        self.run_post_execution_hooks(&effective_persona, &final_response);
 
         // Graph RAG: index this session's messages asynchronously
-        if let Some(gm) = &self.graph_memory {
-            let gm = Arc::clone(gm);
-            let sid = session_key.clone();
-            let msgs = messages.clone();
-            tokio::spawn(async move {
-                match gm.index_session(&sid, &msgs).await {
-                    Ok(count) if count > 0 => {
-                        debug!(session_id = %sid, indexed = count, "Graph RAG indexing complete");
-                    }
-                    Err(e) => warn!(error = %e, "Graph RAG indexing failed"),
-                    _ => {}
-                }
-            });
-        }
+        self.spawn_graph_rag_indexing(&session_key, &messages);
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
@@ -1022,41 +674,7 @@ impl Orchestrator {
         }
 
         // Extract artifacts from tool calls
-        let mut artifacts = Vec::new();
-        for record in &tool_call_records {
-            // Check for screenshot
-            if let Some(screenshot) = record.output.get("screenshot").and_then(|s| s.as_str()) {
-                artifacts.push(ExecutionArtifact {
-                    name: format!("{}_screenshot", record.tool_name),
-                    mime_type: "image/png".to_string(), // Default assumes PNG
-                    data: screenshot.to_string(),
-                });
-            }
-
-            // Check for generic image output
-            if let Some(image) = record.output.get("image").and_then(|s| s.as_str()) {
-                artifacts.push(ExecutionArtifact {
-                    name: format!("{}_image", record.tool_name),
-                    mime_type: "image/png".to_string(),
-                    data: image.to_string(),
-                });
-            }
-
-            // Check for send_file artifact (structured artifact object)
-            if let Some(artifact_obj) = record.output.get("artifact") {
-                if let (Some(name), Some(mime_type), Some(data)) = (
-                    artifact_obj.get("name").and_then(|v| v.as_str()),
-                    artifact_obj.get("mime_type").and_then(|v| v.as_str()),
-                    artifact_obj.get("data").and_then(|v| v.as_str()),
-                ) {
-                    artifacts.push(ExecutionArtifact {
-                        name: name.to_string(),
-                        mime_type: mime_type.to_string(),
-                        data: data.to_string(),
-                    });
-                }
-            }
-        }
+        let artifacts = super::types::extract_artifacts(&tool_call_records);
 
         // Record execution metrics
         crate::utils::metrics_global::labeled_counter("cratos_executions_total")
@@ -1064,14 +682,7 @@ impl Orchestrator {
         crate::utils::metrics_global::gauge("cratos_active_executions").dec();
 
         // Trigger auto skill detection if enabled
-        if self.config.auto_skill_detection {
-            tokio::spawn(async move {
-                match cratos_skills::analyzer::run_auto_analysis(false).await {
-                    Ok(msg) => debug!("Auto-skill analysis: {}", msg),
-                    Err(e) => warn!("Auto-skill analysis failed: {}", e),
-                }
-            });
-        }
+        self.spawn_auto_skill_detection();
 
         Ok(ExecutionResult {
             execution_id,
@@ -1086,4 +697,3 @@ impl Orchestrator {
     }
 }
 
-use std::sync::Arc;
