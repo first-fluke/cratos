@@ -1,73 +1,85 @@
-# Examples
+# Backend Agent - Examples
 
-## Full Module Structure
+## Example 1: CRUD API Endpoint
 
-```rust
-// src/items/mod.rs
-pub mod router;
-pub mod service;
-pub mod repository;
-pub mod models;
-pub mod dtos;
+**Input**: "Create a TODO CRUD API with user ownership"
 
-// src/items/models.rs
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use chrono::{DateTime, Utc};
+**Output**:
+```
+## Task: TODO CRUD API
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct Item {
-    pub id: Uuid,
-    pub name: String,
-    pub created_at: DateTime<Utc>,
-}
+### Endpoints Implemented
+- POST /api/todos (create)
+- GET /api/todos (list, user-scoped)
+- GET /api/todos/{id} (detail)
+- PATCH /api/todos/{id} (update)
+- DELETE /api/todos/{id} (delete)
 
-// src/items/repository.rs
-use sqlx::SqlitePool;
-use uuid::Uuid;
-use crate::items::models::Item;
+### Database Schema
+- todos table: id (UUID), title (VARCHAR), completed (BOOL), user_id (FK), created_at
+- Index on user_id
 
-#[derive(Clone)]
-pub struct ItemRepository {
-    pool: SqlitePool,
-}
+### Security
+- [x] All endpoints require JWT auth
+- [x] User can only access own todos (user_id filter)
+- [x] Input validated with Pydantic
 
-impl ItemRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
-    }
+### Files Created
+- app/models/todo.py
+- app/schemas/todo.py
+- app/services/todo_service.py
+- app/api/todos.py
+- tests/test_todos.py
+- alembic/versions/xxx_add_todos.py
+```
 
-    pub async fn create(&self, name: String) -> Result<Item, sqlx::Error> {
-        let id = Uuid::new_v4();
-        let created_at = Utc::now();
-        
-        sqlx::query_as!(
-            Item,
-            r#"
-            INSERT INTO items (id, name, created_at)
-            VALUES ($1, $2, $3)
-            RETURNING id, name, created_at
-            "#,
-            id, name, created_at
-        )
-        .fetch_one(&self.pool)
-        .await
-    }
-}
+## Example 2: Authentication System
 
-// src/items/router.rs
-use axum::{Router, routing::post, extract::State, Json, response::IntoResponse};
-use crate::AppState;
+**Input**: "Add JWT authentication with register and login"
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/", post(create_item))
-}
+**Output**:
+```
+## Task: JWT Authentication
 
-async fn create_item(
-    State(state): State<AppState>, 
-    Json(payload): Json<CreateItemRequest>
-) -> impl IntoResponse {
-    // ... logic
-}
+### Endpoints Implemented
+- POST /api/auth/register (email + password)
+- POST /api/auth/login (returns access + refresh tokens)
+- POST /api/auth/refresh (refresh token rotation)
+
+### Security
+- [x] Password hashed with bcrypt (cost 12)
+- [x] Access token: 15min expiry
+- [x] Refresh token: 7 day expiry, single-use rotation
+- [x] Rate limiting: 5 attempts/min on login
+- [x] Email validation with Pydantic EmailStr
+
+### Files Created
+- app/models/user.py
+- app/schemas/auth.py
+- app/services/auth_service.py
+- app/api/auth.py
+- app/core/security.py (JWT helpers, password hashing)
+- tests/test_auth.py
+```
+
+## Example 3: Fixing N+1 Query
+
+**Input**: "The /api/posts endpoint is slow, taking 2s for 50 posts"
+
+**Output**:
+```
+## Task: Fix N+1 Query in Posts API
+
+### Root Cause
+Each post triggers a separate query for its author (N+1 problem).
+
+### Fix
+Added joinedload(Post.author) to the query.
+
+### Before: 51 queries (1 + 50)
+### After: 1 query with JOIN
+
+### Files Modified
+- app/api/posts.py (added eager loading)
+- tests/test_posts.py (added performance assertion)
 ```

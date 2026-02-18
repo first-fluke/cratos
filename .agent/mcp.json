@@ -1,13 +1,7 @@
 {
   "mcpServers": {
     "serena": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "oh-my-ag@latest",
-        "bridge",
-        "http://localhost:12341/sse"
-      ],
+      "url": "http://localhost:12341/sse",
       "disabled": false
     }
   },

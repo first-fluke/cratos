@@ -47,9 +47,9 @@ Check if `.agent/plan.json` exists.
    ┌──────────┬─────────┐
    │ Agent    │ CLI     │
    ├──────────┼─────────┤
+   │ frontend │ gemini  │
    │ backend  │ gemini  │
-   │ channel  │ gemini  │
-   │ llm      │ claude  │
+   │ mobile   │ claude  │
    │ pm       │ claude  │
    └──────────┴─────────┘
    ```

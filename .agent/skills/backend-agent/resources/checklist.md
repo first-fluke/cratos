@@ -1,24 +1,36 @@
-# pre-commit Checklist
+# Backend Agent - Self-Verification Checklist
 
-Before submitting your code, verify the following:
+Run through every item before submitting your work.
 
-## Compilation & formatting
-- [ ] Code compiles without errors (`cargo check`)
-- [ ] Code is formatted (`cargo fmt`)
-- [ ] No strict clippy warnings (`cargo clippy -- -D warnings`)
+## API Design
+- [ ] RESTful conventions followed (proper HTTP methods, status codes)
+- [ ] OpenAPI documentation complete (all endpoints documented)
+- [ ] Request/response schemas defined with Pydantic
+- [ ] Pagination for list endpoints returning > 20 items
+- [ ] Consistent error response format
 
-## Type Safety & Error Handling
-- [ ] No `unwrap()` or `expect()` used in production code paths (use `?` or `match`)
-- [ ] All public functions have type hints (enforced by Rust)
-- [ ] SQL queries use `sqlx::query_as!` (macros) for compile-time verification where possible
+## Database
+- [ ] Migrations created (Alembic) and tested
+- [ ] Indexes on foreign keys and frequently queried columns
+- [ ] No N+1 queries (use joinedload/selectinload)
+- [ ] Transactions used for multi-step operations
+
+## Security
+- [ ] JWT authentication on protected endpoints
+- [ ] Password hashing with bcrypt (cost 10-12)
+- [ ] Rate limiting on auth endpoints
+- [ ] Input validation with Pydantic (no raw user input in queries)
+- [ ] SQL injection protected (ORM or parameterized queries)
+- [ ] No secrets in code or logs
 
 ## Testing
-- [ ] Unit tests added for new business logic
-- [ ] `cargo test` passes
-- [ ] Integration tests added for DB interactions (if applicable)
+- [ ] Unit tests for service layer logic
+- [ ] Integration tests for all endpoints (happy + error paths)
+- [ ] Auth scenarios tested (missing token, expired, wrong role)
+- [ ] Test coverage > 80%
 
-## Architecture
-- [ ] Business logic is in `Service`, not `Router`
-- [ ] Database queries are in `Repository`, not `Service`
-- [ ] API Endpoints return appropriate HTTP status codes
-- [ ] Secrets (keys, passwords) are NOT hardcoded
+## Code Quality
+- [ ] Clean architecture layers: router -> service -> repository
+- [ ] No business logic in route handlers
+- [ ] Async/await used consistently
+- [ ] Type hints on all function signatures

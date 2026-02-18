@@ -1,31 +1,39 @@
-# Tech Stack
+# Backend Agent - Tech Stack Reference
 
-## Core Language
-- **Rust** (Edition 2021)
-- **Tokio**: Async Runtime
+## Python (Preferred)
+- **Framework**: FastAPI 0.110+
+- **ORM**: SQLAlchemy 2.0 (async)
+- **Validation**: Pydantic v2
+- **Database**: PostgreSQL 16+, Redis 7+
+- **Auth**: python-jose (JWT), passlib (bcrypt)
+- **Testing**: pytest, httpx (async test client)
+- **Migrations**: Alembic
 
-## Web Framework
-- **Axum**: Ergonomic and modular web framework
-- **Tower**: Middleware (Service) abstraction
-- **Tower-HTTP**: HTTP middleware (Trace, CORS, etc.)
+## Node.js (Alternative)
+- **Framework**: Express.js, NestJS, Hono
+- **ORM**: Prisma, Drizzle
+- **Validation**: Zod
+- **Auth**: jsonwebtoken, bcrypt
+- **Testing**: Jest, Supertest
 
-## Database
-- **SQLx**: Async, pure Rust SQL crate (Compile-time checked queries)
-- **SQLite**: Embedded database (via SQLx)
-- **Bincode/Serde**: Serialization
+## Architecture
 
-## Serialization
-- **Serde**: Serialization framework
-- **Serde JSON**: JSON support
+```
+backend/
+  domain/           # Business logic (pure Python, no framework deps)
+  application/      # Use cases, services
+  infrastructure/   # Database, cache, external APIs
+  presentation/     # API endpoints, middleware
+```
 
-## Error Handling
-- **ThisError**: Library error derivation
-- **Anyhow**: Application error reporting
+## Security Requirements
+- Password hashing: bcrypt (cost factor 10-12)
+- JWT: 15min access tokens, 7 day refresh tokens
+- Rate limiting on auth endpoints
+- Input validation with Pydantic/Zod
+- Parameterized queries (never string interpolation)
 
-## Observability
-- **Tracing**: Structured logging
-- **Tracing Subscriber**: Log collection
-
-## Testing
-- **Mockall**: Mocking library
-- **Tokio-test**: Async testing utilities
+## Serena MCP Shortcuts
+- `find_symbol("create_todo")`: Locate existing function
+- `get_symbols_overview("app/api")`: List all endpoints
+- `find_referencing_symbols("User")`: Find all usages of a model

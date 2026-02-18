@@ -1,40 +1,45 @@
-# Execution Protocol
+# Backend Agent - Execution Protocol
 
-Follow these steps to implement new backend features:
+## Step 0: Prepare
+1. **Assess difficulty** — see `../_shared/difficulty-guide.md`
+   - **Simple**: Skip to Step 3 | **Medium**: All 4 steps | **Complex**: All steps + checkpoints
+2. **Check lessons** — read your domain section in `../_shared/lessons-learned.md`
+3. **Clarify requirements** — follow `../_shared/clarification-protocol.md`
+   - Check **Uncertainty Triggers**: business logic, security/auth, existing code conflicts?
+   - Determine level: LOW → proceed | MEDIUM → present options | HIGH → ask immediately
+4. **Budget context** — follow `../_shared/context-budget.md` (read symbols, not whole files)
 
-## 1. Environment Setup
+**⚠️ Intelligent Escalation**: When uncertain, escalate early. Don't blindly proceed.
 
-- Ensure you are in the project root.
-- Check database connection: `cargo sqlx database show` (if configured) or ensure `.env` is set up.
+Follow these steps in order (adjust depth by difficulty).
 
-## 2. Implementation
+## Step 1: Analyze
+- Read the task requirements carefully
+- Identify which endpoints, models, and services are needed
+- Check existing code with Serena: `get_symbols_overview("app/api")`, `find_symbol("existing_function")`
+- List assumptions; ask if unclear
 
-1. **Create/Update Models**:
-    - Define structs in `crates/[crate_name]/src/[module]/models.rs` or `types.rs`.
-    - overload `serde::Serialize`, `serde::Deserialize`, `sqlx::FromRow`.
+## Step 2: Plan
+- Decide on file structure: models, schemas, routes, services
+- Define API contracts (method, path, request/response types)
+- Plan database schema changes (tables, columns, indexes, migrations)
+- Identify security requirements (auth, validation, rate limiting)
 
-2. **Create Repository**:
-    - implement `Repository` struct in `repository.rs`.
-    - methods dealing with `sqlx::Pool<Sqlite>` (or Postgres).
-    - use `sqlx::query_as!` macros for compile-time checked queries.
+## Step 3: Implement
+- Create/modify files in this order:
+  1. Database models + migrations
+  2. Pydantic schemas (request/response)
+  3. Service layer (business logic)
+  4. API routes (thin, delegate to services)
+  5. Tests (unit + integration)
+- Use `resources/api-template.py` as reference
+- Follow clean architecture: router -> service -> repository -> models
 
-3. **Create Service**:
-    - implement `Service` struct in `service.rs`.
-    - include business logic.
-    - dependency injection via struct fields (e.g., `repository: Repository`).
+## Step 4: Verify
+- Run `resources/checklist.md` items
+- Run `../_shared/common-checklist.md` items
+- Ensure all tests pass
+- Confirm OpenAPI docs are complete
 
-4. **Create Router**:
-    - implement `axum::Router` configuration in `router.rs`.
-    - define handlers: `pub async fn handler(State(state): State<AppState>, Json(payload): Json<Payload>) -> impl IntoResponse`.
-
-## 3. Verification
-
-1. **Compile**: `cargo check`.
-2. **Lint**: `cargo clippy`.
-3. **Test**: `cargo test`.
-4. **Run**: `cargo run` (or `cargo run --bin [binary_name]`).
-
-## 4. Documentation
-
-- Add comments to public functions (/// doc comments).
-- Update OpenAPI/Swagger if using utoipa.
+## On Error
+See `resources/error-playbook.md` for recovery steps.

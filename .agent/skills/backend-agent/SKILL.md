@@ -1,69 +1,107 @@
 ---
 name: backend-agent
-description: Backend specialist for Rust APIs using Axum, SQLx, and clean architecture
+description: Backend specialist for APIs, databases, authentication using FastAPI with clean architecture (Repository/Service/Router pattern)
 ---
 
-# Backend Agent - Rust API Specialist
+# Backend Agent - API & Server Specialist
 
 ## When to use
-- Building REST APIs with Axum
-- Database interactions with SQLx (SQLite/PostgreSQL)
-- Authentication and authorization (JWT)
-- Server-side business logic and background tasks
-- High-performance async operations
+- Building REST APIs or GraphQL endpoints
+- Database design and migrations
+- Authentication and authorization
+- Server-side business logic
+- Background jobs and queues
 
 ## When NOT to use
 - Frontend UI -> use Frontend Agent
 - Mobile-specific code -> use Mobile Agent
-- Python/FastAPI development (Legacy)
 
 ## Core Rules
 
-1. **Rust Idioms over Patterns**: Use `Result`, `Option`, and `match` instead of exceptions.
-2. **Clean Architecture**:
-   - **Router**: Http transport layer (Axum handlers)
-   - **Service**: Business logic (pure Rust structures)
-   - **Repository**: Data access (Scans SQLx results)
-3. **Type Safety**: Leverage Rust's type system. No `unwrap()` in production code. Use `?` operator.
+1. **DRY (Don't Repeat Yourself)**: Business logic in `Service`, data access logic in `Repository`
+2. **SOLID**:
+   - **Single Responsibility**: Classes and functions should have one responsibility
+   - **Dependency Inversion**: Use FastAPI's `Depends` for dependency injection
+3. **KISS**: Keep it simple and clear
 
 ## Architecture Pattern
 
 ```
-Router (Axum Handlers) → Service (Business Logic) → Repository (SQLx) → Domain Models
+Router (HTTP) → Service (Business Logic) → Repository (Data Access) → Models
 ```
 
 ### Repository Layer
-- **File**: `crates/[crate_name]/src/[module]/repository.rs`
-- **Role**: Raw SQL queries using `sqlx::query_as!`.
-- **Principle**: Return `Result<Model, sqlx::Error>`.
+- **File**: `src/[domain]/repository.py`
+- **Role**: Encapsulate DB CRUD and query logic
+- **Principle**: No business logic, return SQLAlchemy models
 
 ### Service Layer
-- **File**: `crates/[crate_name]/src/[module]/service.rs`
-- **Role**: Orchestrates business logic, combines multiple repository calls.
-- **Principle**: Returns `Result<Dto, AppError>`.
+- **File**: `src/[domain]/service.py`
+- **Role**: Business logic, Repository composition, external API calls
+- **Principle**: Business decisions only here
 
 ### Router Layer
-- **File**: `crates/[crate_name]/src/[module]/router.rs`
-- **Role**: `axum` handlers, extracts State, deserializes JSON, calls Service.
-- **Principle**: Returns `impl IntoResponse`.
+- **File**: `src/[domain]/router.py`
+- **Role**: Receive HTTP requests, input validation, call Service, return response
+- **Principle**: No business logic, inject Service via DI
 
-## Core Guidelines
+## Core Rules
 
-1. **Error Handling**: Use `thiserror` for library error types and `anyhow` for top-level application errors if needed, but prefer strongly typed custom errors for APIs.
-2. **Dependency Injection**: Use `axum::extract::State` to pass `AppState` containing Services/Repositories.
-3. **Concurrency**: Use `tokio` for async runtime.
-4. **Logging**: Use `tracing` with `tracing-subscriber`.
-5. **Configuration**: Use `config` crate or environment variables.
+1. **Clean architecture**: router → service → repository → models
+2. **No business logic in route handlers**
+3. **All inputs validated with Pydantic**
+4. **Parameterized queries only** (never string interpolation)
+5. **JWT + bcrypt for auth**; rate limit auth endpoints
+6. **Async/await consistently**; type hints on all signatures
+7. **Custom exceptions** via `src/lib/exceptions.py` (not raw HTTPException)
+
+## Dependency Injection
+
+```python
+# src/recipes/routers/dependencies.py
+async def get_recipe_service(db: AsyncSession = Depends(get_db)) -> RecipeService:
+    repository = RecipeRepository(db)
+    return RecipeService(repository)
+
+# src/recipes/routers/base_router.py
+@router.get("/{recipe_id}")
+async def get_recipe(
+    recipe_id: str,
+    service: RecipeService = Depends(get_recipe_service)
+):
+    return await service.get_recipe(recipe_id)
+```
 
 ## Code Quality
 
-- **Formatting**: `cargo fmt`
-- **Linting**: `cargo clippy -- -D warnings`
-- **Testing**: `cargo test` (Unit tests), `sqlx::test` (Integration/DB tests)
+- **Python 3.12+**: Strict type hints (mypy)
+- **Async/Await**: Required for I/O-bound operations
+- **Ruff**: Linting/formatting (Double Quotes, Line Length 100)
 
-## Resources
+## How to Execute
 
-- [Execution Protocol](resources/execution-protocol.md)
-- [Tech Stack](resources/tech-stack.md)
-- [Checklist](resources/checklist.md)
-- [Code Snippets](resources/snippets.md)
+Follow `resources/execution-protocol.md` step by step.
+See `resources/examples.md` for input/output examples.
+Before submitting, run `resources/checklist.md`.
+
+## Serena Memory (CLI Mode)
+
+See `../_shared/memory-protocol.md`.
+
+## References
+
+- Execution steps: `resources/execution-protocol.md`
+- Code examples: `resources/examples.md`
+- Code snippets: `resources/snippets.md`
+- Checklist: `resources/checklist.md`
+- Error recovery: `resources/error-playbook.md`
+- Tech stack: `resources/tech-stack.md`
+- API template: `resources/api-template.py`
+- Context loading: `../_shared/context-loading.md`
+- Reasoning templates: `../_shared/reasoning-templates.md`
+- Clarification: `../_shared/clarification-protocol.md`
+- Context budget: `../_shared/context-budget.md`
+- Lessons learned: `../_shared/lessons-learned.md`
+
+> [!IMPORTANT]
+> When adding new modules, always include `__init__.py` to maintain package structure

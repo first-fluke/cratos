@@ -189,9 +189,9 @@ serena-mcp-server --port 12341
    ┌──────────┬─────────┐
    │ Agent    │ CLI     │
    ├──────────┼─────────┤
+   │ frontend │ gemini  │
    │ backend  │ gemini  │
-   │ channel  │ gemini  │
-   │ llm      │ gemini  │
+   │ mobile   │ gemini  │
    │ pm       │ gemini  │
    │ qa       │ gemini  │
    │ debug    │ gemini  │
@@ -216,9 +216,9 @@ serena-mcp-server --port 12341
 - MCP Status: Configured
 
 📋 Agent-CLI Mapping:
+- frontend → gemini
 - backend  → gemini
-- channel  → gemini
-- llm      → gemini
+- mobile   → gemini
 - pm       → gemini
 - qa       → gemini
 - debug    → gemini

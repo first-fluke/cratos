@@ -25,12 +25,8 @@ If a PR or branch is provided, diff against the base branch to scope the review.
 ## Step 2: Run Automated Security Checks
 
 // turbo
-Run Rust security tools:
-- `cargo audit` — check for known vulnerabilities in dependencies
-- `cargo clippy --all-targets` — lint for common bugs and security issues
-- `cargo deny check` — license and dependency policy checks
-
-Flag any CRITICAL or HIGH findings.
+Run available security tools: `npm audit` (Node.js), `bandit` (Python), or equivalent.
+Check for known vulnerabilities in dependencies. Flag any CRITICAL or HIGH findings.
 
 ---
 
@@ -49,32 +45,32 @@ Use MCP code analysis tools (`search_for_pattern` and `find_symbol`) to review c
 ## Step 4: Performance Analysis
 
 Use MCP tools to check for:
-- N+1 queries, missing indexes (SQLite)
+- N+1 queries, missing indexes
 - Unbounded pagination, memory leaks
-- Blocking async calls (spawn_blocking for CPU-bound)
-- Excessive cloning, missing Arc/Cow usage
-- Large allocations in hot paths
+- Unnecessary re-renders (React)
+- Missing lazy loading
+- Large bundle sizes, unoptimized images
 
 ---
 
-## Step 5: API & Documentation Review
+## Step 5: Accessibility Review (WCAG 2.1 AA)
 
 Check for:
-- REST/WebSocket endpoint documentation
-- Error response consistency
-- Rate limiting configuration
-- CLI help text completeness
+- Semantic HTML, ARIA labels
+- Keyboard navigation, color contrast
+- Focus management, screen reader compatibility
+- Image alt text
 
 ---
 
 ## Step 6: Code Quality Review
 
 Use MCP code analysis tools (`get_symbols_overview` and `find_referencing_symbols`) to check for:
-- Consistent naming, proper error handling (Result/thiserror)
-- Test coverage (`cargo tarpaulin`)
-- Unused imports/dead code (`cargo clippy`)
-- Proper async/await usage (no blocking in async)
-- Public API documentation (rustdoc)
+- Consistent naming, proper error handling
+- Test coverage, TypeScript strict mode compliance
+- Unused imports/variables
+- Proper async/await usage
+- Public API documentation
 
 ---
 
