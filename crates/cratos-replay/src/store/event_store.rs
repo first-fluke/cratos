@@ -71,6 +71,7 @@ impl EventStore {
                 channel_type TEXT NOT NULL,
                 channel_id TEXT NOT NULL,
                 user_id TEXT NOT NULL,
+                session_id TEXT,
                 thread_id TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
                 started_at TEXT NOT NULL,
@@ -130,6 +131,16 @@ impl EventStore {
 
         sqlx::query(
             r#"
+            CREATE INDEX IF NOT EXISTS idx_executions_session
+            ON executions(session_id)
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_executions_created
             ON executions(created_at DESC)
             "#,
@@ -178,13 +189,13 @@ impl EventStore {
         sqlx::query(
             r#"
             INSERT INTO executions (
-                id, channel_type, channel_id, user_id, thread_id,
+                id, channel_type, channel_id, user_id, session_id, thread_id,
                 status, started_at, completed_at,
                 input_text, output_text, metadata, created_at, updated_at
             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5,
-                ?6, ?7, ?8,
-                ?9, ?10, ?11, ?12, ?13
+                ?1, ?2, ?3, ?4, ?5, ?6,
+                ?7, ?8, ?9,
+                ?10, ?11, ?12, ?13, ?14
             )
             "#,
         )
@@ -192,6 +203,7 @@ impl EventStore {
         .bind(&execution.channel_type)
         .bind(&execution.channel_id)
         .bind(&execution.user_id)
+        .bind(&execution.session_id)
         .bind(&execution.thread_id)
         .bind(execution.status.as_str())
         .bind(execution.started_at.to_rfc3339())
@@ -214,7 +226,7 @@ impl EventStore {
     pub async fn get_execution(&self, id: Uuid) -> Result<Execution> {
         let row = sqlx::query(
             r#"
-            SELECT id, channel_type, channel_id, user_id, thread_id,
+            SELECT id, channel_type, channel_id, user_id, session_id, thread_id,
                    status, started_at, completed_at,
                    input_text, output_text, metadata, created_at, updated_at
             FROM executions
@@ -288,7 +300,7 @@ impl EventStore {
     ) -> Result<Vec<Execution>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, channel_type, channel_id, user_id, thread_id,
+            SELECT id, channel_type, channel_id, user_id, session_id, thread_id,
                    status, started_at, completed_at,
                    input_text, output_text, metadata, created_at, updated_at
             FROM executions
@@ -318,7 +330,7 @@ impl EventStore {
     ) -> Result<Vec<Execution>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, channel_type, channel_id, user_id, thread_id,
+            SELECT id, channel_type, channel_id, user_id, session_id, thread_id,
                    status, started_at, completed_at,
                    input_text, output_text, metadata, created_at, updated_at
             FROM executions
@@ -337,12 +349,41 @@ impl EventStore {
         rows.into_iter().map(row_to_execution).collect()
     }
 
+    /// List executions for a session
+    #[instrument(skip(self))]
+    pub async fn list_executions_by_session(
+        &self,
+        session_id: &str,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Execution>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, channel_type, channel_id, user_id, session_id, thread_id,
+                   status, started_at, completed_at,
+                   input_text, output_text, metadata, created_at, updated_at
+            FROM executions
+            WHERE session_id = ?1
+            ORDER BY created_at DESC
+            LIMIT ?2 OFFSET ?3
+            "#,
+        )
+        .bind(session_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        rows.into_iter().map(row_to_execution).collect()
+    }
+
     /// List recent executions
     #[instrument(skip(self))]
     pub async fn list_recent_executions(&self, limit: i64) -> Result<Vec<Execution>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, channel_type, channel_id, user_id, thread_id,
+            SELECT id, channel_type, channel_id, user_id, session_id, thread_id,
                    status, started_at, completed_at,
                    input_text, output_text, metadata, created_at, updated_at
             FROM executions

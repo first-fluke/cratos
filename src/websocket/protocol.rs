@@ -1,7 +1,7 @@
 //! Gateway WebSocket wire protocol.
 //!
 //! Defines the frame format and error types for the Gateway WS endpoint.
-//! Based on OpenClaw's request/response/event framing pattern.
+//! Based on request/response/event framing pattern.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

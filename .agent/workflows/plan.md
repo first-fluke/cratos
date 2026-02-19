@@ -40,7 +40,7 @@ If an existing codebase exists, use MCP code analysis tools to scan:
 Design API contracts between frontend/mobile and backend. Per endpoint:
 - Method, path, request/response schemas
 - Auth requirements, error responses
-- Save to `.agent/skills/_shared/api-contracts/`.
+- Save to `.cratos/skills/_shared/api-contracts/`.
 
 ---
 

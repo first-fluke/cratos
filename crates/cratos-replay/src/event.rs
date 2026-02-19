@@ -162,6 +162,9 @@ pub struct Execution {
     /// User who initiated the execution
     pub user_id: String,
 
+    /// Session identifier
+    pub session_id: Option<String>,
+
     /// Thread ID for reply context
     pub thread_id: Option<String>,
 
@@ -205,6 +208,7 @@ impl Execution {
             channel_type: channel_type.into(),
             channel_id: channel_id.into(),
             user_id: user_id.into(),
+            session_id: None,
             thread_id: None,
             status: ExecutionStatus::Pending,
             started_at: now,
@@ -215,6 +219,13 @@ impl Execution {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// Set the session ID
+    #[must_use]
+    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = Some(session_id.into());
+        self
     }
 
     /// Set the thread ID

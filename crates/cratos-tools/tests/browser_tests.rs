@@ -38,8 +38,8 @@ async fn test_browser_tool_definition() {
 
 #[tokio::test]
 async fn test_execute_navigate() {
-    let tool = BrowserTool::new();
-    let input = json!({
+    let _tool = BrowserTool::new();
+    let _input = json!({
         "action": "navigate",
         "url": "https://example.com"
     });

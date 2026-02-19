@@ -121,6 +121,10 @@ fn task_to_view(task: &ScheduledTask) -> TaskView {
             "run_skill_analysis".to_string(),
             serde_json::json!({ "dry_run": dry_run }),
         ),
+        TaskAction::PruneStaleSkills { days } => (
+            "prune_stale_skills".to_string(),
+            serde_json::json!({ "days": days }),
+        ),
     };
 
     TaskView {
@@ -217,6 +221,10 @@ fn parse_action(action_type: &str, config: &serde_json::Value) -> Result<TaskAct
         "run_skill_analysis" => {
             let dry_run = config["dry_run"].as_bool().unwrap_or(false);
             Ok(TaskAction::RunSkillAnalysis { dry_run })
+        }
+        "prune_stale_skills" => {
+            let days = config["days"].as_u64().unwrap_or(90) as u32;
+            Ok(TaskAction::PruneStaleSkills { days })
         }
         other => Err(format!("Invalid action type: {}", other)),
     }

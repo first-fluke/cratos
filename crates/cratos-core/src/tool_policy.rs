@@ -1,6 +1,6 @@
 //! Tool Policy — command allowlist/denylist for safe remote execution.
 //!
-//! Follows the OpenClaw pattern of dual-gating:
+//! Follows the pattern of dual-gating:
 //! 1. Platform-level denylist (always blocks dangerous commands)
 //! 2. Node-declared command list (node must declare what it can run)
 

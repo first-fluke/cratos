@@ -13,7 +13,7 @@
 //! - `init`: Main server initialization and run loop
 
 mod a2ui_steering;
-mod adapters;
+pub mod adapters;
 mod background_tasks;
 mod channel_starters;
 mod cli;

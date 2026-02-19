@@ -18,9 +18,9 @@ description: Automated CLI-based parallel agent execution — spawn subagents vi
 
 ## Step 0: Preparation (DO NOT SKIP)
 
-1. Read `.agent/skills/workflow-guide/SKILL.md` and confirm Core Rules.
-2. Read `.agent/skills/_shared/context-loading.md` for resource loading strategy.
-3. Read `.agent/skills/_shared/memory-protocol.md` for memory protocol.
+1. Read `.cratos/skills/workflow-guide/SKILL.md` and confirm Core Rules.
+2. Read `.cratos/skills/_shared/context-loading.md` for resource loading strategy.
+3. Read `.cratos/skills/_shared/memory-protocol.md` for memory protocol.
 
 ---
 
@@ -87,7 +87,7 @@ Also use memory read tool to poll `progress-{agent}.md` for logic updates.
 For each completed agent, run automated verification:
 
 ```
-bash .agent/skills/_shared/verify.sh {agent-type} {workspace}
+bash .cratos/skills/_shared/verify.sh {agent-type} {workspace}
 ```
 
 - PASS (exit 0): accept result.

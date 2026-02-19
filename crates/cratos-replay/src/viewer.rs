@@ -222,7 +222,7 @@ impl ExecutionViewer {
         } else {
             // In live mode, create a new execution record referencing the original
             let new_id = Uuid::new_v4();
-            let new_exec = crate::event::Execution::new(
+            let mut new_exec = crate::event::Execution::new(
                 &_execution.channel_type,
                 &_execution.channel_id,
                 &_execution.user_id,
@@ -237,7 +237,15 @@ impl ExecutionViewer {
                     "tool_overrides_keys": options.tool_overrides.keys().collect::<Vec<_>>(),
                 }
             }));
-            let mut new_exec = new_exec;
+
+            if let Some(session_id) = &_execution.session_id {
+                new_exec = new_exec.with_session_id(session_id);
+            }
+
+            if let Some(thread_id) = &_execution.thread_id {
+                new_exec = new_exec.with_thread_id(thread_id);
+            }
+
             new_exec.id = new_id;
 
             if let Err(e) = self.store.create_execution(&new_exec).await {

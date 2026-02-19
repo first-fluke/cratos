@@ -12,16 +12,16 @@ description: Thorough version of coordinate - high-quality development workflow 
   - Memory path: configurable via `memoryConfig.basePath` (default: `.serena/memories`)
   - Tool names: configurable via `memoryConfig.tools` in `mcp.json`
   - Do NOT use raw file reads or grep as substitutes. MCP tools are the primary interface for code and memory operations.
-- **Read the workflow-guide BEFORE starting.** Read `.agent/skills/workflow-guide/SKILL.md` and follow its Core Rules.
-- **Follow the context-loading guide.** Read `.agent/skills/_shared/context-loading.md` and load only task-relevant resources.
+- **Read the workflow-guide BEFORE starting.** Read `.cratos/skills/workflow-guide/SKILL.md` and follow its Core Rules.
+- **Follow the context-loading guide.** Read `.cratos/skills/_shared/context-loading.md` and load only task-relevant resources.
 
 ---
 
 ## Phase 0: Initialization (DO NOT SKIP)
 
-1. Read `_shared/multi-review-protocol.md` (11 review guides)
-2. Read `_shared/quality-principles.md` (4 principles)
-3. Read `_shared/phase-gates.md` (gate definitions)
+1. Read `.cratos/skills/_shared/multi-review-protocol.md` (11 review guides)
+2. Read `.cratos/skills/_shared/quality-principles.md` (4 principles)
+3. Read `.cratos/skills/_shared/phase-gates.md` (gate definitions)
 4. Record session in memory: `session-coordinate-pro.md`
 
 ---
@@ -60,8 +60,8 @@ Command: `oh-my-ag agent:spawn pm-agent "Analyze requirements. Execute Step 1: C
 Spawn Implementation Agents (Backend/Frontend/Mobile) in parallel.
 Command:
 ```bash
-oh-my-ag agent:spawn backend "Implement backend tasks per plan..." session-id -w ./backend &
-oh-my-ag agent:spawn frontend "Implement frontend tasks per plan..." session-id -w ./frontend &
+oh-my-ag agent:spawn backend-agent "Implement backend tasks per plan..." session-id -w ./backend &
+oh-my-ag agent:spawn frontend-agent "Implement frontend tasks per plan..." session-id -w ./frontend &
 wait
 ```
 

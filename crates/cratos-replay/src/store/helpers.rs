@@ -46,6 +46,7 @@ pub(crate) fn row_to_execution(row: SqliteRow) -> Result<Execution, Error> {
         channel_type: row.get("channel_type"),
         channel_id: row.get("channel_id"),
         user_id: row.get("user_id"),
+        session_id: row.get("session_id"),
         thread_id: row.get("thread_id"),
         status,
         started_at,

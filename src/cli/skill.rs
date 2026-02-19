@@ -8,8 +8,10 @@ use chrono::Utc;
 use cratos_replay::{default_db_path as default_replay_db_path, EventStore};
 use cratos_skills::{
     PatternAnalyzer, PatternStatus, RemoteRegistry, Skill, SkillEcosystem, SkillGenerator,
-    SkillStatus, SkillStore,
+    SkillStatus, SkillStore, SemanticSkillRouter, SkillRegistry, create_skill_index,
+    SkillEmbedder, // Added import
 };
+use std::sync::Arc;
 use cratos_skills::ecosystem::PortableSkillDef;
 
 /// Status indicator for active skill
@@ -170,18 +172,16 @@ async fn generate_skills(store: &SkillStore, dry_run: bool, auto_enable: bool) -
                         _ => {}
                     }
 
-                    // 3.2 If no exact match, try semantic search
+                            // 3.2 If no exact match, try semantic search
                     if existing_skill.is_none() {
                         if let Some(router) = &semantic_router {
-                            match router.semantic_search(&skill.name) {
+                            match router.route(&skill.name).await {
                                 Ok(matches) => {
-                                    if let Some((best_name, score)) = matches.first() {
-                                        if *score > 0.85 {
-                                            println!("  ℹ️ Found semantic match: '{}' (Score: {:.2})", best_name, score);
-                                            match store.get_skill_by_name(best_name).await {
-                                                Ok(Some(s)) => existing_skill = Some(s),
-                                                _ => {}
-                                            }
+                                    if let Some(best) = matches.first() {
+                                        if best.score > 0.85 {
+                                            println!("  ℹ️ Found semantic match: '{}' (Score: {:.2})", best.skill.name, best.score);
+                                            // Since we have the skill in the result, use it directly
+                                            existing_skill = Some(best.skill.clone());
                                         }
                                     }
                                 }
@@ -212,6 +212,7 @@ async fn generate_skills(store: &SkillStore, dry_run: bool, auto_enable: bool) -
                                 println!("  ℹ️ No new content to merge.");
                             }
 
+                            // Use existing.id for marking pattern converted
                             if let Err(e) = store.mark_pattern_converted(pattern.id, existing.id).await {
                                 println!("  ⚠️ Failed to mark pattern converted: {}", e);
                             }
@@ -233,7 +234,7 @@ async fn generate_skills(store: &SkillStore, dry_run: bool, auto_enable: bool) -
                                         
                                         // Index new skill immediately if router is active
                                         if let Some(router) = &semantic_router {
-                                            if let Err(e) = router.index_skill(&skill) {
+                                            if let Err(e) = router.index_skill(&skill).await {
                                                 println!("  ⚠️ Failed to index new skill: {}", e);
                                             }
                                         }
@@ -260,17 +261,17 @@ async fn generate_skills(store: &SkillStore, dry_run: bool, auto_enable: bool) -
     Ok(())
 }
 
-/// Helper to initialize Semantic Router
-async fn initialize_semantic_router(store: &SkillStore) -> Result<SemanticSkillRouter<SkillEmbeddingAdapter>> {
+/// Helper to initialize Semantic Router (mock implementation if semantic feature disabled or types missing)
+async fn initialize_semantic_router(store: &SkillStore) -> Result<SemanticSkillRouter<CliSkillEmbeddingAdapter>> {
     // 1. Load config
     // Note: load_config loads from .env and files
-    let config = crate::server::load_config().await?;
+    let _config = crate::server::load_config()?;
     
     // 2. Get Embedding Provider (default_embedding_provider from cratos_llm)
     let provider = cratos_llm::default_embedding_provider()
         .context("Failed to create embedding provider")?;
-        
-    let embedder = Arc::new(SkillEmbeddingAdapter {
+
+    let embedder = Arc::new(CliSkillEmbeddingAdapter {
         provider
     });
 
@@ -287,9 +288,32 @@ async fn initialize_semantic_router(store: &SkillStore) -> Result<SemanticSkillR
     let router = SemanticSkillRouter::new(registry, index, embedder);
     
     // 6. Reindex to ensure everything is up to date
-    router.reindex_all()?;
+    router.reindex_all().await?;
     
     Ok(router)
+}
+
+// Wrapper for provider to implement SkillEmbedder trait
+struct CliSkillEmbeddingAdapter {
+    provider: std::sync::Arc<dyn cratos_llm::EmbeddingProvider>,
+}
+
+#[async_trait::async_trait]
+impl cratos_skills::SkillEmbedder for CliSkillEmbeddingAdapter {
+    async fn embed(&self, text: &str) -> cratos_skills::Result<Vec<f32>> {
+        self.provider.embed(text).await
+            .map_err(|e| cratos_skills::Error::Internal(e.to_string()))
+    }
+    
+    async fn embed_batch(&self, texts: &[String]) -> cratos_skills::Result<Vec<Vec<f32>>> {
+         self.provider.embed_batch(texts).await
+             .map_err(|e| cratos_skills::Error::Internal(e.to_string()))
+    }
+
+    fn dimensions(&self) -> usize {
+        // Default for OpenAI, but should ideally come from provider.
+        self.provider.dimensions()
+    }
 }
 
 /// Helper to merge content from new skill into existing skill

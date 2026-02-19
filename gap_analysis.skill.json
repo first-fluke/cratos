@@ -1,0 +1,24 @@
+{
+  "format_version": "1.0",
+  "skill": {
+    "name": "gap_analysis",
+    "description": "Identify gaps between current and desired states",
+    "category": "system",
+    "trigger": {
+      "keywords": [
+        "gap_analysis"
+      ],
+      "regex_patterns": [],
+      "intents": [],
+      "priority": 0
+    },
+    "steps": [],
+    "tags": []
+  },
+  "export_info": {
+    "exported_at": "2026-02-19T05:51:49.427154Z",
+    "cratos_version": "0.1.4",
+    "license": "MIT"
+  },
+  "checksum": "d7783f3b371a803e"
+}

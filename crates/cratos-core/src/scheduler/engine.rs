@@ -294,6 +294,10 @@ impl SchedulerEngine {
                     debug!("Would analyze skills (dry_run: {})", dry_run);
                     Ok(format!("Analyzed skills (dry_run: {})", dry_run))
                 }
+                TaskAction::PruneStaleSkills { days } => {
+                    debug!("Would prune skills older than {} days", days);
+                    Ok(format!("Pruned skills older than {} days", days))
+                }
             }
         }
     }

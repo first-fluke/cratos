@@ -81,7 +81,7 @@ fn extract_credentials_from_path(gemini_bin_path: &Path) -> Option<GeminiCliCred
     let current = gemini_bin_path.parent()?;
 
     // Naive traverse up to find node_modules structure or known path
-    // OpenClaw strategy: dirname(dirname(resolvedPath)) -> geminiCliDir
+    // strategy: dirname(dirname(resolvedPath)) -> geminiCliDir
     if let Some(p) = current.parent() {
         let gemini_cli_dir = p;
 
@@ -114,12 +114,10 @@ fn extract_credentials_from_path(gemini_bin_path: &Path) -> Option<GeminiCliCred
 fn extract_credentials_from_file(path: &Path) -> Option<GeminiCliCredentials> {
     let content = fs::read_to_string(path).ok()?;
 
-    // Regex based on OpenClaw's implementation
     // client_id: /(\d+-[a-z0-9]+\.apps\.googleusercontent\.com)/
     // client_secret: /(GOCSPX-[A-Za-z0-9_-]+)/
 
     let id_regex = Regex::new(r"(\d+-[a-z0-9]+\.apps\.googleusercontent\.com)").ok()?;
-    // Secret regex from OpenClaw is just `(GOCSPX-[A-Za-z0-9_-]+)`, verifying if that's robust
     let secret_regex = Regex::new(r"(GOCSPX-[A-Za-z0-9_-]+)").ok()?;
 
     let client_id = id_regex.captures(&content)?.get(1)?.as_str().to_string();

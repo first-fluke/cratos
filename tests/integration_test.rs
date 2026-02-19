@@ -128,6 +128,7 @@ fn test_tool_registry_with_builtins() {
         "web_search",
         "agent_cli",
         "send_file",
+        "image_generate",
     ];
 
     for tool_name in expected_tools {

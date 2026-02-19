@@ -1,88 +1,32 @@
 {
-  "tasks": [
-    {
-      "id": "MIGRATE-001",
-      "title": "Refactor CLI Skill Path",
-      "description": "Modify `src/cli/skill.rs` to use `.cratos/skills` as the default directory for generated skills.",
-      "status": "pending",
-      "priority": "HIGH"
-    },
-    {
-      "id": "MIGRATE-002",
-      "title": "Develop Migration Script",
-      "description": "Create a Python script (`scripts/migrate_skills.py`) to scan `.agent/skills` and `.claude/skills`, compare contents/names, and move unique/new skills to `.cratos/skills`.",
-      "status": "pending",
-      "priority": "HIGH"
-    },
-    {
-      "id": "MIGRATE-003",
-      "title": "Execute Migration",
-      "description": "Run the migration script and verify that skills are correctly moved and deduplicated.",
-      "status": "pending",
-      "priority": "HIGH"
-    },
-    {
-      "id": "MIGRATE-004",
-      "title": "Clean Up Old Directories",
-      "description": "Remove empty `.agent/skills` and `.claude/skills` directories after verification.",
-      "status": "completed",
-      "priority": "MEDIUM"
-    },
-    {
-      "id": "MIGRATE-005",
-      "title": "Update Skill References",
-      "description": "Scan migrated skills for references to `.agent/skills` and update them to `.cratos/skills`.",
-      "status": "completed",
-      "priority": "HIGH"
-    },
-    {
-      "id": "DEDUPE-001",
-      "title": "Deduplicate Skills",
-      "description": "Identify and remove low-quality duplicate skills (stubs) in favor of established ones.",
-      "status": "completed",
-      "priority": "HIGH"
-    },
-    {
-      "id": "ALIGN-001",
-      "title": "Analyze Persona Definitions",
-      "description": "Locate Persona definitions and identify missing skill references.",
-      "status": "completed",
-      "priority": "HIGH"
-    },
-    {
-      "id": "ALIGN-002",
-      "title": "Fix Pantheon Skills",
-      "description": "Update Pantheon config files to use validated, existing skills from .cratos/skills.",
-      "status": "completed",
-      "priority": "HIGH"
-    },
-    {
-      "id": "PRUNE-001",
-      "title": "Implement Stale Skill Pruning Logic",
-      "description": "Add `prune_stale_skills` and `list_stale_skills` to `SkillStore`.",
-      "status": "completed",
-      "priority": "HIGH"
-    },
-    {
-      "id": "PRUNE-002",
-      "title": "Implement Prune CLI",
-      "description": "Add `cratos skill prune` command with --dry-run and --confirm flags.",
-      "status": "completed",
-      "priority": "HIGH"
-    },
-    {
-      "id": "PRUNE-003",
-      "title": "Automate Stale Skill Pruning",
-      "description": "Integrate skill pruning into the Cratos scheduler as a recurring system task.",
-      "status": "completed",
-      "priority": "HIGH"
+    "tasks": [
+        {
+            "id": "PRUNE-001",
+            "title": "Implement Stale Skill Pruning Logic",
+            "description": "Add `prune_stale_skills` and `list_stale_skills` to `SkillStore`.",
+            "status": "completed",
+            "priority": "HIGH"
+        },
+        {
+            "id": "PRUNE-002",
+            "title": "Implement Prune CLI",
+            "description": "Add `cratos skill prune` command.",
+            "status": "completed",
+            "priority": "HIGH"
+        },
+        {
+            "id": "PRUNE-003",
+            "title": "Automate Stale Skill Pruning",
+            "description": "Integrate skill pruning into scheduler.",
+            "status": "in-progress",
+            "priority": "HIGH"
+        }
+    ],
+    "gates": {
+        "PLAN_GATE": true,
+        "IMPL_GATE": true,
+        "VERIFY_GATE": true,
+        "REFINE_GATE": true,
+        "SHIP_GATE": false
     }
-  ],
-  "gates": {
-    "PLAN_GATE": false,
-    "IMPL_GATE": false,
-    "VERIFY_GATE": false,
-    "REFINE_GATE": false,
-    "SHIP_GATE": false
-  }
 }

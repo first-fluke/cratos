@@ -1018,4 +1018,49 @@ mod tests {
         assert_eq!(updated.status, SkillStatus::Disabled);
         assert!((updated.metadata.success_rate - 0.2).abs() < 0.01);
     }
+
+    #[tokio::test]
+    async fn test_list_stale_skills() {
+        let store = create_test_store().await;
+
+        // Skill 1: Recently used (1 day ago)
+        let mut skill1 = create_test_skill();
+        skill1.name = "recent".to_string();
+        skill1.metadata.last_used_at = Some(Utc::now() - chrono::Duration::days(1));
+        store.save_skill(&skill1).await.unwrap();
+
+        // Skill 2: Stale (100 days ago)
+        let mut skill2 = create_test_skill();
+        skill2.id = Uuid::new_v4();
+        skill2.name = "stale".to_string();
+        skill2.metadata.last_used_at = Some(Utc::now() - chrono::Duration::days(100));
+        store.save_skill(&skill2).await.unwrap();
+
+        // Skill 3: Builtin (should not be stale even if old)
+        let mut skill3 = create_test_skill();
+        skill3.id = Uuid::new_v4();
+        skill3.name = "builtin".to_string();
+        skill3.origin = SkillOrigin::Builtin;
+        skill3.metadata.last_used_at = Some(Utc::now() - chrono::Duration::days(100));
+        store.save_skill(&skill3).await.unwrap();
+
+        let stale = store.list_stale_skills(90).await.unwrap();
+        assert_eq!(stale.len(), 1);
+        assert_eq!(stale[0].name, "stale");
+    }
+
+    #[tokio::test]
+    async fn test_prune_stale_skills() {
+        let store = create_test_store().await;
+
+        let mut skill1 = create_test_skill();
+        skill1.metadata.last_used_at = Some(Utc::now() - chrono::Duration::days(100));
+        store.save_skill(&skill1).await.unwrap();
+
+        let count = store.prune_stale_skills(90).await.unwrap();
+        assert_eq!(count, 1);
+
+        let stale = store.list_stale_skills(90).await.unwrap();
+        assert_eq!(stale.len(), 0);
+    }
 }

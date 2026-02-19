@@ -1,0 +1,59 @@
+    Checking cratos v0.1.4 (/Volumes/gahyun_ex/projects/cratos)
+error: expected `;`, found keyword `self`
+   --> src/cli/skill.rs:316:13
+    |
+316 |         1536 // Default for OpenAI, but should ideally come from provider.
+    |             ^ help: add `;` here
+317 |         self.provider.dimensions()
+    |         ---- unexpected token
+
+error[E0195]: lifetime parameters or bounds on method `embed` do not match the trait declaration
+   --> src/cli/skill.rs:305:19
+    |
+305 |     async fn embed(&self, text: &str) -> cratos_skills::Result<Vec<f32>> {
+    |                   ^ lifetimes do not match method in trait
+
+error[E0195]: lifetime parameters or bounds on method `embed_batch` do not match the trait declaration
+   --> src/cli/skill.rs:310:25
+    |
+310 |     async fn embed_batch(&self, texts: &[String]) -> cratos_skills::Result<Vec<Vec<f32>>> {
+    |                         ^ lifetimes do not match method in trait
+
+error[E0624]: method `semantic_search` is private
+   --> src/cli/skill.rs:179:42
+    |
+179 | ...                   match router.semantic_search(&skill.name) {
+    |                                    ^^^^^^^^^^^^^^^ private method
+    |
+   ::: /Volumes/gahyun_ex/projects/cratos/crates/cratos-skills/src/semantic_router.rs:206:5
+    |
+206 |     async fn semantic_search(&self, input: &str) -> Result<Vec<(String, f32)>> {
+    |     -------------------------------------------------------------------------- private method defined here
+
+error[E0308]: mismatched types
+   --> src/cli/skill.rs:239:52
+    |
+239 | ...                   if let Err(e) = router.index_skill(&skill) {
+    |                              ^^^^^^   -------------------------- this expression has type `impl futures_util::Future<Output = Result<(), cratos_skills::Error>>`
+    |                              |
+    |                              expected future, found `Result<_, _>`
+    |
+    = note: expected opaque type `impl futures_util::Future<Output = Result<(), cratos_skills::Error>>`
+                      found enum `Result<_, _>`
+help: consider `await`ing on the `Future`
+    |
+239 |                                             if let Err(e) = router.index_skill(&skill).await {
+    |                                                                                       ++++++
+
+warning: unused import: `cratos_llm::EmbeddingProvider`
+  --> src/cli/skill.rs:15:5
+   |
+15 | use cratos_llm::EmbeddingProvider; // Added import
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+Some errors have detailed explanations: E0195, E0308, E0624.
+For more information about an error, try `rustc --explain E0195`.
+warning: `cratos` (bin "cratos") generated 1 warning
+error: could not compile `cratos` (bin "cratos") due to 5 previous errors; 1 warning emitted

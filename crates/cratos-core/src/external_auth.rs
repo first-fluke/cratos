@@ -1,7 +1,7 @@
 //! External authentication providers.
 //!
 //! Provides a trait-based interface for plugging in external identity providers
-//! (Tailscale, Google, GitHub, etc.) following the OpenClaw multi-auth pattern.
+//! (Tailscale, Google, GitHub, etc.) following multi-auth pattern.
 
 #![forbid(unsafe_code)]
 
@@ -121,7 +121,7 @@ impl Default for ExternalAuthRegistry {
 /// - The Cratos server is running on a Tailscale node
 /// - The tailscaled socket is accessible
 ///
-/// This is the Tailscale SSO pattern from OpenClaw's 4-layer auth.
+/// This is the Tailscale SSO pattern from 4-layer auth.
 pub struct TailscaleVerifier {
     socket_path: String,
 }

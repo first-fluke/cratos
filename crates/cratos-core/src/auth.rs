@@ -2,7 +2,7 @@
 //!
 //! Provides:
 //! - API key and Bearer token authentication
-//! - Scope-based authorization (OpenClaw pattern)
+//! - Scope-based authorization
 //! - Token generation, validation, and revocation
 //! - Constant-time token comparison
 
@@ -56,7 +56,7 @@ pub type Result<T> = std::result::Result<T, AuthError>;
 // Scopes
 // ============================================================================
 
-/// Scope-based authorization (OpenClaw pattern)
+/// Scope-based authorization
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Scope {

@@ -311,14 +311,16 @@ impl AnthropicProvider {
 
     /// Convert our message to Anthropic format, returning system message separately
     fn convert_messages(messages: &[Message]) -> (Option<String>, Vec<AnthropicMessage>) {
-        let mut system_message = None;
+        let mut system_parts = Vec::new();
         let mut anthropic_messages = Vec::new();
 
         for msg in messages {
             match msg.role {
                 MessageRole::System => {
-                    // Anthropic uses a separate system field
-                    system_message = Some(msg.content.clone());
+                    // Accumulate system messages
+                    if !msg.content.is_empty() {
+                        system_parts.push(msg.content.clone());
+                    }
                 }
                 MessageRole::User => {
                     anthropic_messages.push(AnthropicMessage {
@@ -346,6 +348,12 @@ impl AnthropicProvider {
                 }
             }
         }
+
+        let system_message = if !system_parts.is_empty() {
+            Some(system_parts.join("\n\n"))
+        } else {
+            None
+        };
 
         (system_message, anthropic_messages)
     }

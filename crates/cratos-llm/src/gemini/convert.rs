@@ -8,18 +8,16 @@ use crate::router::{Message, MessageRole, ToolChoice, ToolDefinition};
 pub(crate) fn convert_messages(
     messages: &[Message],
 ) -> (Option<GeminiContent>, Vec<GeminiContent>) {
-    let mut system_instruction = None;
+    let mut system_parts = Vec::new();
     let mut gemini_contents = Vec::new();
 
     for msg in messages {
         match msg.role {
             MessageRole::System => {
-                system_instruction = Some(GeminiContent {
-                    role: None,
-                    parts: vec![GeminiPart::Text {
-                        text: msg.content.clone(),
-                    }],
-                });
+                // Accumulate system messages
+                if !msg.content.is_empty() {
+                    system_parts.push(msg.content.clone());
+                }
             }
             MessageRole::User => {
                 let mut parts = Vec::new();
@@ -153,6 +151,17 @@ pub(crate) fn convert_messages(
             );
         }
     }
+
+    let system_instruction = if !system_parts.is_empty() {
+        Some(GeminiContent {
+            role: None,
+            parts: vec![GeminiPart::Text {
+                text: system_parts.join("\n\n"),
+            }],
+        })
+    } else {
+        None
+    };
 
     (system_instruction, gemini_contents)
 }

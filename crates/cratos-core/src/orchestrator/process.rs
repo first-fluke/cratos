@@ -76,10 +76,17 @@ impl Orchestrator {
                 &input.channel_id,
                 &input.user_id,
                 &input.text,
-            );
+            )
+            .with_session_id(session_key.clone());
+
             // Override the auto-generated ID with our execution_id
             let mut execution = execution;
             execution.id = execution_id;
+
+            if let Some(thread_id) = &input.thread_id {
+                execution = execution.with_thread_id(thread_id);
+            }
+
             if let Err(e) = store.create_execution(&execution).await {
                 warn!(error = %e, "Failed to create execution record");
             }
