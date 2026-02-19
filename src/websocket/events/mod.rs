@@ -1,154 +1,29 @@
 //! Events WebSocket handler
 //!
 //! Provides real-time event stream functionality.
-//! Connected to EventBus for streaming OrchestratorEvent notifications.
 
 use std::sync::Arc;
-
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
     Extension,
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use cratos_core::event_bus::{EventBus, OrchestratorEvent};
-
 use crate::middleware::auth::RequireAuthStrict;
 
-/// Subscription request from client
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum SubscriptionRequest {
-    /// Subscribe to events
-    Subscribe {
-        /// Event types to subscribe to
-        events: Vec<String>,
-        /// Optional execution ID to filter
-        execution_id: Option<Uuid>,
-    },
-    /// Unsubscribe from events
-    Unsubscribe {
-        /// Event types to unsubscribe from
-        events: Vec<String>,
-    },
-    /// Ping for keepalive
-    Ping,
-}
+mod types;
+#[cfg(test)]
+mod tests;
 
-/// Event notification to client
-#[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum EventNotification {
-    /// Execution started
-    ExecutionStarted {
-        execution_id: Uuid,
-        session_key: String,
-        timestamp: DateTime<Utc>,
-    },
-    /// Execution completed
-    ExecutionCompleted {
-        execution_id: Uuid,
-        timestamp: DateTime<Utc>,
-    },
-    /// Execution failed
-    ExecutionFailed {
-        execution_id: Uuid,
-        error: String,
-        timestamp: DateTime<Utc>,
-    },
-    /// Execution cancelled
-    ExecutionCancelled {
-        execution_id: Uuid,
-        timestamp: DateTime<Utc>,
-    },
-    /// Tool call started
-    ToolCallStarted {
-        execution_id: Uuid,
-        tool_name: String,
-        tool_call_id: String,
-        timestamp: DateTime<Utc>,
-    },
-    /// Tool call completed
-    ToolCallCompleted {
-        execution_id: Uuid,
-        tool_name: String,
-        tool_call_id: String,
-        success: bool,
-        duration_ms: u64,
-        timestamp: DateTime<Utc>,
-    },
-    /// Planning started
-    PlanningStarted {
-        execution_id: Uuid,
-        iteration: usize,
-        timestamp: DateTime<Utc>,
-    },
-    /// Chat delta (streaming text)
-    ChatDelta {
-        execution_id: Uuid,
-        delta: String,
-        is_final: bool,
-        timestamp: DateTime<Utc>,
-    },
-    /// Approval required
-    ApprovalRequired {
-        execution_id: Uuid,
-        request_id: Uuid,
-        timestamp: DateTime<Utc>,
-    },
-    /// Subscription confirmed
-    Subscribed { events: Vec<String> },
-    /// Error notification
-    Error {
-        message: String,
-        code: Option<String>,
-    },
-    /// Pong response
-    Pong,
-    /// Connection established
-    Connected { session_id: Uuid },
-}
+pub use types::{EventNotification, SubscriptionRequest, SubscriptionState};
 
-/// Client subscription state
-struct SubscriptionState {
-    /// Subscribed event types (empty = all)
-    events: Vec<String>,
-    /// Optional execution ID filter
-    execution_id: Option<Uuid>,
-}
-
-impl SubscriptionState {
-    fn new() -> Self {
-        Self {
-            events: Vec::new(),
-            execution_id: None,
-        }
-    }
-
-    /// Check if a given event type matches the subscription filter
-    fn matches(&self, event_type: &str, exec_id: Uuid) -> bool {
-        // If filtering by execution ID, check it
-        if let Some(filter_id) = self.execution_id {
-            if exec_id != filter_id {
-                return false;
-            }
-        }
-        // If no event types subscribed, nothing matches (must explicitly subscribe)
-        if self.events.is_empty() {
-            return false;
-        }
-        // Check event type match
-        self.events.iter().any(|e| e == event_type || e == "*")
-    }
-}
-
-/// WebSocket upgrade handler (requires strict authentication — never bypassed)
+/// WebSocket upgrade handler
 pub async fn events_handler(
     RequireAuthStrict(_auth): RequireAuthStrict,
     ws: WebSocketUpgrade,
@@ -176,7 +51,7 @@ async fn handle_socket(socket: WebSocket, event_bus: Arc<EventBus>) {
     // Subscribe to EventBus
     let mut event_rx = event_bus.subscribe();
 
-    // Message handling loop: multiplex client requests and EventBus events
+    // Message handling loop
     loop {
         tokio::select! {
             // Client messages
@@ -279,7 +154,7 @@ fn handle_subscription_request(
     }
 }
 
-/// Convert an OrchestratorEvent into an EventNotification, respecting subscription filters.
+/// Convert an OrchestratorEvent into an EventNotification
 fn convert_event(
     event: &OrchestratorEvent,
     state: &SubscriptionState,
@@ -407,147 +282,7 @@ fn convert_event(
                 timestamp: now,
             })
         }
-        OrchestratorEvent::A2aMessageSent { .. } => {
-            // A2A events are not forwarded to the events WS
-            None
-        }
-        OrchestratorEvent::QuotaWarning { .. } => {
-            // QuotaWarning events are handled via notify_chat_id in Telegram,
-            // not forwarded to the general events WS
-            None
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_subscribe() {
-        let mut state = SubscriptionState::new();
-        let request = SubscriptionRequest::Subscribe {
-            events: vec!["execution_started".to_string(), "tool_started".to_string()],
-            execution_id: None,
-        };
-
-        let response = handle_subscription_request(request, &mut state);
-        if let EventNotification::Subscribed { events } = response {
-            assert_eq!(events.len(), 2);
-            assert!(events.contains(&"execution_started".to_string()));
-        } else {
-            panic!("Expected Subscribed");
-        }
-    }
-
-    #[test]
-    fn test_unsubscribe() {
-        let mut state = SubscriptionState::new();
-        state.events = vec![
-            "execution_started".to_string(),
-            "tool_started".to_string(),
-            "chat_delta".to_string(),
-        ];
-        let request = SubscriptionRequest::Unsubscribe {
-            events: vec!["tool_started".to_string()],
-        };
-
-        let response = handle_subscription_request(request, &mut state);
-        if let EventNotification::Subscribed { events } = response {
-            assert_eq!(events.len(), 2);
-            assert!(!events.contains(&"tool_started".to_string()));
-        } else {
-            panic!("Expected Subscribed");
-        }
-    }
-
-    #[test]
-    fn test_ping() {
-        let mut state = SubscriptionState::new();
-        let request = SubscriptionRequest::Ping;
-
-        let response = handle_subscription_request(request, &mut state);
-        assert!(matches!(response, EventNotification::Pong));
-    }
-
-    #[test]
-    fn test_subscription_filter_matches() {
-        let mut state = SubscriptionState::new();
-        state.events = vec!["execution_started".to_string()];
-
-        let id = Uuid::new_v4();
-        assert!(state.matches("execution_started", id));
-        assert!(!state.matches("tool_started", id));
-    }
-
-    #[test]
-    fn test_subscription_wildcard() {
-        let mut state = SubscriptionState::new();
-        state.events = vec!["*".to_string()];
-
-        let id = Uuid::new_v4();
-        assert!(state.matches("execution_started", id));
-        assert!(state.matches("tool_completed", id));
-    }
-
-    #[test]
-    fn test_subscription_execution_id_filter() {
-        let target_id = Uuid::new_v4();
-        let other_id = Uuid::new_v4();
-
-        let mut state = SubscriptionState::new();
-        state.events = vec!["*".to_string()];
-        state.execution_id = Some(target_id);
-
-        assert!(state.matches("execution_started", target_id));
-        assert!(!state.matches("execution_started", other_id));
-    }
-
-    #[test]
-    fn test_empty_subscription_matches_nothing() {
-        let state = SubscriptionState::new();
-        let id = Uuid::new_v4();
-        assert!(!state.matches("execution_started", id));
-    }
-
-    #[test]
-    fn test_convert_execution_started() {
-        let id = Uuid::new_v4();
-        let mut state = SubscriptionState::new();
-        state.events = vec!["execution_started".to_string()];
-
-        let event = OrchestratorEvent::ExecutionStarted {
-            execution_id: id,
-            session_key: "ws:1:1".to_string(),
-        };
-
-        let notification = convert_event(&event, &state);
-        assert!(notification.is_some());
-        if let Some(EventNotification::ExecutionStarted {
-            execution_id,
-            session_key,
-            ..
-        }) = notification
-        {
-            assert_eq!(execution_id, id);
-            assert_eq!(session_key, "ws:1:1");
-        } else {
-            panic!("Expected ExecutionStarted");
-        }
-    }
-
-    #[test]
-    fn test_convert_filtered_out() {
-        let id = Uuid::new_v4();
-        let mut state = SubscriptionState::new();
-        state.events = vec!["tool_started".to_string()];
-
-        let event = OrchestratorEvent::ExecutionStarted {
-            execution_id: id,
-            session_key: "ws:1:1".to_string(),
-        };
-
-        let notification = convert_event(&event, &state);
-        assert!(notification.is_none());
+        OrchestratorEvent::A2aMessageSent { .. } => None,
+        OrchestratorEvent::QuotaWarning { .. } => None,
     }
 }
