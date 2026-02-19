@@ -69,6 +69,9 @@
 mod actions;
 mod config;
 mod tool;
+mod mcp;
+mod extension;
+mod parser;
 
 // ============================================================================
 // Browser Constants

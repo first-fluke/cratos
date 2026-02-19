@@ -138,14 +138,12 @@ impl Tool for ExecTool {
 
         // SECURITY: Check args for dangerous patterns
         for arg in &args {
-            if arg.contains("..") || arg.starts_with('/') {
-                if security::is_path_dangerous(&self.config, arg) {
-                    warn!(arg = %arg, "Blocked dangerous path in argument");
-                    return Err(Error::PermissionDenied(format!(
-                        "Argument '{}' references a restricted path",
-                        arg
-                    )));
-                }
+            if (arg.contains("..") || arg.starts_with('/')) && security::is_path_dangerous(&self.config, arg) {
+                warn!(arg = %arg, "Blocked dangerous path in argument");
+                return Err(Error::PermissionDenied(format!(
+                    "Argument '{}' references a restricted path",
+                    arg
+                )));
             }
         }
 

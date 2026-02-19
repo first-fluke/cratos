@@ -52,27 +52,25 @@ pub fn validate_path(path: &str) -> Result<PathBuf> {
             warn!(path = %path, error = %e, "Failed to canonicalize path");
             Error::PermissionDenied(format!("Cannot resolve path '{}': {}", path, e))
         })?
-    } else {
-        if let Some(parent) = path_buf.parent() {
-            if parent.as_os_str().is_empty() || !parent.exists() {
-                path_buf.clone()
-            } else {
-                let canonical_parent = parent.canonicalize().map_err(|e| {
-                    warn!(path = %path, error = %e, "Failed to canonicalize parent directory");
-                    Error::PermissionDenied(format!(
-                        "Cannot resolve parent directory of '{}': {}",
-                        path, e
-                    ))
-                })?;
-                if let Some(filename) = path_buf.file_name() {
-                    canonical_parent.join(filename)
-                } else {
-                    canonical_parent
-                }
-            }
-        } else {
+    } else if let Some(parent) = path_buf.parent() {
+        if parent.as_os_str().is_empty() || !parent.exists() {
             path_buf.clone()
+        } else {
+            let canonical_parent = parent.canonicalize().map_err(|e| {
+                warn!(path = %path, error = %e, "Failed to canonicalize parent directory");
+                Error::PermissionDenied(format!(
+                    "Cannot resolve parent directory of '{}': {}",
+                    path, e
+                ))
+            })?;
+            if let Some(filename) = path_buf.file_name() {
+                canonical_parent.join(filename)
+            } else {
+                canonical_parent
+            }
         }
+    } else {
+        path_buf.clone()
     };
 
     let canonical_str = canonical.to_string_lossy();

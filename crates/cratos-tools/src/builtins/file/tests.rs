@@ -1,5 +1,5 @@
 use super::*;
-use crate::registry::Tool;
+use crate::registry::{Tool, RiskLevel, ToolCategory};
 use std::path::Path;
 use super::security;
 
