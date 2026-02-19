@@ -5,6 +5,7 @@ use tokio::sync::RwLock;
 use super::error::{Result, TtsError};
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum ElevenLabsTier {
     Free,
     Starter,
@@ -70,6 +71,7 @@ impl ElevenLabsRateLimiter {
     // Reset RPM counter (should be called every minute ideally, or handle logic differently)
     // For simplicity, we assume external scheduler or just rough estimation here.
     // In a real implementation, we might track timestamps or use a token bucket.
+    #[allow(dead_code)]
     pub async fn reset_minute_counter(&self) {
         let mut usage = self.current_usage.write().await;
         usage.requests_this_minute = 0;

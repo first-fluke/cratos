@@ -3,13 +3,9 @@
 //! Edge TTS is a **free** Microsoft text-to-speech service.
 //! No API key required!
 
-use super::backend::{TtsBackend, TtsOptions, VoiceInfo};
 use crate::error::{Error, Result};
-use async_trait::async_trait;
-use bytes::Bytes;
 use reqwest::Client;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 /// Edge TTS endpoint

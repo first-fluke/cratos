@@ -14,7 +14,14 @@ pub struct TtsManager {
     backends: HashMap<String, Arc<dyn TtsBackend>>,
     default_backend: String,
     fallback_enabled: bool,
+    #[allow(dead_code)]
     voice_cache: Arc<RwLock<HashMap<String, Vec<VoiceInfo>>>>,
+}
+
+impl Default for TtsManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TtsManager {
