@@ -283,7 +283,10 @@ impl<E: ToolExecutor + Send + Sync + 'static> UnifiedTool for SkillWrapper<E> {
                 .join("\n");
             Ok(UnifiedOutput::success(content))
         } else {
-            let error = result.error.unwrap_or_else(|| "Unknown error".to_string());
+            let error = result
+                .error
+                .map(|e| (*e).clone())
+                .unwrap_or_else(|| "Unknown error".to_string());
             Ok(UnifiedOutput::failure(error))
         }
     }
