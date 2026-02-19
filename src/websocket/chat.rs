@@ -112,8 +112,6 @@ pub async fn chat_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, orchestrator, event_bus, ciphers))
 }
 
-
-
 /// Handle WebSocket connection
 async fn handle_socket(
     socket: WebSocket,

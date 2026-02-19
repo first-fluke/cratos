@@ -26,7 +26,7 @@ pub async fn execute_task(
                     let msg = format!("Pruned {} stale skills.", count);
                     info!("{}", msg);
                     Ok(msg)
-                },
+                }
                 Err(e) => {
                     warn!("Failed to prune stale skills: {}", e);
                     Err(SchedulerError::Execution(e.to_string()))
@@ -119,15 +119,9 @@ pub async fn execute_task(
                 Ok(result) => {
                     let output = result.output.clone();
                     // Extract stdout/stderr from the result object if possible
-                    let stdout = output
-                        .get("stdout")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let stderr = output
-                        .get("stderr")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    
+                    let stdout = output.get("stdout").and_then(|v| v.as_str()).unwrap_or("");
+                    let stderr = output.get("stderr").and_then(|v| v.as_str()).unwrap_or("");
+
                     if result.success {
                         Ok(stdout.to_string())
                     } else {
@@ -214,4 +208,3 @@ pub async fn execute_task(
         }
     }
 }
-

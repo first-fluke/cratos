@@ -89,7 +89,7 @@ fn load_persona_names() -> Vec<String> {
             "mimir".to_string(),
         ];
     }
-    
+
     names.sort();
     names
 }

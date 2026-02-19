@@ -1,7 +1,7 @@
 //! Provider-specific OAuth2 configurations
 //!
 //! Contains OAuth2 client IDs and endpoints for Google and OpenAI.
-//! Google credentials are base64-encoded 
+//! Google credentials are base64-encoded
 //! OpenAI is a public client (PKCE only, no secret).
 
 use crate::oauth::OAuthProviderConfig;
@@ -109,7 +109,9 @@ pub fn google_pro_oauth_config() -> OAuthProviderConfig {
     let client_secret = google_pro_client_secret();
 
     let (client_id, client_secret) = if client_id.is_empty() {
-        tracing::info!("CRATOS_GOOGLE_PRO_CLIENT_ID not set. Using public Google Cloud SDK client ID");
+        tracing::info!(
+            "CRATOS_GOOGLE_PRO_CLIENT_ID not set. Using public Google Cloud SDK client ID"
+        );
         (default_google_client_id(), default_google_client_secret())
     } else {
         (client_id, client_secret)
