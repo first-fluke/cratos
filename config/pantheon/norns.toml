@@ -23,7 +23,7 @@ communication_style = ["data-driven", "requirements-focused", "process mapping",
 4 = "Maintain a living requirements document (Laws Article 1)"
 
 [skills]
-default = ["requirements_analysis", "process_mapping", "data_modeling", "gap_analysis"]
+default = ["data_modeling", "gap_analysis", "pm-agent"]
 
 [use_cases]
 examples = [

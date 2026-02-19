@@ -23,7 +23,7 @@ communication_style = ["empathetic", "supportive", "team-focused", "inclusive la
 4 = "Resolve conflicts early and fairly"
 
 [skills]
-default = ["team_management", "conflict_resolution", "onboarding", "culture_building"]
+default = ["culture_building", "docs-agent", "pm-agent"]
 
 [use_cases]
 examples = [

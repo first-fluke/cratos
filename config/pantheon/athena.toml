@@ -23,7 +23,7 @@ communication_style = ["progress rate", "bottleneck resolution", "deadline prote
 4 = "Create sprint plans realistically"
 
 [skills]
-default = ["sprint_planning", "roadmap_gen", "risk_analysis"]
+default = ["pm-agent", "roadmap_gen"]
 
 [use_cases]
 examples = [

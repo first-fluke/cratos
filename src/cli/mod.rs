@@ -243,6 +243,9 @@ pub enum SkillCommands {
         /// Output file path (default: <name>.skill.json)
         #[arg(short, long)]
         output: Option<String>,
+        /// Export as Markdown (Agent Skill)
+        #[arg(long)]
+        markdown: bool,
     },
     /// Import a skill from a file
     Import {
@@ -299,6 +302,18 @@ pub enum SkillCommands {
         /// Auto-enable generated skills
         #[arg(long)]
         enable: bool,
+    },
+    /// Prune stale skills (unused for N days)
+    Prune {
+        /// Skills unused for N days (default: 30)
+        #[arg(long, default_value = "30")]
+        older_than: u32,
+        /// Dry run mode (don't delete anything, just list)
+        #[arg(long)]
+        dry_run: bool,
+        /// Confirm deletion
+        #[arg(long)]
+        confirm: bool,
     },
 }
 

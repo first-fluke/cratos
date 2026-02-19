@@ -10,6 +10,7 @@ use cratos_skills::{
     PatternAnalyzer, PatternStatus, RemoteRegistry, Skill, SkillEcosystem, SkillGenerator,
     SkillStatus, SkillStore,
 };
+use cratos_skills::ecosystem::PortableSkillDef;
 
 /// Status indicator for active skill
 const ICON_ACTIVE: &str = "\u{1f7e2}"; // 🟢
@@ -25,7 +26,7 @@ pub async fn run(cmd: SkillCommands) -> Result<()> {
         SkillCommands::Show { name } => show(&store, &name).await,
         SkillCommands::Enable { name } => enable(&store, &name).await,
         SkillCommands::Disable { name } => disable(&store, &name).await,
-        SkillCommands::Export { name, output } => export_skill(&store, &name, output).await,
+        SkillCommands::Export { name, output, markdown } => export_skill(&store, &name, output, markdown).await,
         SkillCommands::Import { path } => import_skill(&store, &path).await,
         SkillCommands::Bundle { name, output } => export_bundle(&store, &name, output).await,
         SkillCommands::Search { query, registry } => search_remote(&query, registry).await,
@@ -39,6 +40,11 @@ pub async fn run(cmd: SkillCommands) -> Result<()> {
         SkillCommands::Generate { dry_run, enable } => {
             generate_skills(&store, dry_run, enable).await
         }
+        SkillCommands::Prune {
+            older_than,
+            dry_run,
+            confirm,
+        } => prune(&store, older_than, dry_run, confirm).await,
     }
 }
 
@@ -111,6 +117,23 @@ async fn generate_skills(store: &SkillStore, dry_run: bool, auto_enable: bool) -
         return Ok(());
     }
 
+    // 2. Initialize Semantic Search (if possible)
+    let semantic_router = if !dry_run {
+        println!("Initializing Semantic Search Engine...");
+        match initialize_semantic_router(store).await {
+            Ok(router) => {
+                println!("  ✅ Semantic Search initialized.");
+                Some(router)
+            }
+            Err(e) => {
+                println!("  ⚠️ Semantic Search unavailable: {}. Falling back to exact match.", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     println!(
         "Found {} pending patterns. Generating skills...",
         pending.len()
@@ -134,19 +157,91 @@ async fn generate_skills(store: &SkillStore, dry_run: bool, auto_enable: bool) -
                 }
 
                 if !dry_run {
-                    // Save skill
-                    match store.save_skill(&skill).await {
-                        Ok(()) => {
-                            // Mark pattern converted
-                            if let Err(e) = store.mark_pattern_converted(pattern.id, skill.id).await
-                            {
-                                println!("  ⚠️ Failed to mark pattern converted: {}", e);
-                            } else {
-                                generated_count += 1;
-                                println!("  ✅ Saved and linked to pattern.");
+                    // 3. Check for existing skills (Semantic + Exact)
+                    let mut existing_skill = None;
+                    
+                    // 3.1 First check exact match
+                    match store.get_skill_by_name(&skill.name).await {
+                        Ok(Some(s)) => {
+                            println!("  ℹ️ Found exact match: '{}'", s.name);
+                            existing_skill = Some(s);
+                        },
+                        Err(e) => println!("  ⚠️ Error checking exact match: {}", e),
+                        _ => {}
+                    }
+
+                    // 3.2 If no exact match, try semantic search
+                    if existing_skill.is_none() {
+                        if let Some(router) = &semantic_router {
+                            match router.semantic_search(&skill.name) {
+                                Ok(matches) => {
+                                    if let Some((best_name, score)) = matches.first() {
+                                        if *score > 0.85 {
+                                            println!("  ℹ️ Found semantic match: '{}' (Score: {:.2})", best_name, score);
+                                            match store.get_skill_by_name(best_name).await {
+                                                Ok(Some(s)) => existing_skill = Some(s),
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => println!("  ⚠️ Semantic search failed: {}", e),
                             }
                         }
-                        Err(e) => println!("  ❌ Failed to save skill: {}", e),
+                    }
+
+                    // 4. Handle Merge or Create
+                    match existing_skill {
+                        Some(mut existing) => {
+                            println!("  Using existing skill: '{}' for merge.", existing.name);
+                            
+                            // Merge triggers
+                            let merged = merge_skill_content(&mut existing, &skill);
+
+                            if merged {
+                                match store.save_skill(&existing).await {
+                                    Ok(_) => {
+                                         println!("  ✅ Merged new triggers into existing skill.");
+                                         if let Err(e) = generate_agent_skill_files(&existing) {
+                                              println!("  ⚠️ Failed to update agent skill files: {}", e);
+                                         }
+                                    }
+                                    Err(e) => println!("  ❌ Failed to save merged skill: {}", e),
+                                }
+                            } else {
+                                println!("  ℹ️ No new content to merge.");
+                            }
+
+                            if let Err(e) = store.mark_pattern_converted(pattern.id, existing.id).await {
+                                println!("  ⚠️ Failed to mark pattern converted: {}", e);
+                            }
+                        }
+                        None => {
+                            // Save new skill
+                            match store.save_skill(&skill).await {
+                                Ok(()) => {
+                                    if let Err(e) = store.mark_pattern_converted(pattern.id, skill.id).await
+                                    {
+                                        println!("  ⚠️ Failed to mark pattern converted: {}", e);
+                                    } else {
+                                        generated_count += 1;
+                                        println!("  ✅ Saved and linked to pattern.");
+                                        
+                                        if let Err(e) = generate_agent_skill_files(&skill) {
+                                            println!("  ⚠️ Failed to generate agent skill files: {}", e);
+                                        }
+                                        
+                                        // Index new skill immediately if router is active
+                                        if let Some(router) = &semantic_router {
+                                            if let Err(e) = router.index_skill(&skill) {
+                                                println!("  ⚠️ Failed to index new skill: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => println!("  ❌ Failed to save skill: {}", e),
+                            }
+                        }
                     }
                 } else {
                     println!("  (Dry run: Skill not saved)");
@@ -163,6 +258,59 @@ async fn generate_skills(store: &SkillStore, dry_run: bool, auto_enable: bool) -
     }
 
     Ok(())
+}
+
+/// Helper to initialize Semantic Router
+async fn initialize_semantic_router(store: &SkillStore) -> Result<SemanticSkillRouter<SkillEmbeddingAdapter>> {
+    // 1. Load config
+    // Note: load_config loads from .env and files
+    let config = crate::server::load_config().await?;
+    
+    // 2. Get Embedding Provider (default_embedding_provider from cratos_llm)
+    let provider = cratos_llm::default_embedding_provider()
+        .context("Failed to create embedding provider")?;
+        
+    let embedder = Arc::new(SkillEmbeddingAdapter {
+        provider
+    });
+
+    // 3. Create Index
+    let index_path = cratos_skills::default_skill_db_path().with_extension("index");
+    let index = create_skill_index(embedder.dimensions(), Some(&index_path))?;
+
+    // 4. Create Registry & Load Skills
+    let registry = Arc::new(SkillRegistry::new());
+    let active_skills = store.list_active_skills().await?;
+    registry.load_all(active_skills).await?;
+
+    // 5. Create Router
+    let router = SemanticSkillRouter::new(registry, index, embedder);
+    
+    // 6. Reindex to ensure everything is up to date
+    router.reindex_all()?;
+    
+    Ok(router)
+}
+
+/// Helper to merge content from new skill into existing skill
+fn merge_skill_content(existing: &mut Skill, new_skill: &Skill) -> bool {
+    let mut merged = false;
+    for k in &new_skill.trigger.keywords {
+        if !existing.trigger.keywords.contains(k) {
+            existing.trigger.keywords.push(k.clone());
+            merged = true;
+        }
+    }
+    // Merge regex patterns if implementation allows
+    if !new_skill.trigger.regex_patterns.is_empty() {
+        for p in &new_skill.trigger.regex_patterns {
+            if !existing.trigger.regex_patterns.contains(p) {
+                existing.trigger.regex_patterns.push(p.clone());
+                merged = true;
+            }
+        }
+    }
+    merged
 }
 
 /// Open the default skill store
@@ -388,19 +536,30 @@ async fn disable(store: &SkillStore, name: &str) -> Result<()> {
     }
 }
 
-/// Export a skill to a JSON file
-async fn export_skill(store: &SkillStore, name: &str, output: Option<String>) -> Result<()> {
+/// Export a skill to a JSON file or Agent Markdown
+async fn export_skill(
+    store: &SkillStore,
+    name: &str,
+    output: Option<String>,
+    markdown: bool,
+) -> Result<()> {
     let eco = SkillEcosystem::new(store.clone());
     let portable = eco
         .export_skill_by_name(name)
         .await
         .context("Failed to export skill")?;
 
-    let output_path = output.unwrap_or_else(|| format!("{}.skill.json", name));
-    let json = serde_json::to_string_pretty(&portable).context("Failed to serialize skill")?;
-    std::fs::write(&output_path, json).context("Failed to write file")?;
+    if markdown {
+        // portable.skill is expected to be accessible
+        generate_agent_skill_files_from_def(&portable.skill)?;
+        println!("Exported agent skill files for '{}'", name);
+    } else {
+        let output_path = output.unwrap_or_else(|| format!("{}.skill.json", name));
+        let json = serde_json::to_string_pretty(&portable).context("Failed to serialize skill")?;
+        std::fs::write(&output_path, json).context("Failed to write file")?;
+        println!("Exported skill '{}' to {}", name, output_path);
+    }
 
-    println!("Exported skill '{}' to {}", name, output_path);
     Ok(())
 }
 
@@ -559,6 +718,44 @@ async fn publish_remote(
     Ok(())
 }
 
+/// Prune stale skills
+async fn prune(store: &SkillStore, older_than: u32, dry_run: bool, confirm: bool) -> Result<()> {
+    let stale = store.list_stale_skills(older_than).await?;
+
+    if stale.is_empty() {
+        println!("No stale skills found (unused for {} days).", older_than);
+        return Ok(());
+    }
+
+    println!(
+        "Found {} stale skills (unused for {} days):",
+        stale.len(),
+        older_than
+    );
+    for skill in &stale {
+        let ago = skill
+            .metadata
+            .last_used_at
+            .map(format_duration_since)
+            .unwrap_or_else(|| "never".to_string());
+        println!("  - {} (Last used: {})", skill.name, ago);
+    }
+
+    if dry_run {
+        println!("\nDry run: No skills deleted.");
+        return Ok(());
+    }
+
+    if !confirm {
+        println!("\nTo proceed with deletion, run with --confirm");
+        return Ok(());
+    }
+
+    let deleted = store.prune_stale_skills(older_than).await?;
+    println!("\nSuccessfully pruned {} skills.", deleted);
+    Ok(())
+}
+
 // ─── Helper functions ────────────────────────────────────────
 
 /// Return status icon for a skill status
@@ -614,4 +811,175 @@ fn truncate_str(s: &str, max_len: usize) -> String {
         .map(|(i, c)| i + c.len_utf8())
         .unwrap_or(0);
     format!("{}...", &s[..end])
+}
+
+/// Generate agent skill files using the skill-creator template
+fn generate_agent_skill_files(skill: &cratos_skills::Skill) -> Result<()> {
+    use std::fs;
+    use std::io::Write;
+    use std::path::Path;
+
+    let skill_name = &skill.name;
+    let skill_dir = Path::new(".cratos/skills").join(skill_name);
+    let resources_dir = skill_dir.join("resources");
+
+    // Create directories
+    fs::create_dir_all(&resources_dir).context("Failed to create skill directory")?;
+
+    // Load template
+    let template_path = Path::new(".cratos/skills/skill-creator/resources/skill-template.md");
+    let template = if template_path.exists() {
+        fs::read_to_string(template_path).context("Failed to read skill template")?
+    } else {
+        // Fallback minimal template
+        format!(
+            "---\nname: {}\ndescription: {}\nversion: 1.0.0\ntriggers:\n{}\n---\n\n# {}\n\n{}\n",
+            skill_name,
+            skill.description,
+            skill.trigger.keywords.iter().map(|k| format!("  - \"{}\"", k)).collect::<Vec<_>>().join("\n"),
+            skill_name,
+            skill.description
+        )
+    };
+
+    // Replace placeholders (simple replacement for now)
+    let content = template
+        .replace("{{skill_name}}", skill_name)
+        .replace("{{short_description}}", &skill.description)
+        .replace("{{Skill Name}}", skill_name)
+        .replace("{{Detailed description of the skill's purpose and context.}}", &skill.description)
+        .replace("{{trigger_keyword_1}}", skill.trigger.keywords.first().map(|s| s.as_str()).unwrap_or("trigger"))
+        .replace("{{trigger_keyword_2}}", skill.trigger.keywords.get(1).map(|s| s.as_str()).unwrap_or(""))
+        .replace("{{Primary responsibility 1}}", "Auto-generated implementation step")
+        .replace("{{Primary responsibility 2}}", "Protocol verification")
+        .replace("{{Rule 1: Most critical constraint or behavior}}", "Follow standard Cratos conventions.")
+        .replace("{{Step Name}}", "Execute Logic")
+        .replace("{{Description of step 1 actions.}}", "Run the tool sequence defined in the generated skill logic.");
+        
+    // Write SKILL.md
+    let skill_md_path = skill_dir.join("SKILL.md");
+
+    // Check if SKILL.md already exists
+    if skill_md_path.exists() {
+        println!("  ℹ️ updating existing SKILL.md...");
+        
+        let existing_content = fs::read_to_string(&skill_md_path).context("Failed to read existing SKILL.md")?;
+        
+        // Simple frontmatter parser/merger
+        // We assume frontmatter is between first two ---
+        let parts: Vec<&str> = existing_content.splitn(3, "---").collect();
+        if parts.len() >= 3 {
+             let frontmatter = parts[1];
+             let body = parts[2];
+             
+             // Check if triggers are present in frontmatter
+             // This is a naive line-based check/append. For robust YAML parsing, we'd need serde_yaml
+             // But for now, let's just ensure our new keywords are present
+             let mut new_frontmatter = frontmatter.to_string();
+             if !new_frontmatter.contains("triggers:") {
+                 new_frontmatter.push_str("\ntriggers:\n");
+             }
+             
+             for k in &skill.trigger.keywords {
+                 if !new_frontmatter.contains(k) {
+                     new_frontmatter.push_str(&format!("  - \"{}\"\n", k));
+                 }
+             }
+             
+             let new_content = format!("---{}---{}", new_frontmatter, body);
+             let mut file = fs::File::create(&skill_md_path).context("Failed to update SKILL.md")?;
+             file.write_all(new_content.as_bytes())?;
+             println!("  ✅ Merged triggers into SKILL.md");
+             return Ok(());
+        }
+    }
+
+    // Write New SKILL.md
+    let mut file = fs::File::create(&skill_md_path).context("Failed to create SKILL.md")?;
+    file.write_all(content.as_bytes())?;
+
+    println!("  Generated agent skill file: {}", skill_md_path.display());
+    
+    // Create execution-protocol.md if it doesn't exist
+    let protocol_path = resources_dir.join("execution-protocol.md");
+    if !protocol_path.exists() {
+        let mut f = fs::File::create(&protocol_path)?;
+        writeln!(f, "# Execution Protocol for {}\n\n1. Analyze input.\n2. Execute step 1.\n3. Verify result.", skill_name)?;
+    }
+    
+    // Create examples.md if it doesn't exist
+    let examples_path = resources_dir.join("examples.md");
+    if !examples_path.exists() {
+        let mut f = fs::File::create(&examples_path)?;
+        writeln!(f, "# Examples for {}\n\n## Example 1\nInput: ...\nOutput: ...", skill_name)?;
+    }
+
+    Ok(())
+}
+
+/// Generate agent skill files from PortableSkillDef
+fn generate_agent_skill_files_from_def(skill: &PortableSkillDef) -> Result<()> {
+    use std::fs;
+    use std::io::Write;
+    use std::path::Path;
+
+    let skill_name = &skill.name;
+    let skill_dir = Path::new(".agent/skills").join(skill_name);
+    let resources_dir = skill_dir.join("resources");
+
+    // Create directories
+    fs::create_dir_all(&resources_dir).context("Failed to create skill directory")?;
+
+    // Load template
+    let template_path = Path::new(".agent/skills/skill-creator/resources/skill-template.md");
+    let template = if template_path.exists() {
+        fs::read_to_string(template_path).context("Failed to read skill template")?
+    } else {
+        // Fallback minimal template
+        format!(
+            "---\nname: {}\ndescription: {}\nversion: 1.0.0\ntriggers:\n{}\n---\n\n# {}\n\n{}\n",
+            skill_name,
+            skill.description,
+            skill.trigger.keywords.iter().map(|k| format!("  - \"{}\"", k)).collect::<Vec<_>>().join("\n"),
+            skill_name,
+            skill.description
+        )
+    };
+
+    // Replace placeholders
+    let content = template
+        .replace("{{skill_name}}", skill_name)
+        .replace("{{short_description}}", &skill.description)
+        .replace("{{Skill Name}}", skill_name)
+        .replace("{{Detailed description of the skill's purpose and context.}}", &skill.description)
+        .replace("{{trigger_keyword_1}}", skill.trigger.keywords.first().map(|s| s.as_str()).unwrap_or("trigger"))
+        .replace("{{trigger_keyword_2}}", skill.trigger.keywords.get(1).map(|s| s.as_str()).unwrap_or(""))
+        .replace("{{Primary responsibility 1}}", "Auto-generated implementation step")
+        .replace("{{Primary responsibility 2}}", "Protocol verification")
+        .replace("{{Rule 1: Most critical constraint or behavior}}", "Follow standard Cratos conventions.")
+        .replace("{{Step Name}}", "Execute Logic")
+        .replace("{{Description of step 1 actions.}}", "Run the tool sequence defined in the generated skill logic.");
+        
+    // Write SKILL.md
+    let skill_md_path = skill_dir.join("SKILL.md");
+    let mut file = fs::File::create(&skill_md_path).context("Failed to create SKILL.md")?;
+    file.write_all(content.as_bytes())?;
+
+    println!("  Generated agent skill file: {}", skill_md_path.display());
+    
+    // Create execution-protocol.md if it doesn't exist
+    let protocol_path = resources_dir.join("execution-protocol.md");
+    if !protocol_path.exists() {
+        let mut f = fs::File::create(&protocol_path)?;
+        writeln!(f, "# Execution Protocol for {}\n\n1. Analyze input.\n2. Execute step 1.\n3. Verify result.", skill_name)?;
+    }
+    
+    // Create examples.md if it doesn't exist
+    let examples_path = resources_dir.join("examples.md");
+    if !examples_path.exists() {
+        let mut f = fs::File::create(&examples_path)?;
+        writeln!(f, "# Examples for {}\n\n## Example 1\nInput: ...\nOutput: ...", skill_name)?;
+    }
+
+    Ok(())
 }

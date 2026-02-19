@@ -23,7 +23,7 @@ communication_style = ["visual thinking", "user-centered", "accessibility-first"
 4 = "Maintain consistent design language across all interfaces"
 
 [skills]
-default = ["ui_design", "ux_research", "prototyping", "design_systems"]
+default = ["frontend-agent"]
 
 [use_cases]
 examples = [

@@ -416,9 +416,52 @@ impl SkillStore {
         Ok(())
     }
 
-    // =========================================================================
-    // Pattern operations
-    // =========================================================================
+    /// List stale skills (unused for N days)
+    #[instrument(skip(self))]
+    pub async fn list_stale_skills(&self, days: u32) -> Result<Vec<Skill>> {
+        let cutoff = Utc::now() - chrono::Duration::days(days as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+
+        let rows = sqlx::query(
+            r#"
+            SELECT * FROM skills
+            WHERE origin NOT IN ('builtin', 'system')
+            AND category != 'system'
+            AND (
+                last_used_at < ?1
+                OR (last_used_at IS NULL AND updated_at < ?1)
+            )
+            ORDER BY last_used_at ASC
+            "#,
+        )
+        .bind(cutoff_str)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?;
+
+        rows.into_iter().map(Self::row_to_skill).collect()
+    }
+
+    /// Prune stale skills
+    ///
+    /// Deletes skills that match the stale criteria.
+    /// Returns the number of deleted skills.
+    #[instrument(skip(self))]
+    pub async fn prune_stale_skills(&self, days: u32) -> Result<u64> {
+        let stale_skills = self.list_stale_skills(days).await?;
+        let count = stale_skills.len() as u64;
+
+        if count == 0 {
+            return Ok(0);
+        }
+
+        for skill in stale_skills {
+            self.delete_skill(skill.id).await?;
+        }
+
+        Ok(count)
+    }
+
 
     /// Save a detected pattern
     #[instrument(skip(self, pattern), fields(pattern_id = %pattern.id))]

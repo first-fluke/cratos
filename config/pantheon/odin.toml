@@ -23,7 +23,7 @@ communication_style = ["vision-driven", "strategic roadmaps", "stakeholder align
 4 = "Balance technical debt with product velocity"
 
 [skills]
-default = ["roadmap_planning", "stakeholder_management", "prioritization", "okr_tracking"]
+default = ["pm-agent"]
 
 [use_cases]
 examples = [

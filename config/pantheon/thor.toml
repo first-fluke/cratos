@@ -23,7 +23,7 @@ communication_style = ["infrastructure-focused", "SRE practices", "automation-fi
 4 = "Maintain disaster recovery plans and test them regularly"
 
 [skills]
-default = ["ci_cd", "container_orchestration", "monitoring", "incident_response"]
+default = ["ci_cd", "container_orchestration", "incident_response", "infra-agent"]
 
 [use_cases]
 examples = [

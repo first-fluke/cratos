@@ -1,151 +1,81 @@
 {
-    "tasks": [
-        {
-            "id": "TASK-01",
-            "title": "Google AI Pro OAuth Backend Integration",
-            "description": "Implement OAuth authentication flow for Google AI Pro users in `cratos-llm` and expose via API.",
-            "priority": "P0",
-            "agent": "backend",
-            "dependencies": []
-        },
-        {
-            "id": "TASK-02",
-            "title": "Fix Critical UI Bugs (Persona, History, Docs)",
-            "description": "Resolve Persona Details/Skills missing (Issue #2), History View 404 (Issue #3), and Docs 404 (Issue #5).",
-            "priority": "P0",
-            "agent": "frontend",
-            "dependencies": []
-        },
-        {
-            "id": "TASK-03",
-            "title": "Settings API & Memory Ontology Backend",
-            "description": "Fix Settings API sync issues (Issue #4, #6). Implement Ontology-based data structure for Memory RAG (Issue #7).",
-            "priority": "P1",
-            "agent": "backend",
-            "dependencies": []
-        },
-        {
-            "id": "TASK-04",
-            "title": "Settings UI & Google AI OAuth UI",
-            "description": "Fix Settings UI sync state (Issue #4, #6). Add Google AI Pro OAuth selection UI (Issue #1).",
-            "priority": "P1",
-            "agent": "frontend",
-            "dependencies": [
-                "TASK-01"
-            ]
-        },
-        {
-            "id": "TASK-05",
-            "title": "Memory Graph Visualization Improvement",
-            "description": "Enhance /memory graph visualization to reflect Ontology structure (Issue #7).",
-            "priority": "P2",
-            "agent": "frontend",
-            "dependencies": [
-                "TASK-03"
-            ]
-        },
-        {
-            "id": "TASK-06",
-            "title": "TUI Overhaul",
-            "description": "Completely improve or replace the existing TUI in `src/cli` (Issue #8).",
-            "priority": "P2",
-            "agent": "backend",
-            "dependencies": []
-        },
-        {
-            "id": "TASK-07",
-            "title": "Mobile (iOS, Android) Native App Scaffolding",
-            "description": "Implement initial project structures for Android (Gradle) and iOS (Sources) including WebSocket and A2UI WebView bridge.",
-            "status": "completed",
-            "priority": "P0",
-            "agent": "mobile",
-            "dependencies": []
-        },
-        {
-            "id": "TASK-08",
-            "title": "Android: Connect Hilt & WebSocket Bridge",
-            "description": "Set up Hilt DI, implement WebSocket connection logic, and bridge WebView events to ViewModel.",
-            "status": "completed",
-            "priority": "P1",
-            "agent": "mobile",
-            "dependencies": [
-                "TASK-07"
-            ]
-        },
-        {
-            "id": "TASK-10",
-            "title": "iOS: Project Setup & WebView Coordinator",
-            "description": "Configure Xcode project, import sources, and implement WKScriptMessageHandler for A2UI interaction.",
-            "status": "completed",
-            "priority": "P1",
-            "agent": "mobile",
-            "dependencies": [
-                "TASK-07"
-            ]
-        },
-        {
-            "id": "TASK-11",
-            "title": "Server: A2UI Bundle Distribution API",
-            "description": "Expose endpoint to serve compiled A2UI assets for mobile clients.",
-            "status": "completed",
-            "priority": "P0",
-            "agent": "backend",
-            "dependencies": []
-        },
-        {
-            "id": "TASK-12",
-            "title": "Android: Remote Bundle Streaming & Caching",
-            "description": "Download, unzip and cache A2UI bundle from server to internal storage.",
-            "status": "completed",
-            "priority": "P0",
-            "agent": "mobile",
-            "dependencies": [
-                "TASK-08",
-                "TASK-11"
-            ]
-        },
-        {
-            "id": "TASK-13",
-            "title": "Android: TTS Audio Streaming (ElevenLabs)",
-            "description": "Implement audio playback service for TTS messages received via WebSocket.",
-            "status": "completed",
-            "priority": "P1",
-            "agent": "mobile",
-            "dependencies": [
-                "TASK-08"
-            ]
-        },
-        {
-            "id": "TASK-14",
-            "title": "iOS: Remote Bundle Manager & Caching",
-            "description": "Implement bundle download and storage logic for iOS client.",
-            "status": "completed",
-            "priority": "P0",
-            "agent": "mobile",
-            "dependencies": [
-                "TASK-10",
-                "TASK-11"
-            ]
-        },
-        {
-            "id": "TASK-15",
-            "title": "iOS: TTS Audio Player Integration",
-            "description": "Implement AVFoundation audio playback for server-side TTS signals.",
-            "status": "completed",
-            "priority": "P1",
-            "agent": "mobile",
-            "dependencies": [
-                "TASK-10"
-            ]
-        },
-        {
-            "id": "TASK-16",
-            "title": "Auto Skill Generation & Scheduler",
-            "description": "Implement Pattern Analyzer, Skill Generator, and integrate into Scheduler for automated skill creation.",
-            "status": "in_progress",
-            "priority": "P1",
-            "agent": "backend",
-            "dependencies": []
-        }
-    ]
+  "tasks": [
+    {
+      "id": "MIGRATE-001",
+      "title": "Refactor CLI Skill Path",
+      "description": "Modify `src/cli/skill.rs` to use `.cratos/skills` as the default directory for generated skills.",
+      "status": "pending",
+      "priority": "HIGH"
+    },
+    {
+      "id": "MIGRATE-002",
+      "title": "Develop Migration Script",
+      "description": "Create a Python script (`scripts/migrate_skills.py`) to scan `.agent/skills` and `.claude/skills`, compare contents/names, and move unique/new skills to `.cratos/skills`.",
+      "status": "pending",
+      "priority": "HIGH"
+    },
+    {
+      "id": "MIGRATE-003",
+      "title": "Execute Migration",
+      "description": "Run the migration script and verify that skills are correctly moved and deduplicated.",
+      "status": "pending",
+      "priority": "HIGH"
+    },
+    {
+      "id": "MIGRATE-004",
+      "title": "Clean Up Old Directories",
+      "description": "Remove empty `.agent/skills` and `.claude/skills` directories after verification.",
+      "status": "completed",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "MIGRATE-005",
+      "title": "Update Skill References",
+      "description": "Scan migrated skills for references to `.agent/skills` and update them to `.cratos/skills`.",
+      "status": "completed",
+      "priority": "HIGH"
+    },
+    {
+      "id": "DEDUPE-001",
+      "title": "Deduplicate Skills",
+      "description": "Identify and remove low-quality duplicate skills (stubs) in favor of established ones.",
+      "status": "completed",
+      "priority": "HIGH"
+    },
+    {
+      "id": "ALIGN-001",
+      "title": "Analyze Persona Definitions",
+      "description": "Locate Persona definitions and identify missing skill references.",
+      "status": "completed",
+      "priority": "HIGH"
+    },
+    {
+      "id": "ALIGN-002",
+      "title": "Fix Pantheon Skills",
+      "description": "Update Pantheon config files to use validated, existing skills from .cratos/skills.",
+      "status": "completed",
+      "priority": "HIGH"
+    },
+    {
+      "id": "PRUNE-001",
+      "title": "Implement Stale Skill Pruning Logic",
+      "description": "Add `prune_stale_skills` and `list_stale_skills` to `SkillStore`.",
+      "status": "completed",
+      "priority": "HIGH"
+    },
+    {
+      "id": "PRUNE-002",
+      "title": "Implement Prune CLI",
+      "description": "Add `cratos skill prune` command with --dry-run and --confirm flags.",
+      "status": "completed",
+      "priority": "HIGH"
+    }
+  ],
+  "gates": {
+    "PLAN_GATE": false,
+    "IMPL_GATE": false,
+    "VERIFY_GATE": false,
+    "REFINE_GATE": false,
+    "SHIP_GATE": false
+  }
 }

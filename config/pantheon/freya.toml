@@ -23,7 +23,7 @@ communication_style = ["empathetic", "solution-oriented", "clear explanations", 
 4 = "Maintain a knowledge base of common solutions"
 
 [skills]
-default = ["issue_triage", "user_communication", "knowledge_base", "escalation_management"]
+default = ["docs-agent", "escalation_management", "frontend-agent", "qa-agent"]
 
 [use_cases]
 examples = [

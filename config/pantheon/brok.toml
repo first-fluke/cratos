@@ -23,7 +23,7 @@ communication_style = ["direct", "pragmatic", "prototype-first", "rapid iteratio
 4 = "Technical debt is acceptable if tracked and scheduled"
 
 [skills]
-default = ["rapid_prototyping", "api_builder", "scripting", "debugging"]
+default = ["backend-agent", "debugging", "rapid_prototyping", "scripting"]
 
 [use_cases]
 examples = [

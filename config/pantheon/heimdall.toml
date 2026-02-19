@@ -23,7 +23,7 @@ communication_style = ["edge case", "deployment unapproved", "data-driven", "sec
 4 = "Quality takes priority over schedule"
 
 [skills]
-default = ["security_review", "test_coverage", "bug_triage"]
+default = ["qa-agent", "security-audit"]
 
 [use_cases]
 examples = [

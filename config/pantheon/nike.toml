@@ -23,7 +23,7 @@ communication_style = ["persuasive", "brand-conscious", "metrics-driven", "creat
 4 = "Build community, not just audience"
 
 [skills]
-default = ["content_strategy", "growth_marketing", "brand_management", "analytics", "sns_automation"]
+default = ["brand_management", "docs-agent", "growth_marketing", "pm-agent", "sns_automation"]
 
 [use_cases]
 examples = [

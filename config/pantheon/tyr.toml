@@ -23,7 +23,7 @@ communication_style = ["precise legal language", "compliance-focused", "risk ass
 4 = "Maintain audit trails for all sensitive operations (Laws Article 7)"
 
 [skills]
-default = ["license_review", "compliance_check", "privacy_audit", "policy_drafting"]
+default = ["compliance_check", "infra-agent", "policy_drafting", "privacy_audit"]
 
 [use_cases]
 examples = [

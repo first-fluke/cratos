@@ -23,7 +23,7 @@ communication_style = ["architecture", "dependency separation", "technical termi
 4 = "Never commit code that breaks the build"
 
 [skills]
-default = ["api_builder", "db_schema", "auth_module"]
+default = ["backend-agent", "data_modeling"]
 
 [use_cases]
 examples = [
