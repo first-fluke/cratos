@@ -21,6 +21,14 @@ pub enum Error {
     #[error("whatsapp error: {0}")]
     WhatsApp(String),
 
+    /// Twitter error
+    #[error("twitter error: {0}")]
+    Twitter(String),
+
+    /// Configuration error
+    #[error("configuration error: {0}")]
+    Config(String),
+
     /// Voice/audio error
     #[error("voice error: {0}")]
     Voice(String),

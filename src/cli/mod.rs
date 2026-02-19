@@ -75,7 +75,7 @@ pub enum Commands {
     },
     /// Manage skills (list, show, enable, disable)
     #[command(subcommand)]
-    Skill(SkillCommands),
+    Skill(skill::SkillCommands),
     /// Manage stored data (stats, clear)
     #[command(subcommand)]
     Data(DataCommands),
@@ -210,111 +210,6 @@ pub enum ClearTarget {
     Vectors,
     /// Skills and patterns
     Skills,
-}
-
-/// Skill subcommands
-#[derive(Subcommand, Debug)]
-pub enum SkillCommands {
-    /// List all skills
-    List {
-        /// Show only active skills
-        #[arg(long)]
-        active: bool,
-    },
-    /// Show skill details
-    Show {
-        /// Skill name
-        name: String,
-    },
-    /// Enable (activate) a skill
-    Enable {
-        /// Skill name to enable
-        name: String,
-    },
-    /// Disable a skill
-    Disable {
-        /// Skill name to disable
-        name: String,
-    },
-    /// Export a skill to a file
-    Export {
-        /// Skill name to export
-        name: String,
-        /// Output file path (default: <name>.skill.json)
-        #[arg(short, long)]
-        output: Option<String>,
-        /// Export as Markdown (Agent Skill)
-        #[arg(long)]
-        markdown: bool,
-    },
-    /// Import a skill from a file
-    Import {
-        /// File path to import (.skill.json or .skill.bundle.json)
-        path: String,
-    },
-    /// Export all active skills as a bundle
-    Bundle {
-        /// Bundle name
-        #[arg(short, long, default_value = "cratos-skills")]
-        name: String,
-        /// Output file path
-        #[arg(short, long)]
-        output: Option<String>,
-    },
-    /// Search remote skill registry
-    Search {
-        /// Search query
-        query: String,
-        /// Custom registry URL
-        #[arg(long)]
-        registry: Option<String>,
-    },
-    /// Install a skill from remote registry
-    Install {
-        /// Skill name (e.g., "deploy-k8s")
-        name: String,
-        /// Custom registry URL
-        #[arg(long)]
-        registry: Option<String>,
-    },
-    /// Publish a skill to remote registry
-    Publish {
-        /// Skill name to publish
-        name: String,
-        /// Registry API token
-        #[arg(long)]
-        token: Option<String>,
-        /// Custom registry URL
-        #[arg(long)]
-        registry: Option<String>,
-    },
-    /// Analyze recent usage patterns for potential skills
-    Analyze {
-        /// Dry run mode (don't save analysis results)
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Generate skills from detected patterns
-    Generate {
-        /// Dry run mode (don't save generated skills)
-        #[arg(long)]
-        dry_run: bool,
-        /// Auto-enable generated skills
-        #[arg(long)]
-        enable: bool,
-    },
-    /// Prune stale skills (unused for N days)
-    Prune {
-        /// Skills unused for N days (default: 30)
-        #[arg(long, default_value = "30")]
-        older_than: u32,
-        /// Dry run mode (don't delete anything, just list)
-        #[arg(long)]
-        dry_run: bool,
-        /// Confirm deletion
-        #[arg(long)]
-        confirm: bool,
-    },
 }
 
 /// Pantheon subcommands

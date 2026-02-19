@@ -19,6 +19,8 @@ pub enum ChannelType {
     Discord,
     /// WhatsApp (Baileys or Business API)
     WhatsApp,
+    /// Twitter (API v2)
+    Twitter,
     /// Matrix (decentralized messaging)
     Matrix,
     /// Voice (local audio)
@@ -38,6 +40,7 @@ impl ChannelType {
             Self::Slack => "slack",
             Self::Discord => "discord",
             Self::WhatsApp => "whatsapp",
+            Self::Twitter => "twitter",
             Self::Matrix => "matrix",
             Self::Voice => "voice",
             Self::Cli => "cli",

@@ -16,9 +16,9 @@ pub mod matrix;
 pub mod message;
 pub mod slack;
 pub mod telegram;
+pub mod twitter;
 pub mod util;
 pub mod whatsapp;
-pub mod whatsapp_business;
 
 pub use error::{Error, Result};
 
@@ -38,10 +38,13 @@ pub use slack::{SlackAdapter, SlackConfig};
 pub use discord::{DiscordAdapter, DiscordConfig};
 
 // Re-export WhatsApp adapters
-pub use whatsapp::{WhatsAppAdapter, WhatsAppConfig};
-pub use whatsapp_business::{
-    WhatsAppBusinessAdapter, WhatsAppBusinessConfig, WhatsAppBusinessWebhook,
+pub use whatsapp::{
+    WhatsAppAdapter, WhatsAppBusinessAdapter, WhatsAppBusinessConfig, WhatsAppConfig,
 };
+pub use whatsapp::business::WhatsAppBusinessWebhook;
+
+// Re-export Twitter adapter
+pub use twitter::{TwitterAdapter, TwitterConfig};
 
 // Re-export Matrix adapter
 pub use matrix::{MatrixAdapter, MatrixConfig};
