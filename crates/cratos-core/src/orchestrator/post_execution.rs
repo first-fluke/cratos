@@ -62,11 +62,7 @@ impl Orchestrator {
     }
 
     /// Run Olympus OS post-execution hooks
-    pub(super) fn run_post_execution_hooks(
-        &self,
-        effective_persona: &str,
-        final_response: &str,
-    ) {
+    pub(super) fn run_post_execution_hooks(&self, effective_persona: &str, final_response: &str) {
         if let Some(hooks) = &self.olympus_hooks {
             let task_completed = !final_response.is_empty();
             if let Err(e) = hooks.post_execute(effective_persona, final_response, task_completed) {

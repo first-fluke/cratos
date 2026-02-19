@@ -702,8 +702,6 @@ impl Tool for BrowserTool {
 mod tests {
     use super::*;
 
-
-
     #[test]
     fn test_parse_navigate_action() {
         let tool = BrowserTool::new();

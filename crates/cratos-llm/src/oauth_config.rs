@@ -95,21 +95,19 @@ pub fn google_oauth_config() -> OAuthProviderConfig {
 
 /// Get Google AI Pro Client ID from environment
 pub fn google_pro_client_id() -> String {
-    std::env::var("CRATOS_GOOGLE_PRO_CLIENT_ID")
-        .unwrap_or_else(|_| String::new()) 
+    std::env::var("CRATOS_GOOGLE_PRO_CLIENT_ID").unwrap_or_else(|_| String::new())
 }
 
 /// Get Google AI Pro Client Secret from environment
 pub fn google_pro_client_secret() -> String {
-    std::env::var("CRATOS_GOOGLE_PRO_CLIENT_SECRET")
-        .unwrap_or_else(|_| String::new())
+    std::env::var("CRATOS_GOOGLE_PRO_CLIENT_SECRET").unwrap_or_else(|_| String::new())
 }
 
 /// Build Google AI Pro OAuth2 configuration.
 pub fn google_pro_oauth_config() -> OAuthProviderConfig {
     let client_id = google_pro_client_id();
     let client_secret = google_pro_client_secret();
-    
+
     let (client_id, client_secret) = if client_id.is_empty() {
         tracing::info!("CRATOS_GOOGLE_PRO_CLIENT_ID not set. Using public Google Cloud SDK client ID (OpenClaw style).");
         (default_google_client_id(), default_google_client_secret())

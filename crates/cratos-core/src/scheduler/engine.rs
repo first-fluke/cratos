@@ -14,8 +14,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::store::SchedulerStore;
-use super::types::{Result, ScheduledTask, SchedulerError, TaskAction};
 use super::triggers::{IntervalTrigger, TriggerType};
+use super::types::{Result, ScheduledTask, SchedulerError, TaskAction};
 
 /// Callback type for executing task actions
 pub type TaskExecutor = Arc<dyn Fn(TaskAction) -> TaskExecutionFuture + Send + Sync>;

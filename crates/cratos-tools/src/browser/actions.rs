@@ -557,5 +557,3 @@ impl BrowserActionResult {
         self
     }
 }
-
-

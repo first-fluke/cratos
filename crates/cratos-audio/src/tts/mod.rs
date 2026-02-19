@@ -4,12 +4,12 @@ pub mod edge;
 pub mod elevenlabs;
 pub mod error;
 pub mod manager;
-pub mod secret;
 mod rate_limit;
+pub mod secret;
 
 pub use backend::{TtsBackend, TtsOptions, VoiceInfo};
 pub use config::ElevenLabsConfig;
-pub use edge::TextToSpeech as EdgeTts;  // Re-export old struct name for compatibility if needed
+pub use edge::TextToSpeech as EdgeTts; // Re-export old struct name for compatibility if needed
 pub use elevenlabs::ElevenLabsBackend;
 pub use error::{Result, TtsError};
 pub use manager::TtsManager;

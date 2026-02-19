@@ -25,11 +25,11 @@ pub struct VoiceInfo {
 
 #[derive(Debug, Clone, Default)]
 pub struct TtsOptions {
-    pub stability: Option<f32>,         // 0.0-1.0
-    pub similarity_boost: Option<f32>,  // 0.0-1.0
-    pub style: Option<f32>,             // 0.0-1.0
-    pub speed: Option<f32>,             // 0.5-2.0
-    pub pitch: Option<i8>,              // -20 to 20 semitones
+    pub stability: Option<f32>,        // 0.0-1.0
+    pub similarity_boost: Option<f32>, // 0.0-1.0
+    pub style: Option<f32>,            // 0.0-1.0
+    pub speed: Option<f32>,            // 0.5-2.0
+    pub pitch: Option<i8>,             // -20 to 20 semitones
     pub output_format: OutputFormat,
 }
 
@@ -45,15 +45,19 @@ pub enum OutputFormat {
 #[async_trait]
 pub trait TtsBackend: Send + Sync {
     fn name(&self) -> &str;
-    
+
     fn is_available(&self) -> bool {
         true
     }
-    
+
     async fn list_voices(&self) -> Result<Vec<VoiceInfo>>;
-    
+
     async fn synthesize(&self, text: &str, voice: &str, options: &TtsOptions) -> Result<Bytes>;
-    
-    async fn synthesize_stream(&self, text: &str, voice: &str, options: &TtsOptions) 
-        -> Result<mpsc::Receiver<Result<Bytes>>>;
+
+    async fn synthesize_stream(
+        &self,
+        text: &str,
+        voice: &str,
+        options: &TtsOptions,
+    ) -> Result<mpsc::Receiver<Result<Bytes>>>;
 }

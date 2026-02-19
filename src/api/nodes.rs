@@ -7,8 +7,8 @@ use cratos_core::{Node, NodeRegistry, NodeSummary};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::middleware::auth::RequireAuth;
 use super::config::ApiResponse;
+use crate::middleware::auth::RequireAuth;
 
 /// List all registered nodes
 #[utoipa::path(
@@ -116,5 +116,8 @@ pub fn nodes_routes() -> Router {
     Router::new()
         .route("/api/v1/nodes", get(list_nodes))
         .route("/api/v1/nodes/:id", get(get_node).delete(remove_node))
-        .route("/api/v1/nodes/:id/approve", post(approve_node).delete(revoke_node))
+        .route(
+            "/api/v1/nodes/:id/approve",
+            post(approve_node).delete(revoke_node),
+        )
 }

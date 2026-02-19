@@ -1,46 +1,32 @@
 # PM Agent - Execution Protocol
 
 ## Step 0: Prepare
-1. **Assess difficulty** — see `../_shared/difficulty-guide.md`
-   - **Simple**: Lightweight plan, 3-5 tasks | **Medium**: Full 4 steps | **Complex**: Full + API contracts
-2. **Clarify requirements** — follow `../_shared/clarification-protocol.md` (critical for PM)
-   - Check **Uncertainty Triggers**: business logic, security/auth, existing code conflicts?
-   - Determine level: LOW → proceed | MEDIUM → present options | HIGH → ask immediately
-3. **Use reasoning templates** — for architecture decisions, use `../_shared/reasoning-templates.md` (decision matrix)
-4. **Check lessons** — read cross-domain section in `../_shared/lessons-learned.md`
-
-**⚠️ Intelligent Escalation**: When uncertain, escalate early. Don't blindly proceed.
-
-Follow these steps in order (adjust depth by difficulty).
+1. **Load Protocols**:
+   - `../_shared/multi-review-protocol.md` (Review 1-4)
+   - `../_shared/phase-gates.md` (Plan Gate)
+   - `../_shared/memory-protocol.md` (CLI mode)
+2. **Memory**: Create `session-pm-{id}.md`.
 
 ## Step 1: Analyze Requirements
-- Parse user request into concrete requirements
-- Identify explicit and implicit features
-- List edge cases and assumptions
-- Ask clarifying questions if ambiguous
-- Use Serena (if existing codebase): `get_symbols_overview` to understand current architecture
+- Understand user request.
+- Identify "Unknown Unknowns".
+- Check existing architecture (`tech-stack.md`).
 
-## Step 2: Design Architecture
-- Select tech stack (frontend, backend, mobile, database, infra)
-- Define API contracts (method, path, request/response schema)
-- Design data models (tables, relationships, indexes)
-- Identify security requirements (auth, validation, encryption)
-- Plan infrastructure (hosting, caching, CDN, monitoring)
+## Step 2: Create Plan
+- Decompose into tasks (Frontend/Backend/Mobile).
+- Define API contracts.
+- Estimate complexity.
+- Save to `.agent/plan.json`.
 
-## Step 3: Decompose Tasks
-- Break into tasks completable by a single agent
-- Each task has: agent, title, description, acceptance criteria, priority, dependencies
-- Minimize dependencies for maximum parallel execution
-- Priority tiers: 1 = independent (run first), 2 = depends on tier 1, etc.
-- Complexity: Low / Medium / High / Very High
-- Save to `.agent/plan.json` and `.agent/brain/current-plan.md`
+## Step 3: Review Plan (Self-Correction)
+- **Completeness**: Are all requirements covered?
+- **Meta-Review**: Is the plan robust?
+- **Simplicity**: Is it over-engineered?
 
-## Step 4: Validate Plan
-- Check: Can each task be done independently given its dependencies?
-- Check: Are acceptance criteria measurable and testable?
-- Check: Is security considered from the start (not deferred)?
-- Check: Are API contracts defined before frontend/mobile tasks?
-- Output task-board.md format for orchestrator compatibility
+## Step 4: Finalize
+- Present plan to User.
+- Get confirmation.
+- **Memory**: Write `result-pm-{id}.md`.
 
 ## On Error
-See `resources/error-playbook.md` for recovery steps.
+See `resources/error-playbook.md`.

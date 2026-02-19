@@ -1,38 +1,24 @@
-# Frontend Agent - Self-Verification Checklist
+# Frontend Agent - Self-Verification Checklist (Tauri + Next.js)
 
-Run through every item before submitting your work.
+Run each check before confirming task completion.
 
-## TypeScript
-- [ ] Strict mode, no `any` types
-- [ ] Explicit interfaces for all component props
-- [ ] No TypeScript errors (`npx tsc --noEmit`)
+## Tauri IPC
+- [ ] `invoke` commands use literal strings matching Rust command names.
+- [ ] Arguments passed to `invoke` match Rust struct fields exactly (snake_case vs camelCase handled?).
+- [ ] Error handling wrapped in `try/catch` with user-facing feedback (Toast/Alert).
 
-## Styling
-- [ ] Tailwind CSS only (no inline styles, no CSS modules)
-- [ ] Responsive at 320px, 768px, 1024px, 1440px
-- [ ] Dark mode supported (if project uses it)
-- [ ] No hardcoded colors (use Tailwind theme tokens)
+## Next.js / React
+- [ ] No Hydration Errors (use `useEffect` for browser-only APIs like `window`).
+- [ ] `use client` directive present on interactive components.
+- [ ] `useParams` / `useSearchParams` used correctly for routing.
 
-## Accessibility (WCAG 2.1 AA)
-- [ ] Semantic HTML elements (`<nav>`, `<main>`, `<button>`)
-- [ ] All images have alt text
-- [ ] Color contrast >= 4.5:1 (normal text), >= 3:1 (large text)
-- [ ] Keyboard navigation works for all interactive elements
-- [ ] ARIA labels on non-obvious interactive elements
-- [ ] Focus indicators visible
-
-## UX States
-- [ ] Loading state (skeleton or spinner)
-- [ ] Error state (user-friendly message + retry action)
-- [ ] Empty state (helpful message + CTA)
-- [ ] Optimistic updates where appropriate
+## UI/UX (Shadcn + Tailwind)
+- [ ] Used `shadcn/ui` components from `components/ui`.
+- [ ] Responsive design verified (Mobile/Desktop views).
+- [ ] Dark mode support verified (using Tailwind `dark:` prefix).
+- [ ] Accessibility: `aria-label` on icon buttons, semantic HTML.
 
 ## Performance
-- [ ] No unnecessary re-renders (check with React DevTools Profiler)
-- [ ] Code splitting for route-level components
-- [ ] Images optimized and lazy-loaded
-
-## Testing
-- [ ] Unit tests for components with logic
-- [ ] User interactions tested (click, type, submit)
-- [ ] Async behavior tested (loading -> data -> display)
+- [ ] Large dependencies loaded lazily (`next/dynamic`).
+- [ ] Images optimized (using `next/image` where possible, or asset handling).
+- [ ] Minimize re-renders (use `useMemo` / `useCallback` appropriately).

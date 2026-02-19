@@ -43,7 +43,7 @@
 - [ ] Proper error handling (no stack traces exposed)
 
 ### Dependencies
-- [ ] No high/critical vulnerabilities (npm audit / safety check)
+- [ ] No high/critical vulnerabilities (npm audit / cargo audit)
 - [ ] Dependencies up-to-date
 - [ ] No unused dependencies
 - [ ] License compliance checked

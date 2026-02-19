@@ -68,10 +68,10 @@ mod types;
 
 pub use engine::{SchedulerConfig, SchedulerEngine, SchedulerEngineBuilder, TaskExecutor};
 pub use store::SchedulerStore;
-pub use types::{
-    Result as SchedulerResult, ScheduledTask, SchedulerError, TaskAction, TaskExecution,
-};
 pub use triggers::{
     Comparison, CronTrigger, FileEvent, FileTrigger, IntervalTrigger, OneTimeTrigger, SystemMetric,
     SystemTrigger, TriggerType,
+};
+pub use types::{
+    Result as SchedulerResult, ScheduledTask, SchedulerError, TaskAction, TaskExecution,
 };

@@ -228,9 +228,17 @@ impl PatternAnalyzer {
     }
 
     /// Load built-in stop words for supported languages
-    fn load_builtin_stop_words(languages: &[String], stop_words: &mut std::collections::HashSet<String>) {
+    fn load_builtin_stop_words(
+        languages: &[String],
+        stop_words: &mut std::collections::HashSet<String>,
+    ) {
         // Helper to convert &[&str] to Vec<String>
-        let get_builtin = |l| stop_words::get(l).iter().map(|&s| s.to_string()).collect::<Vec<String>>();
+        let get_builtin = |l| {
+            stop_words::get(l)
+                .iter()
+                .map(|&s| s.to_string())
+                .collect::<Vec<String>>()
+        };
 
         for lang in languages {
             let words = match lang.as_str() {
@@ -271,7 +279,11 @@ impl PatternAnalyzer {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse custom stop words JSON file {:?}: {}", path, e);
+                    tracing::warn!(
+                        "Failed to parse custom stop words JSON file {:?}: {}",
+                        path,
+                        e
+                    );
                 }
             },
             Err(e) => {
@@ -281,7 +293,10 @@ impl PatternAnalyzer {
     }
 
     /// Load stop words from all files in a directory (new format: one word per line)
-    fn load_stop_words_from_dir(dir: &std::path::Path, stop_words: &mut std::collections::HashSet<String>) {
+    fn load_stop_words_from_dir(
+        dir: &std::path::Path,
+        stop_words: &mut std::collections::HashSet<String>,
+    ) {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();

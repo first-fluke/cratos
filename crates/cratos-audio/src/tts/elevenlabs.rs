@@ -1,7 +1,7 @@
+use super::secret::SecretString as Secret;
 use async_trait::async_trait;
 use bytes::Bytes;
 use reqwest::Client;
-use super::secret::SecretString as Secret;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -50,7 +50,7 @@ impl ElevenLabsBackend {
             client: Client::new(),
             config,
             // Assume Free tier by default, or configure via env if needed
-            rate_limiter: Arc::new(ElevenLabsRateLimiter::new(ElevenLabsTier::Free)), 
+            rate_limiter: Arc::new(ElevenLabsRateLimiter::new(ElevenLabsTier::Free)),
         }
     }
 
@@ -72,13 +72,13 @@ impl TtsBackend for ElevenLabsBackend {
     async fn list_voices(&self) -> Result<Vec<VoiceInfo>> {
         let url = format!("{}/voices", API_BASE);
         let api_key = self.get_api_key()?;
-        
+
         // This is a simplified response struct for listing voices
         #[derive(Deserialize)]
         struct VoiceListResponse {
             voices: Vec<VoiceDetails>,
         }
-        
+
         #[derive(Deserialize)]
         struct VoiceDetails {
             voice_id: String,
@@ -86,33 +86,40 @@ impl TtsBackend for ElevenLabsBackend {
             // Add other fields as needed
         }
 
-        let resp = self.client.get(&url)
+        let resp = self
+            .client
+            .get(&url)
             .header("xi-api-key", api_key.expose_secret())
-            .send().await?
+            .send()
+            .await?
             .error_for_status()?;
-            
+
         let data: VoiceListResponse = resp.json().await?;
-        
-        let voices = data.voices.into_iter().map(|v| VoiceInfo {
-            id: v.voice_id,
-            name: v.name,
-            language: "en".to_string(), // Default assumption, actual API returns labels
-            gender: None, // Need to parse labels for gender
-            preview_url: None,
-            labels: std::collections::HashMap::new(),
-        }).collect();
-        
+
+        let voices = data
+            .voices
+            .into_iter()
+            .map(|v| VoiceInfo {
+                id: v.voice_id,
+                name: v.name,
+                language: "en".to_string(), // Default assumption, actual API returns labels
+                gender: None,               // Need to parse labels for gender
+                preview_url: None,
+                labels: std::collections::HashMap::new(),
+            })
+            .collect();
+
         Ok(voices)
     }
 
     async fn synthesize(&self, text: &str, voice: &str, options: &TtsOptions) -> Result<Bytes> {
         let api_key = self.get_api_key()?;
-        
+
         // Check rate limit
         self.rate_limiter.check(text.len()).await?;
-        
+
         let url = format!("{}/text-to-speech/{}", API_BASE, voice);
-        
+
         let body = ElevenLabsTtsRequest {
             text: text.to_string(),
             model_id: self.config.model_id.clone(),
@@ -123,13 +130,16 @@ impl TtsBackend for ElevenLabsBackend {
                 use_speaker_boost: Some(true),
             }),
         };
-        
-        let resp = self.client.post(&url)
+
+        let resp = self
+            .client
+            .post(&url)
             .header("xi-api-key", api_key.expose_secret())
             .header("Content-Type", "application/json")
             .json(&body)
-            .send().await?;
-            
+            .send()
+            .await?;
+
         // Check rate limit headers for logging
         if let Some(remaining) = resp.headers().get("x-ratelimit-remaining") {
             if let Ok(val) = remaining.to_str() {
@@ -140,21 +150,24 @@ impl TtsBackend for ElevenLabsBackend {
                 }
             }
         }
-        
+
         let bytes = resp.error_for_status()?.bytes().await?;
         Ok(bytes)
     }
-    
-    async fn synthesize_stream(&self, text: &str, voice: &str, options: &TtsOptions) 
-        -> Result<mpsc::Receiver<Result<Bytes>>> 
-    {
+
+    async fn synthesize_stream(
+        &self,
+        text: &str,
+        voice: &str,
+        options: &TtsOptions,
+    ) -> Result<mpsc::Receiver<Result<Bytes>>> {
         let api_key = self.get_api_key()?;
-        
+
         // Check rate limit
         self.rate_limiter.check(text.len()).await?;
 
         let url = format!("{}/text-to-speech/{}/stream", API_BASE, voice);
-        
+
         let body = ElevenLabsTtsRequest {
             text: text.to_string(),
             model_id: self.config.model_id.clone(),
@@ -166,15 +179,18 @@ impl TtsBackend for ElevenLabsBackend {
             }),
         };
 
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .header("xi-api-key", api_key.expose_secret())
             .header("Content-Type", "application/json")
             .json(&body)
-            .send().await?
+            .send()
+            .await?
             .error_for_status()?;
-            
+
         let (tx, rx) = mpsc::channel(32);
-        
+
         tokio::spawn(async move {
             let mut stream = resp.bytes_stream();
             while let Some(item) = stream.next().await {
@@ -185,7 +201,7 @@ impl TtsBackend for ElevenLabsBackend {
                 }
             }
         });
-        
+
         Ok(rx)
     }
 }

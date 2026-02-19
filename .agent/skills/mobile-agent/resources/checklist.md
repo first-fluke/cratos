@@ -1,35 +1,24 @@
 # Mobile Agent - Self-Verification Checklist
 
-Run through every item before submitting your work.
+Run strictly before completion.
 
-## Architecture
-- [ ] Clean Architecture layers: domain -> data -> presentation
-- [ ] Entities are pure Dart (no framework dependencies)
-- [ ] Repository pattern with interface + implementation
-- [ ] Riverpod/Bloc for state management (no setState in complex widgets)
+## Build & Runtime
+- [ ] Application builds successfully (`tauri android build` / `tauri ios build`).
+- [ ] No crash on startup (Splash screen transitions correctly).
+- [ ] Permissions requested at appropriate time (not all at launch).
 
-## Platform
-- [ ] Material Design 3 for Android
-- [ ] iOS Human Interface Guidelines followed
-- [ ] Platform-specific code guarded with `Platform.isIOS`/`Platform.isAndroid`
-- [ ] Tested on both iOS and Android (emulator or device)
-- [ ] Dark mode supported
+## Native Capabilities
+- [ ] Plugins registered in `lib.rs` (`.plugin(tauri_plugin_xyz::init())`).
+- [ ] Capabilities defined in `src-tauri/capabilities`.
+- [ ] Fallback for APIs not available on Web (if checking `window.__TAURI__`).
+
+## UI/UX
+- [ ] Touch targets are at least 44x44px.
+- [ ] Safe Areas (Notch, Home Indicator) handled using CSS env variables.
+- [ ] Input fields don't obscured by keyboard (Keyboard avoidance).
+- [ ] Back button (Android) handled correctly.
 
 ## Performance
-- [ ] 60fps scrolling (no jank)
-- [ ] Controllers disposed in `dispose()` method
-- [ ] No memory leaks (listeners, subscriptions cleaned up)
-- [ ] Images cached and sized appropriately
-- [ ] Cold start < 2s
-
-## API Integration
-- [ ] Dio with interceptors (auth, error handling)
-- [ ] Loading states shown during API calls
-- [ ] Error states with retry action
-- [ ] Offline handling (graceful degradation or offline-first)
-
-## Testing
-- [ ] Unit tests for domain logic and providers
-- [ ] Widget tests for key screens
-- [ ] Edge cases: empty lists, error states, offline mode
-- [ ] Tests pass on both platforms
+- [ ] No heavy JS computation blocking UI thread.
+- [ ] Images optimized for mobile data/memory.
+- [ ] Scroll performance is 60fps.

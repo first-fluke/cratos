@@ -34,7 +34,7 @@ impl ElevenLabsRateLimiter {
             ElevenLabsTier::Pro => (2000, 500_000),
             ElevenLabsTier::Scale => (5000, 2_000_000),
         };
-        
+
         Self {
             requests_per_minute: rpm,
             monthly_character_limit: chars,
@@ -44,29 +44,29 @@ impl ElevenLabsRateLimiter {
 
     pub async fn check(&self, text_len: usize) -> Result<()> {
         let mut usage = self.current_usage.write().await;
-        
+
         // Check RPM
         if usage.requests_this_minute >= self.requests_per_minute {
-            return Err(TtsError::RateLimitExceeded { 
-                limit_type: "rpm".into(), 
-                retry_after: Some(Duration::from_secs(60)) 
+            return Err(TtsError::RateLimitExceeded {
+                limit_type: "rpm".into(),
+                retry_after: Some(Duration::from_secs(60)),
             });
         }
-        
+
         // Check Monthly Limit
         if usage.characters_this_month + text_len as u64 > self.monthly_character_limit {
-            return Err(TtsError::RateLimitExceeded { 
-                limit_type: "monthly".into(), 
-                retry_after: None 
+            return Err(TtsError::RateLimitExceeded {
+                limit_type: "monthly".into(),
+                retry_after: None,
             });
         }
-        
+
         usage.requests_this_minute += 1;
         usage.characters_this_month += text_len as u64;
-        
+
         Ok(())
     }
-    
+
     // Reset RPM counter (should be called every minute ideally, or handle logic differently)
     // For simplicity, we assume external scheduler or just rough estimation here.
     // In a real implementation, we might track timestamps or use a token bucket.

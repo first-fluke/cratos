@@ -54,7 +54,10 @@ impl CanvasState {
     }
 
     /// Set the A2UI message channel
-    pub fn with_a2ui_tx(mut self, tx: tokio::sync::mpsc::Sender<(Uuid, crate::a2ui::A2uiClientMessage)>) -> Self {
+    pub fn with_a2ui_tx(
+        mut self,
+        tx: tokio::sync::mpsc::Sender<(Uuid, crate::a2ui::A2uiClientMessage)>,
+    ) -> Self {
         self.a2ui_tx = Some(tx);
         self
     }

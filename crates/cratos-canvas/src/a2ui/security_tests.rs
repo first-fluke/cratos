@@ -11,7 +11,7 @@ fn test_security_blocks_script_tags() {
         props: json!({"content": "<script>alert('xss')</script>"}),
         slot: None,
     };
-    
+
     assert!(matches!(
         policy.validate(&msg),
         Err(A2uiSecurityError::XssAttempt(_))
@@ -23,12 +23,13 @@ fn test_security_blocks_javascript_url() {
     let policy = A2uiSecurityPolicy::default_restrictive();
     let msg = A2uiServerMessage::Navigate {
         url: "javascript:alert(1)".into(),
-        options: NavigateOptions { // imported from protocol
+        options: NavigateOptions {
+            // imported from protocol
             target: NavigateTarget::NewTab,
             sandbox: true,
         },
     };
-    
+
     assert!(matches!(
         policy.validate(&msg),
         Err(A2uiSecurityError::UnsafeScheme(_))

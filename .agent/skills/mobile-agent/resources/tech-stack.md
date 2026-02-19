@@ -1,45 +1,24 @@
 # Mobile Agent - Tech Stack Reference
 
-## Flutter (Recommended)
-- **Framework**: Flutter 3.19+
-- **Language**: Dart 3.3+
-- **State**: Riverpod 2.4+, Bloc, Provider
-- **Navigation**: GoRouter 13+
-- **API Client**: Dio
-- **Local Storage**: Drift, Hive
-- **Testing**: flutter_test, mockito
+## Core Stack
+- **Framework**: Tauri Mobile (v2+)
+- **Frontend**: Next.js / React (Shared with Web)
+- **Styling**: Tailwind CSS (Touch utilities)
 
-## React Native (Alternative)
-- **Framework**: React Native 0.73+
-- **Language**: TypeScript
-- **State**: Redux Toolkit, Zustand
-- **Navigation**: React Navigation 6+
-- **Testing**: Jest, React Native Testing Library
+## Native Integration (Rust)
+- **Plugins**: `tauri-plugin-*` (Official & Community)
+- **Android**: Kotlin / Java (via JNI/Rust bridge)
+- **iOS**: Swift / Objective-C (via Rust bridge)
 
-## Project Structure (Flutter)
+## Development Tools
+- **Android**: Android Studio, Gradle, ADB
+- **iOS**: Xcode, CocoaPods (if needed)
 
-```
-lib/
-  main.dart
-  core/              # Theme, router, utils
-  features/
-    [feature]/
-      data/          # Models, repositories
-      domain/        # Entities, use cases
-      presentation/  # Screens, widgets, providers
-  shared/            # Shared widgets
-```
+## Capabilities (Permissions)
+- Configured in `src-tauri/capabilities/*.json`
+- Scoped to specific windows or platforms (`target: "android"`)
 
-## Architecture Pattern
-
-Clean Architecture with Riverpod:
-1. Entity (Domain) - Pure business objects
-2. Repository Interface (Domain) - Abstract data access
-3. Repository Implementation (Data) - Dio, database
-4. Providers (Presentation) - State management
-5. Screens/Widgets (Presentation) - UI
-
-## Platform Guidelines
-- Material Design 3 for Android
-- iOS Human Interface Guidelines for iOS
-- Use `Platform.isIOS` for platform-specific code
+## UI Patterns
+- **Safe Area**: `pt-[env(safe-area-inset-top)]`
+- **Gestures**: `react-use-gesture` or native scroll
+- **Haptics**: `tauri-plugin-haptics`

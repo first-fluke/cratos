@@ -1,49 +1,34 @@
-# Mobile Agent - Execution Protocol
+# Mobile Agent - Execution Protocol (Tauri Mobile)
 
 ## Step 0: Prepare
-1. **Assess difficulty** — see `../_shared/difficulty-guide.md`
-   - **Simple**: Skip to Step 3 | **Medium**: All 4 steps | **Complex**: All steps + checkpoints
-2. **Check lessons** — read your domain section in `../_shared/lessons-learned.md`
-3. **Clarify requirements** — follow `../_shared/clarification-protocol.md`
-   - Check **Uncertainty Triggers**: business logic, security/auth, existing code conflicts?
-   - Determine level: LOW → proceed | MEDIUM → present options | HIGH → ask immediately
-4. **Budget context** — follow `../_shared/context-budget.md` (read symbols, not whole files)
-
-**⚠️ Intelligent Escalation**: When uncertain, escalate early. Don't blindly proceed.
-
-Follow these steps in order (adjust depth by difficulty).
+1. **Load Protocols**:
+   - `../_shared/multi-review-protocol.md`
+   - `../_shared/quality-principles.md`
+   - `../_shared/phase-gates.md`
+   - `../_shared/memory-protocol.md` (CLI mode)
+2. **Context**: `get_symbols_overview("src-tauri/capabilities")`, check `Cargo.toml` for plugins.
+3. **Memory**: Create `session-mobile-{id}.md` (if leading) or update `progress-{id}.md`.
 
 ## Step 1: Analyze
-- Read the task requirements carefully
-- Identify which screens, widgets, and providers are needed
-- Check existing code with Serena: `get_symbols_overview("lib/features")`, `find_symbol("ScreenName")`
-- Determine platform-specific requirements (iOS vs Android)
-- List assumptions; ask if unclear
+- Check if requested features need native code (Rust/Kotlin/Swift) or just JS.
+- Review `src-tauri/gen/android` and `src-tauri/gen/apple` status.
 
 ## Step 2: Plan
-- Decide on feature structure using Clean Architecture
-- Define entities (domain) and repository interfaces
-- Plan state management (Riverpod providers)
-- Identify navigation routes (GoRouter)
-- Plan offline-first strategy if required
-- Note platform differences (Material Design 3 vs iOS HIG)
+- **Plugins**: Identify needed Tauri plugins (`@tauri-apps/plugin-*`).
+- **Permissions**: Define capabilities in `src-tauri/capabilities/mobile.json`.
+- **UI**: Plan Safe Area handling and Touch gestures.
 
 ## Step 3: Implement
-- Create/modify files in this order:
-  1. Domain: entities and repository interfaces
-  2. Data: models, API clients (Dio), repository implementations
-  3. Presentation: providers (Riverpod), screens, widgets
-  4. Navigation: GoRouter routes
-  5. Tests: unit + widget tests
-- Use `resources/screen-template.dart` as reference
-- Follow Clean Architecture layers strictly
+1. **Rust Plugin**: Add crate to `Cargo.toml`, register in `src-tauri/src/lib.rs`.
+2. **JS Binding**: Install NPM package, invoke via `import { ... } from '@tauri-apps/plugin-...'`.
+3. **Capabilities**: Update JSON config to allow plugin commands.
+4. **UI**: Implement responsive layout with `safe-area-inset-*` (see `mobile-page-template.tsx`).
 
 ## Step 4: Verify
-- Run `resources/checklist.md` items
-- Run `../_shared/common-checklist.md` items
-- Test on both iOS and Android (or emulators)
-- Verify 60fps performance (no jank)
-- Check dark mode support
+- Run `npm run tauri android dev` or `npm run tauri ios dev`.
+- Verify on Emulator/Simulator (not just browser).
+- Check permissions prompt behavior.
+- **Memory**: Write `result-{id}.md` with completion status.
 
 ## On Error
-See `resources/error-playbook.md` for recovery steps.
+See `resources/error-playbook.md`.

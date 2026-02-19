@@ -18,9 +18,7 @@ pub enum A2uiServerMessage {
         props: serde_json::Value,
     },
     /// 컴포넌트 제거
-    Remove {
-        component_id: Uuid,
-    },
+    Remove { component_id: Uuid },
     /// 네비게이션
     Navigate {
         url: String,
@@ -45,9 +43,7 @@ pub enum A2uiServerMessage {
         actions: Vec<ModalAction>,
     },
     /// 모달 닫기
-    CloseModal {
-        modal_id: Uuid,
-    },
+    CloseModal { modal_id: Uuid },
 }
 
 /// A2UI 클라이언트 → 서버 메시지
@@ -61,15 +57,9 @@ pub enum A2uiClientMessage {
         payload: serde_json::Value,
     },
     /// 스크린샷 응답
-    SnapshotResult {
-        request_id: Uuid,
-        data: String,
-    },
+    SnapshotResult { request_id: Uuid, data: String },
     /// 모달 액션 응답
-    ModalAction {
-        modal_id: Uuid,
-        action_id: String,
-    },
+    ModalAction { modal_id: Uuid, action_id: String },
     /// 스티어링 (직접 제어)
     Steer {
         /// "abort", "skip", "user_text"
@@ -79,10 +69,7 @@ pub enum A2uiClientMessage {
     /// 연결 상태
     Ready,
     /// 에러
-    Error {
-        code: String,
-        message: String,
-    },
+    Error { code: String, message: String },
 }
 
 /// 컴포넌트 타입 (허용 목록)

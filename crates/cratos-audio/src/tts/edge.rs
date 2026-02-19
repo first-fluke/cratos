@@ -3,14 +3,14 @@
 //! Edge TTS is a **free** Microsoft text-to-speech service.
 //! No API key required!
 
+use super::backend::{TtsBackend, TtsOptions, VoiceInfo};
 use crate::error::{Error, Result};
-use reqwest::Client;
-use std::time::Duration;
-use tracing::{debug, info};
 use async_trait::async_trait;
 use bytes::Bytes;
+use reqwest::Client;
+use std::time::Duration;
 use tokio::sync::mpsc;
-use super::backend::{TtsBackend, TtsOptions, VoiceInfo};
+use tracing::{debug, info};
 
 /// Edge TTS endpoint
 const EDGE_TTS_ENDPOINT: &str =
@@ -230,16 +230,30 @@ impl super::backend::TtsBackend for TextToSpeech {
         Ok(voices)
     }
 
-    async fn synthesize(&self, text: &str, voice: &str, _options: &super::backend::TtsOptions) -> crate::tts::error::Result<bytes::Bytes> {
+    async fn synthesize(
+        &self,
+        text: &str,
+        voice: &str,
+        _options: &super::backend::TtsOptions,
+    ) -> crate::tts::error::Result<bytes::Bytes> {
         let tts = TextToSpeech::with_voice(voice);
-        let audio = tts.synthesize(text).await.map_err(|e| crate::tts::error::TtsError::EdgeError(e.to_string()))?;
+        let audio = tts
+            .synthesize(text)
+            .await
+            .map_err(|e| crate::tts::error::TtsError::EdgeError(e.to_string()))?;
         Ok(bytes::Bytes::from(audio))
     }
 
-    async fn synthesize_stream(&self, text: &str, voice: &str, options: &super::backend::TtsOptions) 
-        -> crate::tts::error::Result<tokio::sync::mpsc::Receiver<crate::tts::error::Result<bytes::Bytes>>>
-    {
-        let bytes = <Self as super::backend::TtsBackend>::synthesize(self, text, voice, options).await?;
+    async fn synthesize_stream(
+        &self,
+        text: &str,
+        voice: &str,
+        options: &super::backend::TtsOptions,
+    ) -> crate::tts::error::Result<
+        tokio::sync::mpsc::Receiver<crate::tts::error::Result<bytes::Bytes>>,
+    > {
+        let bytes =
+            <Self as super::backend::TtsBackend>::synthesize(self, text, voice, options).await?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         tx.send(Ok(bytes)).await.ok();
         Ok(rx)

@@ -4,9 +4,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::registry::{Tool, ToolDefinition, ToolResult, ToolCategory, RiskLevel};
+use crate::registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolResult};
 use cratos_canvas::a2ui::{
-    A2uiComponentType, A2uiSecurityPolicy, A2uiServerMessage, A2uiSessionManager, A2uiClientMessage
+    A2uiClientMessage, A2uiComponentType, A2uiSecurityPolicy, A2uiServerMessage, A2uiSessionManager,
 };
 
 /// Tool for rendering UI components to the client via A2UI protocol.
@@ -18,7 +18,10 @@ pub struct A2uiRenderTool {
 
 impl A2uiRenderTool {
     /// Create a new A2UI render tool
-    pub fn new(session_manager: Arc<A2uiSessionManager>, security_policy: Arc<A2uiSecurityPolicy>) -> Self {
+    pub fn new(
+        session_manager: Arc<A2uiSessionManager>,
+        security_policy: Arc<A2uiSecurityPolicy>,
+    ) -> Self {
         let definition = ToolDefinition::new(
             "a2ui_render",
             "Render UI components in the user's browser/app. Returns component_id for event handling.",
@@ -69,17 +72,20 @@ impl Tool for A2uiRenderTool {
 
     async fn execute(&self, args: serde_json::Value) -> Result<ToolResult> {
         let start_time = std::time::Instant::now();
-        
-        let session_id_str = args["session_id"].as_str()
+
+        let session_id_str = args["session_id"]
+            .as_str()
             .ok_or_else(|| Error::InvalidInput("Missing session_id".into()))?;
         let session_id = Uuid::parse_str(session_id_str)
             .map_err(|e| Error::InvalidInput(format!("Invalid session_id UUID: {}", e)))?;
 
-        let component_type_str = args["component_type"].as_str()
+        let component_type_str = args["component_type"]
+            .as_str()
             .ok_or_else(|| Error::InvalidInput("Missing component_type".into()))?;
-        
-        let component_type: A2uiComponentType = serde_json::from_value(json!(component_type_str))
-            .map_err(|e| Error::InvalidInput(format!("Invalid component_type: {}", e)))?;
+
+        let component_type: A2uiComponentType =
+            serde_json::from_value(json!(component_type_str))
+                .map_err(|e| Error::InvalidInput(format!("Invalid component_type: {}", e)))?;
 
         let props = args["props"].clone();
         let slot = args.get("slot").and_then(|s| s.as_str()).map(String::from);
@@ -92,16 +98,27 @@ impl Tool for A2uiRenderTool {
         };
 
         if let Err(e) = self.security_policy.validate(&msg) {
-             return Ok(ToolResult::failure(format!("Security Policy Violation: {}", e), start_time.elapsed().as_millis() as u64));
+            return Ok(ToolResult::failure(
+                format!("Security Policy Violation: {}", e),
+                start_time.elapsed().as_millis() as u64,
+            ));
         }
 
         let session = match self.session_manager.get_or_create(session_id).await {
             Ok(s) => s,
-            Err(e) => return Ok(ToolResult::failure(format!("Session Error: {}", e), start_time.elapsed().as_millis() as u64)),
+            Err(e) => {
+                return Ok(ToolResult::failure(
+                    format!("Session Error: {}", e),
+                    start_time.elapsed().as_millis() as u64,
+                ))
+            }
         };
-        
+
         if let Err(e) = session.send(msg.clone()).await {
-             return Ok(ToolResult::failure(format!("Send Error: {}", e), start_time.elapsed().as_millis() as u64));
+            return Ok(ToolResult::failure(
+                format!("Send Error: {}", e),
+                start_time.elapsed().as_millis() as u64,
+            ));
         }
 
         let component_id = match msg {
@@ -109,10 +126,13 @@ impl Tool for A2uiRenderTool {
             _ => unreachable!(),
         };
 
-        Ok(ToolResult::success(json!({
-            "component_id": component_id,
-            "rendered": true
-        }), start_time.elapsed().as_millis() as u64))
+        Ok(ToolResult::success(
+            json!({
+                "component_id": component_id,
+                "rendered": true
+            }),
+            start_time.elapsed().as_millis() as u64,
+        ))
     }
 }
 
@@ -164,44 +184,67 @@ impl Tool for A2uiWaitEventTool {
 
     async fn execute(&self, args: serde_json::Value) -> Result<ToolResult> {
         let start_time = std::time::Instant::now();
-        
-        let session_id_str = args["session_id"].as_str()
+
+        let session_id_str = args["session_id"]
+            .as_str()
             .ok_or_else(|| Error::InvalidInput("Missing session_id".into()))?;
         let session_id = Uuid::parse_str(session_id_str)
             .map_err(|e| Error::InvalidInput(format!("Invalid session_id UUID: {}", e)))?;
 
-        let component_id_str = args["component_id"].as_str()
+        let component_id_str = args["component_id"]
+            .as_str()
             .ok_or_else(|| Error::InvalidInput("Missing component_id".into()))?;
         let component_id = Uuid::parse_str(component_id_str)
             .map_err(|e| Error::InvalidInput(format!("Invalid component_id UUID: {}", e)))?;
-            
-        let timeout_ms = args.get("timeout_ms").and_then(|v| v.as_u64()).unwrap_or(30000);
+
+        let timeout_ms = args
+            .get("timeout_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(30000);
 
         let session = match self.session_manager.get_or_create(session_id).await {
             Ok(s) => s,
-            Err(e) => return Ok(ToolResult::failure(format!("Session Error: {}", e), start_time.elapsed().as_millis() as u64)),
+            Err(e) => {
+                return Ok(ToolResult::failure(
+                    format!("Session Error: {}", e),
+                    start_time.elapsed().as_millis() as u64,
+                ))
+            }
         };
 
         // Wait for event with timeout
         let result = tokio::time::timeout(
             std::time::Duration::from_millis(timeout_ms),
-            session.wait_event(component_id)
-        ).await;
+            session.wait_event(component_id),
+        )
+        .await;
 
         match result {
-            Ok(Ok(event)) => {
-                 match event {
-                     A2uiClientMessage::Event { event_type, payload, .. } => {
-                         Ok(ToolResult::success(json!({
-                             "event_type": event_type,
-                             "payload": payload
-                         }), start_time.elapsed().as_millis() as u64))
-                     }
-                     _ => Ok(ToolResult::failure("Received non-event message".to_string(), start_time.elapsed().as_millis() as u64)),
-                 }
+            Ok(Ok(event)) => match event {
+                A2uiClientMessage::Event {
+                    event_type,
+                    payload,
+                    ..
+                } => Ok(ToolResult::success(
+                    json!({
+                        "event_type": event_type,
+                        "payload": payload
+                    }),
+                    start_time.elapsed().as_millis() as u64,
+                )),
+                _ => Ok(ToolResult::failure(
+                    "Received non-event message".to_string(),
+                    start_time.elapsed().as_millis() as u64,
+                )),
             },
-            Ok(Err(e)) => Ok(ToolResult::failure(format!("Wait Error: {}", e), start_time.elapsed().as_millis() as u64)),
-            Err(_) => Ok(ToolResult::failure("Timeout waiting for event".to_string(), start_time.elapsed().as_millis() as u64)),
+            Ok(Err(e)) => Ok(ToolResult::failure(
+                format!("Wait Error: {}", e),
+                start_time.elapsed().as_millis() as u64,
+            )),
+            Err(_) => Ok(ToolResult::failure(
+                "Timeout waiting for event".to_string(),
+                start_time.elapsed().as_millis() as u64,
+            )),
         }
     }
 }

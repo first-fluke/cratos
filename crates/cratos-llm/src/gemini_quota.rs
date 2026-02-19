@@ -108,9 +108,12 @@ impl GeminiQuotaPoller {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            
+
             if status.as_u16() == 401 || status.as_u16() == 403 {
-                warn!("Gemini quota API authentication failed ({}). Stopping poller.", status);
+                warn!(
+                    "Gemini quota API authentication failed ({}). Stopping poller.",
+                    status
+                );
                 return Err(crate::Error::Api("Unauthorized".to_string()));
             }
 
@@ -161,7 +164,9 @@ impl GeminiQuotaPoller {
             tier_label: Some("pro".to_string()), // Using Gemini CLI creds implies Pro/High Quota
         };
 
-        crate::quota::global_quota_tracker().update_state(state).await;
+        crate::quota::global_quota_tracker()
+            .update_state(state)
+            .await;
         debug!(
             "Gemini quota updated: remaining_fraction={:.2}",
             min_fraction

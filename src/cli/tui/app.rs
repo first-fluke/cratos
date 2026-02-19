@@ -3,7 +3,7 @@
 use chrono::Local;
 use cratos_core::Orchestrator;
 use ratatui::style::Style;
-use ratatui::widgets::{ScrollbarState, ListState};
+use ratatui::widgets::{ListState, ScrollbarState};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tui_textarea::TextArea;
@@ -117,7 +117,7 @@ pub struct App {
     orchestrator: Arc<Orchestrator>,
     session_id: String,
     commands: Arc<CommandRegistry>,
-    
+
     current_execution_id: Option<uuid::Uuid>,
 
     response_tx: mpsc::UnboundedSender<AppEvent>,
@@ -202,7 +202,7 @@ impl App {
             AppMode::Insert => {
                 self.ui_state.focus = Focus::Input;
                 // Cursor style: block/bar depending on terminal, usually default is fine
-                self.textarea.set_cursor_style(Style::default()); 
+                self.textarea.set_cursor_style(Style::default());
             }
             AppMode::Normal => {
                 self.ui_state.focus = Focus::Chat;
@@ -309,11 +309,11 @@ impl App {
                 let tx = self.response_tx.clone();
                 tokio::spawn(async move {
                     if let Err(e) = handle.inject_message(text).await {
-                         let _ = tx.send(AppEvent::Chat(ChatMessage {
-                             role: Role::System,
-                             sender: "system".into(),
-                             content: format!("Failed to inject steering message: {}", e),
-                             timestamp: Local::now(),
+                        let _ = tx.send(AppEvent::Chat(ChatMessage {
+                            role: Role::System,
+                            sender: "system".into(),
+                            content: format!("Failed to inject steering message: {}", e),
+                            timestamp: Local::now(),
                         }));
                     }
                 });
@@ -324,7 +324,7 @@ impl App {
         self.ui_state.is_loading = true;
         self.ui_state.loading_tick = 0;
         // Don't auto-scroll here, let the push_user handle it or user control
-        
+
         let orchestrator = self.orchestrator.clone();
         let session_id = self.session_id.clone();
         let persona = self.persona.clone();
@@ -455,18 +455,21 @@ impl App {
             if let Some(handle) = self.orchestrator.get_steer_handle(exec_id) {
                 let tx = self.response_tx.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle.abort(Some("Aborted by user via TUI".to_string())).await {
-                         let _ = tx.send(AppEvent::Chat(ChatMessage {
-                             role: Role::System,
-                             sender: "system".into(),
-                             content: format!("Failed to abort: {}", e),
-                             timestamp: Local::now(),
+                    if let Err(e) = handle
+                        .abort(Some("Aborted by user via TUI".to_string()))
+                        .await
+                    {
+                        let _ = tx.send(AppEvent::Chat(ChatMessage {
+                            role: Role::System,
+                            sender: "system".into(),
+                            content: format!("Failed to abort: {}", e),
+                            timestamp: Local::now(),
                         }));
                     }
                 });
                 self.push_system(format!("Sending abort signal to execution {}...", exec_id));
             } else {
-                 self.push_system("No steering handle found for active execution.".to_string());
+                self.push_system("No steering handle found for active execution.".to_string());
             }
         }
     }
@@ -566,18 +569,21 @@ impl App {
                 let tx = self.response_tx.clone();
                 // We spawn this because handle.abort is async
                 tokio::spawn(async move {
-                    if let Err(e) = handle.abort(Some("User requested abort via TUI".to_string())).await {
+                    if let Err(e) = handle
+                        .abort(Some("User requested abort via TUI".to_string()))
+                        .await
+                    {
                         let _ = tx.send(AppEvent::Chat(ChatMessage {
-                             role: Role::System,
-                             sender: "system".into(),
-                             content: format!("Failed to abort: {}", e),
-                             timestamp: Local::now(),
+                            role: Role::System,
+                            sender: "system".into(),
+                            content: format!("Failed to abort: {}", e),
+                            timestamp: Local::now(),
                         }));
                     }
                 });
                 self.push_system("Sending abort signal...".into());
             } else {
-                 self.push_system("No active steering handle found for current execution.".into());
+                self.push_system("No active steering handle found for current execution.".into());
             }
         } else {
             self.push_system("No active execution to abort.".into());

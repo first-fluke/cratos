@@ -10,12 +10,14 @@
 
 pub mod auth;
 pub mod browser;
+pub mod bundle;
 pub mod config;
 pub mod dev_sessions;
 pub mod docs;
 pub mod executions;
 pub mod graph;
 pub mod health;
+pub mod nodes;
 pub mod pairing;
 pub mod pantheon;
 pub mod quota;
@@ -24,19 +26,19 @@ pub mod sessions;
 pub mod skills;
 pub mod tools;
 pub mod webhooks;
-pub mod nodes;
-pub mod bundle;
 
 use axum::Router;
 
 pub use auth::auth_routes;
 pub use browser::browser_routes;
+pub use bundle::bundle_routes;
 pub use config::config_routes_with_state;
 pub use dev_sessions::dev_sessions_routes;
 pub use docs::docs_routes;
 pub use executions::executions_routes;
 pub use graph::graph_routes;
 pub use health::health_routes;
+pub use nodes::nodes_routes;
 pub use pairing::pairing_routes;
 pub use pantheon::pantheon_routes;
 pub use quota::quota_routes;
@@ -45,8 +47,6 @@ pub use sessions::{sessions_routes_with_state, SessionState};
 pub use skills::skills_routes;
 pub use tools::tools_routes;
 pub use webhooks::webhooks_routes;
-pub use nodes::nodes_routes;
-pub use bundle::bundle_routes;
 
 use crate::api::config::ConfigState;
 

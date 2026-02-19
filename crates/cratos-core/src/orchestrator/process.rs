@@ -10,14 +10,12 @@ use crate::planner::Planner;
 use cratos_llm::Message;
 use cratos_replay::{EventType, Execution};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use super::config::OrchestratorInput;
 use super::core::Orchestrator;
-use super::sanitize::{
-    build_fallback_response, is_tool_refusal, sanitize_error_for_user, sanitize_response,
-};
+use super::sanitize::{build_fallback_response, is_tool_refusal, sanitize_response};
 use super::types::{ExecutionResult, ExecutionStatus};
 
 impl Orchestrator {
@@ -239,23 +237,24 @@ impl Orchestrator {
                 crate::utils::metrics_global::labeled_counter("cratos_executions_total")
                     .inc(&[("status", "cancelled")]);
                 crate::utils::metrics_global::gauge("cratos_active_executions").dec();
-                return Ok(ExecutionResult {
+                return Ok(self.build_cancelled_result(
                     execution_id,
-                    status: ExecutionStatus::Cancelled,
-                    response: "실행이 취소되었습니다.".to_string(),
-                    tool_calls: tool_call_records,
-                    artifacts: Vec::new(),
-                    iterations: iteration,
-                    duration_ms: start_time.elapsed().as_millis() as u64,
-                    model: model_used,
-                });
+                    None,
+                    tool_call_records,
+                    iteration,
+                    start_time.elapsed().as_millis() as u64,
+                    model_used,
+                ));
             }
 
             // ── Steering check ────────────────────────────────────────
             // Check for pending steering messages (e.g. user text from previous iteration)
             if let Some(msg) = steering_ctx.apply_after_tool().await {
                 info!(execution_id = %execution_id, "Applying pending steering message");
-                messages.push(cratos_llm::Message::user(format!("[User Intervention]: {}", msg)));
+                messages.push(cratos_llm::Message::user(format!(
+                    "[User Intervention]: {}",
+                    msg
+                )));
             }
 
             // Check for new steering signals (Abort, etc.)
@@ -272,17 +271,15 @@ impl Orchestrator {
                     crate::utils::metrics_global::labeled_counter("cratos_executions_total")
                         .inc(&[("status", "cancelled")]);
                     crate::utils::metrics_global::gauge("cratos_active_executions").dec();
-                    
-                    return Ok(ExecutionResult {
+
+                    return Ok(self.build_cancelled_result(
                         execution_id,
-                        status: ExecutionStatus::Cancelled,
-                        response: reason.unwrap_or_else(|| "실행이 중단되었습니다.".to_string()),
-                        tool_calls: tool_call_records,
-                        artifacts: Vec::new(),
-                        iterations: iteration,
-                        duration_ms: start_time.elapsed().as_millis() as u64,
-                        model: model_used,
-                    });
+                        reason,
+                        tool_call_records,
+                        iteration,
+                        start_time.elapsed().as_millis() as u64,
+                        model_used,
+                    ));
                 }
                 Ok(crate::steering::SteerDecision::Skip(_)) => {
                     // Skip implies skipping a tool call, but we are at the start of iteration.
@@ -292,7 +289,10 @@ impl Orchestrator {
                     // Check if a UserText was just processed and triggered Pending state
                     if let Some(msg) = steering_ctx.apply_after_tool().await {
                         info!(execution_id = %execution_id, "Applying new steering message");
-                        messages.push(cratos_llm::Message::user(format!("[User Intervention]: {}", msg)));
+                        messages.push(cratos_llm::Message::user(format!(
+                            "[User Intervention]: {}",
+                            msg
+                        )));
                     }
                 }
                 Err(_) => {
@@ -696,4 +696,3 @@ impl Orchestrator {
         })
     }
 }
-

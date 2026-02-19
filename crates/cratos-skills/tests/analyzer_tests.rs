@@ -1,4 +1,4 @@
-use cratos_skills::analyzer::{PatternAnalyzer, AnalyzerConfig, PatternStatus};
+use cratos_skills::analyzer::{AnalyzerConfig, PatternAnalyzer, PatternStatus};
 
 #[test]
 fn test_is_stop_word() {

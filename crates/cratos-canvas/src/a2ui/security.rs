@@ -2,9 +2,7 @@
 //!
 //! This module implements security policies for A2UI messages, preventing XSS and enforcing resource limits.
 
-use super::protocol::{
-    A2uiComponentType, A2uiServerMessage,
-};
+use super::protocol::{A2uiComponentType, A2uiServerMessage};
 use serde_json::Value;
 use std::collections::HashSet;
 use thiserror::Error;
@@ -14,25 +12,25 @@ use thiserror::Error;
 pub struct A2uiSecurityPolicy {
     /// List of allowed component types
     allowed_components: HashSet<A2uiComponentType>,
-    
+
     /// Allowed domains for navigation (whitelist)
     allowed_domains: Vec<String>,
-    
+
     /// Whether snapshots/screenshots are allowed
     allow_snapshots: bool,
-    
+
     /// Whether iframes are allowed
     allow_iframes: bool,
-    
+
     /// Maximum number of components per message
     pub max_components: usize,
-    
+
     /// Maximum message size in bytes
     pub max_message_size: usize,
-    
+
     /// Maximum nesting depth for props
     pub max_props_depth: usize,
-    
+
     /// Pre-compiled XSS detection regex
     #[doc(hidden)]
     xss_regex: regex::Regex,
@@ -43,39 +41,39 @@ pub enum A2uiSecurityError {
     /// Component not in whitelist
     #[error("component not allowed: {0:?}")]
     ComponentNotAllowed(A2uiComponentType),
-    
+
     /// Iframes not allowed
     #[error("iframes not allowed")]
     IframesNotAllowed,
-    
+
     /// Snapshots not allowed
     #[error("snapshots not allowed")]
     SnapshotsNotAllowed,
-    
+
     /// Possible XSS attempt detected
     #[error("XSS attempt: {0}")]
     XssAttempt(String),
-    
+
     /// Domain not in whitelist
     #[error("domain not allowed: {0}")]
     DomainNotAllowed(String),
-    
+
     /// Unsafe URL scheme (javascript:, vbscript:, data:)
     #[error("unsafe scheme: {0}")]
     UnsafeScheme(String),
-    
+
     /// Malformed URL
     #[error("invalid URL: {0}")]
     InvalidUrl(String),
-    
+
     /// Message size exceeds limit
     #[error("message too large: {0} bytes")]
     MessageTooLarge(usize),
-    
+
     /// Props nesting too deep
     #[error("props too deep: {0} levels")]
     PropsTooDeep(usize),
-    
+
     /// JSON parsing error
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
@@ -96,7 +94,7 @@ impl A2uiSecurityPolicy {
             A2uiComponentType::Table,
             A2uiComponentType::Divider,
         ];
-        
+
         // Match inline handlers like 'onload=', 'onclick='
         let xss_regex = regex::Regex::new(r"(?i)\bon\w+\s*=").expect("Invalid regex");
 
@@ -106,12 +104,12 @@ impl A2uiSecurityPolicy {
             allow_snapshots: false,
             allow_iframes: false,
             max_components: 100,
-            max_message_size: 1024 * 1024,  // 1MB
+            max_message_size: 1024 * 1024, // 1MB
             max_props_depth: 10,
             xss_regex,
         }
     }
-    
+
     /// Create an extended policy with more features enabled
     ///
     /// Allows charts, code blocks, images, modals, grids. Enables snapshots.
@@ -129,7 +127,7 @@ impl A2uiSecurityPolicy {
         policy.allow_snapshots = true;
         policy
     }
-    
+
     /// Validate an incoming server message against the policy
     ///
     /// Checks:
@@ -139,7 +137,11 @@ impl A2uiSecurityPolicy {
     /// - URL safety (scheme and domain whitelist)
     pub fn validate(&self, msg: &A2uiServerMessage) -> Result<(), A2uiSecurityError> {
         match msg {
-            A2uiServerMessage::Render { component_type, props, .. } => {
+            A2uiServerMessage::Render {
+                component_type,
+                props,
+                ..
+            } => {
                 self.validate_component(component_type)?;
                 self.validate_props(props, 0)?;
                 Ok(())
@@ -157,26 +159,35 @@ impl A2uiSecurityPolicy {
             _ => Ok(()),
         }
     }
-    
-    fn validate_component(&self, component_type: &A2uiComponentType) -> Result<(), A2uiSecurityError> {
+
+    fn validate_component(
+        &self,
+        component_type: &A2uiComponentType,
+    ) -> Result<(), A2uiSecurityError> {
         if !self.allowed_components.contains(component_type) {
-            return Err(A2uiSecurityError::ComponentNotAllowed(component_type.clone()));
+            return Err(A2uiSecurityError::ComponentNotAllowed(
+                component_type.clone(),
+            ));
         }
-        
+
         // iframe 특별 처리
         if *component_type == A2uiComponentType::Iframe && !self.allow_iframes {
             return Err(A2uiSecurityError::IframesNotAllowed);
         }
-        
+
         Ok(())
     }
-    
-    fn validate_props(&self, props: &serde_json::Value, depth: usize) -> Result<(), A2uiSecurityError> {
+
+    fn validate_props(
+        &self,
+        props: &serde_json::Value,
+        depth: usize,
+    ) -> Result<(), A2uiSecurityError> {
         // 깊이 제한
         if depth > self.max_props_depth {
             return Err(A2uiSecurityError::PropsTooDeep(depth));
         }
-        
+
         match props {
             Value::String(s) => {
                 self.validate_string_content(s)?;
@@ -194,7 +205,7 @@ impl A2uiSecurityPolicy {
                 if size > self.max_message_size {
                     return Err(A2uiSecurityError::MessageTooLarge(size));
                 }
-                
+
                 for v in obj.values() {
                     self.validate_props(v, depth + 1)?;
                 }
@@ -203,36 +214,43 @@ impl A2uiSecurityPolicy {
             _ => Ok(()),
         }
     }
-    
+
     fn validate_string_content(&self, s: &str) -> Result<(), A2uiSecurityError> {
         let lower = s.to_lowercase();
-        
+
         // script 태그
         if lower.contains("<script") || lower.contains("</script") {
             return Err(A2uiSecurityError::XssAttempt("script tag detected".into()));
         }
-        
+
         // javascript: URL
         if lower.contains("javascript:") {
-            return Err(A2uiSecurityError::XssAttempt("javascript URL detected".into()));
+            return Err(A2uiSecurityError::XssAttempt(
+                "javascript URL detected".into(),
+            ));
         }
-        
+
         // data: URL (이미지 제외)
         if lower.contains("data:") && !lower.contains("data:image/") {
-            return Err(A2uiSecurityError::XssAttempt("non-image data URL detected".into()));
+            return Err(A2uiSecurityError::XssAttempt(
+                "non-image data URL detected".into(),
+            ));
         }
-        
+
         // on* 이벤트 핸들러 (간단한 정규식)
         if self.xss_regex.is_match(s) {
-            return Err(A2uiSecurityError::XssAttempt("inline event handler detected".into()));
+            return Err(A2uiSecurityError::XssAttempt(
+                "inline event handler detected".into(),
+            ));
         }
-        
+
         Ok(())
     }
-    
+
     fn validate_url(&self, url: &str) -> Result<(), A2uiSecurityError> {
-        let parsed = url::Url::parse(url).map_err(|e| A2uiSecurityError::InvalidUrl(e.to_string()))?;
-        
+        let parsed =
+            url::Url::parse(url).map_err(|e| A2uiSecurityError::InvalidUrl(e.to_string()))?;
+
         // 스킴 확인
         match parsed.scheme() {
             "http" | "https" => {}
@@ -241,17 +259,18 @@ impl A2uiSecurityPolicy {
             "vbscript" => return Err(A2uiSecurityError::UnsafeScheme("vbscript".into())),
             other => return Err(A2uiSecurityError::UnsafeScheme(other.into())),
         }
-        
+
         // 도메인 화이트리스트
         let host = parsed.host_str().unwrap_or("");
-        let allowed = self.allowed_domains.iter().any(|d| {
-            host == *d || host.ends_with(&format!(".{}", d))
-        });
-        
+        let allowed = self
+            .allowed_domains
+            .iter()
+            .any(|d| host == *d || host.ends_with(&format!(".{}", d)));
+
         if !allowed {
             return Err(A2uiSecurityError::DomainNotAllowed(host.into()));
         }
-        
+
         Ok(())
     }
 }

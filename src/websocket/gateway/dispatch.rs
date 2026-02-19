@@ -134,7 +134,6 @@ mod tests {
         NodeRegistry::new(pool)
     }
 
-
     fn test_a2a_router() -> A2aRouter {
         A2aRouter::new(100)
     }
@@ -158,13 +157,13 @@ mod tests {
     }
 
     fn readonly_auth() -> AuthContext {
-         AuthContext {
-             user_id: "readonly".to_string(),
-             method: AuthMethod::ApiKey,
-             scopes: vec![Scope::SessionRead, Scope::ExecutionRead],
-             session_id: None,
-             device_id: None,
-         }
+        AuthContext {
+            user_id: "readonly".to_string(),
+            method: AuthMethod::ApiKey,
+            scopes: vec![Scope::SessionRead, Scope::ExecutionRead],
+            session_id: None,
+            device_id: None,
+        }
     }
 
     #[tokio::test]
@@ -179,10 +178,10 @@ mod tests {
             auth: &readonly_auth(),
             node_registry: &nr,
             a2a_router: &a2a,
-             browser_relay: &br,
-             orchestrator: &orch,
-             event_bus: &eb,
-             approval_manager: None,
+            browser_relay: &br,
+            orchestrator: &orch,
+            event_bus: &eb,
+            approval_manager: None,
         };
 
         let result = dispatch_method("1", "invalid.method", serde_json::json!({}), &ctx).await;
@@ -212,9 +211,12 @@ mod tests {
         };
 
         // This test verifies routing to chat handler.
-        let result = dispatch_method("2", "chat.send", serde_json::json!({"text": "hello"}), &ctx).await;
+        let result =
+            dispatch_method("2", "chat.send", serde_json::json!({"text": "hello"}), &ctx).await;
         match result {
-            GatewayFrame::Response { result: Some(v), .. } => {
+            GatewayFrame::Response {
+                result: Some(v), ..
+            } => {
                 assert_eq!(v["status"], "accepted");
             }
             _ => panic!("expected success from chat.send"),

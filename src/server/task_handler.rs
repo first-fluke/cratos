@@ -3,13 +3,18 @@ use std::sync::Arc;
 use cratos_core::orchestrator::{Orchestrator, OrchestratorInput};
 use cratos_core::scheduler::{SchedulerError, TaskAction};
 use cratos_core::EventBus;
+use cratos_tools::builtins::exec::{ExecConfig, ExecMode, ExecTool};
+use cratos_tools::registry::Tool;
 use tracing::{info, warn};
+
+use crate::server::config::SecurityConfig;
 
 /// Execute a scheduled task action
 pub async fn execute_task(
     action: TaskAction,
     orchestrator: Arc<Orchestrator>,
     _event_bus: Arc<EventBus>,
+    security_config: SecurityConfig,
 ) -> Result<String, SchedulerError> {
     match action {
         TaskAction::NaturalLanguage { prompt, channel } => {
@@ -40,12 +45,7 @@ pub async fn execute_task(
             // TODO: Implement direct tool execution via orchestrator or runner
             // For now, wrap in natural language instructions to use the tool
             let prompt = format!("Please run the tool '{}' with arguments: {}", tool, args);
-            let input = OrchestratorInput::new(
-                "scheduler",
-                "scheduler_task",
-                "system",
-                prompt,
-            );
+            let input = OrchestratorInput::new("scheduler", "scheduler_task", "system", prompt);
 
             match orchestrator.process(input).await {
                 Ok(result) => Ok(result.response),
@@ -65,34 +65,64 @@ pub async fn execute_task(
                 "Scheduled Notification: {}",
                 message
             );
-            
+
             // Here we could integration with NotificationService if available
             // For MVP, logging and return success is sufficient unless an adapter is active
-            
+
             Ok(format!("Notification sent to {}: {}", channel, message))
         }
         TaskAction::Shell { command, cwd } => {
-            info!("Executing scheduled shell command: {}", command);
-            let mut cmd = tokio::process::Command::new("sh");
-            cmd.arg("-c").arg(&command);
+            info!("Executing scheduled shell command (secure): {}", command);
+
+            // Convert server SecurityConfig to tools ExecConfig
+            let exec_config = ExecConfig {
+                mode: if security_config.exec.mode == "strict" {
+                    ExecMode::Strict
+                } else {
+                    ExecMode::Permissive
+                },
+                max_timeout_secs: security_config.exec.max_timeout_secs,
+                extra_blocked_commands: security_config.exec.extra_blocked_commands.clone(),
+                allowed_commands: security_config.exec.allowed_commands.clone(),
+                blocked_paths: security_config.exec.blocked_paths.clone(),
+                // Default sandbox settings
+                ..ExecConfig::default()
+            };
+
+            let tool = ExecTool::with_config(exec_config);
+
+            let mut input = serde_json::json!({
+                "command": command
+            });
+
             if let Some(dir) = cwd {
-                cmd.current_dir(dir);
+                input["cwd"] = serde_json::Value::String(dir);
             }
 
-            match cmd.output().await {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    if output.status.success() {
+            match tool.execute(input).await {
+                Ok(result) => {
+                    let output = result.output.clone();
+                    // Extract stdout/stderr from the result object if possible
+                    let stdout = output
+                        .get("stdout")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let stderr = output
+                        .get("stderr")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    
+                    if result.success {
                         Ok(stdout.to_string())
                     } else {
                         Err(SchedulerError::Execution(format!(
                             "Command failed: {}\nStderr: {}",
-                            output.status, stderr
+                            result.error.unwrap_or_else(|| "Unknown error".to_string()),
+                            stderr
                         )))
                     }
                 }
-                Err(e) => Err(SchedulerError::Execution(e.to_string())),
+                Err(e) => Err(SchedulerError::Execution(format!("Security Block: {}", e))),
             }
         }
         TaskAction::RunSkillAnalysis { dry_run } => {
@@ -168,3 +198,4 @@ pub async fn execute_task(
         }
     }
 }
+

@@ -2,7 +2,9 @@
 //!
 //! Contains functions for initializing default skills from persona TOML files.
 
-use cratos_skills::{PersonaSkillStore, Skill, SkillCategory, SkillOrigin, SkillStatus, SkillStore, SkillTrigger};
+use cratos_skills::{
+    PersonaSkillStore, Skill, SkillCategory, SkillOrigin, SkillStatus, SkillStore, SkillTrigger,
+};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 

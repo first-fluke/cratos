@@ -10,6 +10,9 @@ This saves context window and prevents confusion from irrelevant information.
 ### Always Load (Required)
 1. `SKILL.md` — Auto-loaded (provided by Antigravity)
 2. `resources/execution-protocol.md` — Execution protocol
+3. `../_shared/multi-review-protocol.md` — Multi-step review protocol (for coordinate-pro)
+4. `../_shared/quality-principles.md` — Code quality principles
+5. `../_shared/phase-gates.md` — Phase gate definitions
 
 ### Load at Task Start
 3. `../_shared/difficulty-guide.md` — Difficulty assessment (Step 0)
@@ -29,62 +32,61 @@ This saves context window and prevents confusion from irrelevant information.
 
 ## Task Type → Resource Mapping by Agent
 
-### Backend Agent
+### Backend Agent (Rust + Axum + SQLx)
 
-| Task Type | Required Resources |
-|-----------|-------------------|
-| CRUD API creation | snippets.md (route, schema, model, test) |
-| Authentication implementation | snippets.md (JWT, password) + tech-stack.md |
-| DB migration | snippets.md (migration) |
-| Performance optimization | examples.md (N+1 example) |
-| Existing code modification | examples.md + Serena MCP |
+| Task Type               | Required Resources                                   |
+| ----------------------- | ---------------------------------------------------- |
+| REST API implementation | snippets.md (Axum handler, router) + utoipa guides   |
+| Database schema/queries | snippets.md (SQLx migration, query_as!) + schema.sql |
+| Authentication          | snippets.md (JWT, Argobap) + security-checklist.md   |
+| Business Logic          | examples.md (Service traits, Error handling)         |
+| Async Tasks/Queues      | examples.md (Tokio tasks, channels)                  |
 
-### Frontend Agent
+### Frontend Agent (Next.js + React + Tailwind + Tauri)
 
-| Task Type | Required Resources |
-|-----------|-------------------|
-| Component creation | snippets.md (component, test) + component-template.tsx |
-| Form implementation | snippets.md (form + Zod) |
-| API integration | snippets.md (TanStack Query) |
-| Styling | tailwind-rules.md |
-| Page layout | snippets.md (grid) + examples.md |
+| Task Type              | Required Resources                                            |
+| ---------------------- | ------------------------------------------------------------- |
+| Desktop UI components  | snippets.md (Shadcn, Tailwind) + resources/cratos-ui-guide.md |
+| Tauri Integration      | snippets.md (Tauri commands, events) + tauri-conf.json        |
+| State Management       | snippets.md (Zustand/Jotai) + examples.md                     |
+| Data Fetching          | snippets.md (TanStack Query, Axios)                           |
+| Markdown/TUI Rendering | snippets.md (Markdown preview, syntax highlighting)           |
 
-### Mobile Agent
+### Mobile Agent (Tauri Mobile)
 
-| Task Type | Required Resources |
-|-----------|-------------------|
-| Screen creation | snippets.md (screen, provider) + screen-template.dart |
-| API integration | snippets.md (repository, Dio) |
-| Navigation | snippets.md (GoRouter) |
-| Offline features | examples.md (offline example) |
-| State management | snippets.md (Riverpod) |
+| Task Type           | Required Resources                                     |
+| ------------------- | ------------------------------------------------------ |
+| Mobile UI Layout    | snippets.md (Responsive design, Touch targets)         |
+| Native Capabilities | snippets.md (Tauri plugins: Camera, Geo, Notification) |
+| Offline/Sync        | examples.md (Local DB, Sync logic)                     |
+| Performance         | examples.md (Mobile performance tips)                  |
 
 ### Debug Agent
 
-| Task Type | Required Resources |
-|-----------|-------------------|
-| Frontend bug | common-patterns.md (Frontend section) |
-| Backend bug | common-patterns.md (Backend section) |
-| Mobile bug | common-patterns.md (Mobile section) |
-| Performance bug | common-patterns.md (Performance section) + debugging-checklist.md |
-| Security bug | common-patterns.md (Security section) |
+| Task Type         | Required Resources                               |
+| ----------------- | ------------------------------------------------ |
+| Rust Panic/Error  | resources/rust-debugging.md + common-patterns.md |
+| Tauri IPC Issues  | resources/tauri-debugging.md                     |
+| UI/Rendering Bugs | common-patterns.md (Frontend)                    |
+| Concurrency Bugs  | resources/async-debugging.md                     |
+| Security/Safety   | common-patterns.md (Unsafe code, memory safety)  |
 
 ### QA Agent
 
-| Task Type | Required Resources |
-|-----------|-------------------|
-| Security review | checklist.md (Security section) |
-| Performance review | checklist.md (Performance section) |
-| Accessibility review | checklist.md (Accessibility section) |
-| Full audit | checklist.md (full) + self-check.md |
+| Task Type        | Required Resources                             |
+| ---------------- | ---------------------------------------------- |
+| Rust Code Audit  | checklist.md (Clippy, fmt, safety)             |
+| Security Review  | checklist.md (OWASP, Dependency audit)         |
+| Performance Test | checklist.md (Criterion benchmarks, load test) |
+| E2E Testing      | checklist.md (Playwright/Tauri driver)         |
 
 ### PM Agent
 
-| Task Type | Required Resources |
-|-----------|-------------------|
-| New project planning | examples.md + task-template.json + api-contracts/template.md |
-| Feature addition planning | examples.md + Serena MCP (understand existing structure) |
-| Refactoring planning | Serena MCP only |
+| Task Type             | Required Resources                                             |
+| --------------------- | -------------------------------------------------------------- |
+| Architecture Planning | resources/architecture-overview.md + api-contracts/template.md |
+| Feature Breakdown     | examples.md (User stories, Acceptance criteria)                |
+| Release Planning      | resources/release-checklist.md                                 |
 
 ---
 

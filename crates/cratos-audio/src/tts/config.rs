@@ -26,10 +26,12 @@ impl Default for ElevenLabsConfig {
 impl ElevenLabsConfig {
     pub fn from_env() -> Result<Self> {
         let api_key = env::var("ELEVENLABS_API_KEY").ok().map(Secret::new);
-        
+
         Ok(Self {
-            model_id: env::var("ELEVENLABS_MODEL_ID").unwrap_or_else(|_| "eleven_multilingual_v2".to_string()),
-            default_voice: env::var("ELEVENLABS_VOICE_ID").unwrap_or_else(|_| "21m00Tcm4TlvDq8ikWAM".to_string()),
+            model_id: env::var("ELEVENLABS_MODEL_ID")
+                .unwrap_or_else(|_| "eleven_multilingual_v2".to_string()),
+            default_voice: env::var("ELEVENLABS_VOICE_ID")
+                .unwrap_or_else(|_| "21m00Tcm4TlvDq8ikWAM".to_string()),
             api_key,
         })
     }

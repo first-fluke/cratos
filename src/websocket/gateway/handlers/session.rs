@@ -66,8 +66,8 @@ mod tests {
     use cratos_core::nodes::NodeRegistry;
     use cratos_core::{Orchestrator, OrchestratorConfig};
     use cratos_tools::ToolRegistry;
-    use sqlx::SqlitePool;
     use sqlx::migrate;
+    use sqlx::SqlitePool;
     use std::sync::Arc;
 
     fn readonly_auth() -> AuthContext {

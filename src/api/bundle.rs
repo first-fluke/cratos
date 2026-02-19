@@ -10,8 +10,8 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
-use utoipa::ToSchema;
 use tracing::error;
+use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
 pub struct BundleMeta {
@@ -44,7 +44,7 @@ pub fn bundle_routes() -> Router {
 async fn get_bundle_meta() -> Result<Json<BundleMeta>, StatusCode> {
     // TODO: Make this path configurable via config
     let path = PathBuf::from("assets/a2ui/bundle.zip");
-    
+
     if !path.exists() {
         error!("Bundle file not found at {:?}", path);
         return Err(StatusCode::NOT_FOUND);
@@ -101,13 +101,18 @@ async fn download_bundle() -> Result<Response, StatusCode> {
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let file = File::open(&path).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let file = File::open(&path)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let stream = tokio_util::io::ReaderStream::new(file);
     let body = Body::from_stream(stream);
 
     Ok(Response::builder()
         .header(header::CONTENT_TYPE, "application/zip")
-        .header(header::CONTENT_DISPOSITION, "attachment; filename=\"bundle.zip\"")
+        .header(
+            header::CONTENT_DISPOSITION,
+            "attachment; filename=\"bundle.zip\"",
+        )
         .body(body)
         .unwrap())
 }
@@ -127,9 +132,9 @@ async fn download_raw_bundle() -> Result<Html<String>, StatusCode> {
     if !path.exists() {
         return Err(StatusCode::NOT_FOUND);
     }
-    
-    let content = tokio::fs::read_to_string(&path).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let content = tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Html(content))
 }
-
-

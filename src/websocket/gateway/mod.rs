@@ -433,8 +433,6 @@ mod tests {
         }
     }
 
-
-
     fn test_a2a_router() -> A2aRouter {
         A2aRouter::new(100)
     }
@@ -463,7 +461,7 @@ mod tests {
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
         // Since NodeRegistry is used in test_handle_message_invalid_json and test_handle_message_ignores_non_request
         // which use test_node_registry(), we need to fix test_node_registry first or pass the pool explicitly there too.
-        // However, test_node_registry is a sync function that returns NodeRegistry, 
+        // However, test_node_registry is a sync function that returns NodeRegistry,
         // but NodeRegistry::new requires a pool which is async to create.
         // So we should remove test_node_registry helper or make it async.
         // But for this specific test, we can just instantiate it.
@@ -473,7 +471,7 @@ mod tests {
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        
+
         // Just verify basic dispatch call (mocking a request)
         let req = GatewayFrame::Request {
             id: "1".to_string(),
@@ -481,10 +479,12 @@ mod tests {
             params: serde_json::json!({}),
         };
         let json = serde_json::to_string(&req).unwrap();
-        if let Some(GatewayFrame::Response{ error: Some(e), .. }) = handle_message(&json, &admin_auth(), &nr, &a2a, &br, &orch, &eb, None).await {
-             assert_eq!(e.code, GatewayErrorCode::UnknownMethod);
+        if let Some(GatewayFrame::Response { error: Some(e), .. }) =
+            handle_message(&json, &admin_auth(), &nr, &a2a, &br, &orch, &eb, None).await
+        {
+            assert_eq!(e.code, GatewayErrorCode::UnknownMethod);
         } else {
-             panic!("Expected error response");
+            panic!("Expected error response");
         }
     }
 
@@ -493,13 +493,15 @@ mod tests {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
         let nr = NodeRegistry::new(pool);
-        
+
         let a2a = test_a2a_router();
         let br = test_browser_relay();
         let orch = test_orchestrator();
         let eb = test_event_bus();
-        
-        if let Some(GatewayFrame::Response { error: Some(e), .. }) = handle_message("not json", &admin_auth(), &nr, &a2a, &br, &orch, &eb, None).await {
+
+        if let Some(GatewayFrame::Response { error: Some(e), .. }) =
+            handle_message("not json", &admin_auth(), &nr, &a2a, &br, &orch, &eb, None).await
+        {
             assert_eq!(e.code, GatewayErrorCode::InvalidParams);
         } else {
             panic!("expected error");

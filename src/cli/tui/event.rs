@@ -1,10 +1,7 @@
 //! Crossterm event handling for the TUI
 
 use anyhow::Result;
-use crossterm::event::{
-    self, Event, KeyCode, KeyEvent, KeyModifiers,
-    MouseEvent, MouseEventKind,
-};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use crossterm::execute;
 use std::time::Duration;
 
@@ -67,10 +64,10 @@ fn handle_insert_mode(app: &mut App, key: KeyEvent) {
 
         // ── History Navigation (Optional in Insert, but useful) ──
         (_, KeyCode::Up) if app.is_input_empty() => {
-             // If empty, standard Up behavior (history?)
-             if app.has_history() {
-                 app.history_up();
-             }
+            // If empty, standard Up behavior (history?)
+            if app.has_history() {
+                app.history_up();
+            }
         }
         (_, KeyCode::Down) if app.is_input_empty() => {
             app.history_down();
@@ -109,16 +106,16 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         (_, KeyCode::Char('i')) | (_, KeyCode::Enter) => {
             app.set_mode(AppMode::Insert);
         }
-        
+
         // ── Sidebar Toggle ──
         (_, KeyCode::Tab) => {
             app.toggle_sidebar();
-             // If opening sidebar, focus it (optional, currently toggle logic handles focus reset)
-             if app.ui_state.show_sidebar {
-                 app.ui_state.focus = Focus::Sidebar;
-             } else {
-                 app.ui_state.focus = Focus::Chat;
-             }
+            // If opening sidebar, focus it (optional, currently toggle logic handles focus reset)
+            if app.ui_state.show_sidebar {
+                app.ui_state.focus = Focus::Sidebar;
+            } else {
+                app.ui_state.focus = Focus::Chat;
+            }
         }
 
         // ── Vim Navigation ──
@@ -129,47 +126,47 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             app.scroll_up();
         }
         (_, KeyCode::Char('G')) | (KeyModifiers::SHIFT, KeyCode::Char('g')) => {
-             // Scroll to bottom (G)
-             app.scroll_to_bottom();
+            // Scroll to bottom (G)
+            app.scroll_to_bottom();
         }
         (_, KeyCode::Char('g')) => {
             // Simple 'g' for top (vim is gg)
-             app.ui_state.scroll_offset = usize::MAX; 
+            app.ui_state.scroll_offset = usize::MAX;
         }
-        
+
         // Emulate 'gg' via Home for now, or just mapping 'g' to top if modifier not checked carefully
         (_, KeyCode::Home) => {
-             // Scroll to top: we don't have a direct "top" fn yet, but usually offset = huge
-             // We need a way to know max scroll. 
-             // Ui renders and calculates max_scroll. App doesn't know layout height easily.
-             // But we can just set offset to usize::MAX? No, offset is from bottom usually?
-             // In `ui.rs`: `max_scroll - app.ui_state.scroll_offset`. 
-             // If we set `scroll_offset` to `usize::MAX`, it triggers saturating sub.
-             // Let's verify `ui.rs`: 
-             // `let scroll_pos = max_scroll.saturating_sub(app.ui_state.scroll_offset as u16);`
-             // If offset is huge, scroll_pos is 0 (Top).
-             // Wait. `scroll_pos` 0 is TOP?
-             // `paragraph.scroll((scroll_pos, 0))`
-             // Usually 0 is top.
-             // If `max_scroll` is say 100 (lines).
-             // We want bottom view. `scroll_pos` should be max_scroll?
-             // If `offset` is 0 (default): `scroll_pos` = `max_scroll`. -> Scrolled to bottom?
-             // Ratatui Paragraph scroll is `(offset_y, offset_x)`. 0 means top line.
-             // So if we want bottom, we need `offset_y` to be `total_lines - height`.
-             
-             // App `scroll_offset`: 0 = "Show Bottom". 
-             // `ui.rs` logic: `max_scroll - scroll_offset`.
-             // If offset = 0, we render from `max_scroll` line?
-             // Let's check `ui.rs` again logic.
-             // `let max_scroll = total_wrapped.saturating_sub(inner.height);`
-             // `let scroll_pos = max_scroll.saturating_sub(app.ui_state.scroll_offset as u16);`
-             // If offset=0 -> `scroll_pos = max_scroll`. Paragraph scroll set to `max_scroll`. -> Bottom. Correct.
-             // To scroll to TOP (`scroll_pos = 0`), we need `scroll_offset = max_scroll`.
-             // Since we don't know `max_scroll` in `App`, we can just ensure `scroll_offset` is large enough.
-             app.ui_state.scroll_offset = usize::MAX; 
+            // Scroll to top: we don't have a direct "top" fn yet, but usually offset = huge
+            // We need a way to know max scroll.
+            // Ui renders and calculates max_scroll. App doesn't know layout height easily.
+            // But we can just set offset to usize::MAX? No, offset is from bottom usually?
+            // In `ui.rs`: `max_scroll - app.ui_state.scroll_offset`.
+            // If we set `scroll_offset` to `usize::MAX`, it triggers saturating sub.
+            // Let's verify `ui.rs`:
+            // `let scroll_pos = max_scroll.saturating_sub(app.ui_state.scroll_offset as u16);`
+            // If offset is huge, scroll_pos is 0 (Top).
+            // Wait. `scroll_pos` 0 is TOP?
+            // `paragraph.scroll((scroll_pos, 0))`
+            // Usually 0 is top.
+            // If `max_scroll` is say 100 (lines).
+            // We want bottom view. `scroll_pos` should be max_scroll?
+            // If `offset` is 0 (default): `scroll_pos` = `max_scroll`. -> Scrolled to bottom?
+            // Ratatui Paragraph scroll is `(offset_y, offset_x)`. 0 means top line.
+            // So if we want bottom, we need `offset_y` to be `total_lines - height`.
+
+            // App `scroll_offset`: 0 = "Show Bottom".
+            // `ui.rs` logic: `max_scroll - scroll_offset`.
+            // If offset = 0, we render from `max_scroll` line?
+            // Let's check `ui.rs` again logic.
+            // `let max_scroll = total_wrapped.saturating_sub(inner.height);`
+            // `let scroll_pos = max_scroll.saturating_sub(app.ui_state.scroll_offset as u16);`
+            // If offset=0 -> `scroll_pos = max_scroll`. Paragraph scroll set to `max_scroll`. -> Bottom. Correct.
+            // To scroll to TOP (`scroll_pos = 0`), we need `scroll_offset = max_scroll`.
+            // Since we don't know `max_scroll` in `App`, we can just ensure `scroll_offset` is large enough.
+            app.ui_state.scroll_offset = usize::MAX;
         }
         (_, KeyCode::End) => {
-             app.scroll_to_bottom();
+            app.scroll_to_bottom();
         }
 
         (_, KeyCode::PageUp) | (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
@@ -182,7 +179,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 app.scroll_down();
             }
         }
-        
+
         // ── Screen / UI ────────────────────────────────────────
         (KeyModifiers::CONTROL, KeyCode::Char('l')) => {
             app.messages.clear();
@@ -222,8 +219,8 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) {
             }
         }
         MouseEventKind::Down(_) => {
-             // Basic click to focus not fully implemented with regions, 
-             // but could check coordinates. For now, click anywhere likely captures mouse.
+            // Basic click to focus not fully implemented with regions,
+            // but could check coordinates. For now, click anywhere likely captures mouse.
         }
         _ => {}
     }

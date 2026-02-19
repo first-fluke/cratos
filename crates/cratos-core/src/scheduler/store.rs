@@ -7,9 +7,7 @@ use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::path::Path;
 use uuid::Uuid;
 
-use super::types::{
-    ExecutionRow, Result, ScheduledTask, SchedulerError, TaskExecution, TaskRow,
-};
+use super::types::{ExecutionRow, Result, ScheduledTask, SchedulerError, TaskExecution, TaskRow};
 
 /// SQLite-based scheduler store
 pub struct SchedulerStore {

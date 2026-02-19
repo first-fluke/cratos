@@ -5,9 +5,15 @@ description: Thorough version of coordinate - high-quality development workflow 
 # MANDATORY RULES — VIOLATION IS FORBIDDEN
 
 - **Response language follows `language` setting in `.agent/config/user-preferences.yaml` if configured.**
-- **NEVER skip steps.** Execute all review steps in order. Report completion of each step to user.
-- **You MUST use MCP tools throughout the entire workflow.**
-- **Follow multi-review protocol.** See `_shared/multi-review-protocol.md`.
+- **NEVER skip steps.** Execute from Step 0 in order. Explicitly report completion of each step to the user before proceeding to the next.
+- **You MUST use MCP tools throughout the entire workflow.** This is NOT optional.
+  - Use code analysis tools (`get_symbols_overview`, `find_symbol`, `find_referencing_symbols`, `search_for_pattern`) for code exploration.
+  - Use memory tools (read/write/edit) for progress tracking.
+  - Memory path: configurable via `memoryConfig.basePath` (default: `.serena/memories`)
+  - Tool names: configurable via `memoryConfig.tools` in `mcp.json`
+  - Do NOT use raw file reads or grep as substitutes. MCP tools are the primary interface for code and memory operations.
+- **Read the workflow-guide BEFORE starting.** Read `.agent/skills/workflow-guide/SKILL.md` and follow its Core Rules.
+- **Follow the context-loading guide.** Read `.agent/skills/_shared/context-loading.md` and load only task-relevant resources.
 
 ---
 
@@ -154,14 +160,24 @@ Command: `oh-my-ag agent:spawn qa-agent "Execute Phase 5 Ship. Step 14: Quality 
 
 ---
 
+## Phase 6: CLEANUP (Steps 18)
+
+### Step 18: Cleanup Memories
+Manually (or via script) remove temporary memory files to keep the workspace clean.
+- **Keep**: `session-*.md`, `result-*.md`, `.agent/plan.json`
+- **Delete**: `progress-*.md`
+
+---
+
 ## Review Steps Summary (Delegated)
 
-| Phase  | Steps | Agent       | Perspective                       |
-| ------ | ----- | ----------- | --------------------------------- |
-| PLAN   | 1-4   | PM Agent    | Completeness, Meta, Simplicity    |
-| IMPL   | 5     | Dev Agents  | Implementation                    |
-| VERIFY | 6-8   | QA Agent    | Alignment, Safety, Regression     |
-| REFINE | 9-13  | Debug Agent | Reusability, Cascade, Consistency |
-| SHIP   | 14-17 | QA Agent    | Quality, UX, Cascade 2nd, Deploy  |
+| Phase   | Steps | Agent       | Perspective                       |
+| ------- | ----- | ----------- | --------------------------------- |
+| PLAN    | 1-4   | PM Agent    | Completeness, Meta, Simplicity    |
+| IMPL    | 5     | Dev Agents  | Implementation                    |
+| VERIFY  | 6-8   | QA Agent    | Alignment, Safety, Regression     |
+| REFINE  | 9-13  | Debug Agent | Reusability, Cascade, Consistency |
+| SHIP    | 14-17 | QA Agent    | Quality, UX, Cascade 2nd, Deploy  |
+| CLEANUP | 18    | Coordinator | Workspace Hygiene                 |
 
-**Total 11 review steps → High quality guaranteed (via Agent Delegation)**
+**Total 11 review steps + Cleanup → High quality guaranteed (via Agent Delegation)**

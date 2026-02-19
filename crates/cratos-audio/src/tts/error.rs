@@ -1,5 +1,5 @@
-use thiserror::Error;
 use std::time::Duration;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum TtsError {
@@ -7,7 +7,10 @@ pub enum TtsError {
     ApiError { status: u16, message: String },
 
     #[error("Rate limit exceeded: {limit_type} (retry after {retry_after:?})")]
-    RateLimitExceeded { limit_type: String, retry_after: Option<Duration> },
+    RateLimitExceeded {
+        limit_type: String,
+        retry_after: Option<Duration>,
+    },
 
     #[error("Text too long: {0} chars (max: {1})")]
     TextTooLong(usize, usize),
@@ -35,7 +38,7 @@ pub enum TtsError {
 
     #[error("Parse integer error")]
     ParseIntError(#[from] std::num::ParseIntError),
-    
+
     #[error("Credentials error: {0}")]
     CredentialsError(String),
     #[error("Edge TTS error: {0}")]

@@ -1,50 +1,32 @@
 # QA Agent - Execution Protocol
 
 ## Step 0: Prepare
-1. **Assess difficulty** — see `../_shared/difficulty-guide.md`
-   - **Simple**: Quick security + quality check | **Medium**: Full 4 steps | **Complex**: Full + prioritized scope
-2. **Check lessons** — read QA section in `../_shared/lessons-learned.md`
-3. **Clarify requirements** — follow `../_shared/clarification-protocol.md`
-   - Check **Uncertainty Triggers**: security/auth concerns, existing code conflict potential?
-   - Determine level: LOW → proceed | MEDIUM → present options | HIGH → ask immediately
-4. **Budget context** — follow `../_shared/context-budget.md` (prioritize high-risk files)
-5. **After review**: add recurring issues to `../_shared/lessons-learned.md`
+1. **Load Protocols**:
+   - `../_shared/multi-review-protocol.md`
+   - `../_shared/quality-principles.md`
+   - `../_shared/phase-gates.md`
+   - `../_shared/memory-protocol.md` (CLI mode)
+2. **Context**: Understand scope (Backend vs Frontend vs All).
+3. **Memory**: Create `session-qa-{id}.md` (if leading).
 
-**⚠️ Intelligent Escalation**: When uncertain, escalate early. Don't blindly proceed.
+## Step 1: Analyze
+- Read implementation plan.
+- Identify critical paths and security risks.
 
-Follow these steps in order (adjust depth by difficulty).
+## Step 2: Plan Verification
+- Select appropriate tools (`cargo test`, `npm test`, `owasp-zap`, etc.).
+- Define acceptance criteria.
 
-## Step 1: Scope
-- Identify what to review: new feature, full audit, or specific concern
-- List all files/modules to inspect
-- Determine review depth: quick check vs. comprehensive audit
-- Use Serena to map the codebase:
-  - `get_symbols_overview("src/")`: Understand structure
-  - `search_for_pattern("password.*=.*[\"']")`: Find hardcoded secrets
-  - `search_for_pattern("execute.*\\$\\{")`: Find SQL injection
-  - `search_for_pattern("innerHTML")`: Find XSS vulnerabilities
+## Step 3: Execute Verification
+1. **Automated Tests**: Run unit/integration tests.
+2. **Security Audit**: Run `cargo audit` / `npm audit`.
+3. **Code Quality**: Run `clippy` / `eslint`.
+4. **Manual Review**: Check logic against requirements.
 
-## Step 2: Audit
-Review in this priority order:
-1. **Security** (CRITICAL): OWASP Top 10, auth, injection, data protection
-2. **Performance**: API latency, N+1 queries, bundle size, Core Web Vitals
-3. **Accessibility**: WCAG 2.1 AA, keyboard nav, screen reader, contrast
-4. **Code Quality**: test coverage, complexity, architecture adherence
-
-Use `resources/checklist.md` (renamed qa-checklist) as the comprehensive review guide.
-
-## Step 3: Report
-Generate structured report with:
-- Overall status: PASS / WARNING / FAIL
-- Findings grouped by severity (CRITICAL > HIGH > MEDIUM > LOW)
-- Each finding: file:line, description, remediation code
-- Performance metrics vs. targets
-
-## Step 4: Verify
-- Run `resources/self-check.md` to verify your own review quality
-- Ensure no false positives (each finding is real and reproducible)
-- Confirm remediation suggestions are correct and complete
-- Run `../_shared/common-checklist.md` for general quality
+## Step 4: Report
+- Document findings in `result-{id}.md`.
+- Classify issues (CRITICAL, HIGH, MEDIUM, LOW).
+- **Pass/Fail Recommendation**.
 
 ## On Error
-See `resources/error-playbook.md` for recovery steps.
+See `resources/error-playbook.md`.

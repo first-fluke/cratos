@@ -1,39 +1,30 @@
 # Backend Agent - Tech Stack Reference
 
-## Python (Preferred)
-- **Framework**: FastAPI 0.110+
-- **ORM**: SQLAlchemy 2.0 (async)
-- **Validation**: Pydantic v2
-- **Database**: PostgreSQL 16+, Redis 7+
-- **Auth**: python-jose (JWT), passlib (bcrypt)
-- **Testing**: pytest, httpx (async test client)
-- **Migrations**: Alembic
+## Core Stack (Rust)
+- **Framework**: Axum 0.7+
+- **Runtime**: Tokio 1.0+ (Full features)
+- **Database**: SQLx 0.7+ (PostgreSQL/SQLite, compile-time checked)
+- **Serialization**: Serde, Serde JSON
+- **Error Handling**: `thiserror` (lib), `anyhow` (app/cli)
+- **Logging**: Tracing, Tracing Subscriber
 
-## Node.js (Alternative)
-- **Framework**: Express.js, NestJS, Hono
-- **ORM**: Prisma, Drizzle
-- **Validation**: Zod
-- **Auth**: jsonwebtoken, bcrypt
-- **Testing**: Jest, Supertest
+## Architecture (Cratos Core)
+- **Crate**: `crates/cratos-core`
+- **API Layer**: `src/api` (Handlers, Extractors, Middleware)
+- **Domain Layer**: `src/domain` (Business Logic, Pure Rust Types)
+- **Infra Layer**: `src/infra` (Database, External Services)
 
-## Architecture
+## Security
+- **Auth**: Axum Middleware + JWT/Argobap
+- **Password**: Argon2 (via `argon2` crate)
+- **Validation**: `validator` crate (struct validation)
 
-```
-backend/
-  domain/           # Business logic (pure Python, no framework deps)
-  application/      # Use cases, services
-  infrastructure/   # Database, cache, external APIs
-  presentation/     # API endpoints, middleware
-```
+## Testing
+- **Unit**: `cargo test` (standard lib)
+- **Integration**: `tower::Service` testing, `sqlx::test`
 
-## Security Requirements
-- Password hashing: bcrypt (cost factor 10-12)
-- JWT: 15min access tokens, 7 day refresh tokens
-- Rate limiting on auth endpoints
-- Input validation with Pydantic/Zod
-- Parameterized queries (never string interpolation)
-
-## Serena MCP Shortcuts
-- `find_symbol("create_todo")`: Locate existing function
-- `get_symbols_overview("app/api")`: List all endpoints
-- `find_referencing_symbols("User")`: Find all usages of a model
+## Notable Crates
+- `shuttle-runtime` (if applicable)
+- `uuid` (v4, serde support)
+- `chrono` or `time` (serde support)
+- `reqwest` (HTTP Client)

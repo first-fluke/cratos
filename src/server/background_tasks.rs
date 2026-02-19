@@ -3,7 +3,9 @@
 //! Contains functions to start scheduler, skill generation, and cleanup tasks.
 
 use super::config::AppConfig;
-use cratos_core::{EventBus, Orchestrator, SchedulerConfig, SchedulerEngine, SchedulerStore, ShutdownController};
+use cratos_core::{
+    EventBus, Orchestrator, SchedulerConfig, SchedulerEngine, SchedulerStore, ShutdownController,
+};
 use cratos_replay::EventStore;
 use cratos_skills::{SkillRegistry, SkillStore};
 use std::path::Path;
@@ -34,15 +36,16 @@ pub async fn start_scheduler(
             // Build real executor using orchestrator and event bus
             let sched_orch = orchestrator.clone();
             let sched_event_bus = event_bus.clone();
-            let task_executor: cratos_core::scheduler::TaskExecutor = Arc::new(
-                move |action: cratos_core::scheduler::TaskAction| {
+            let security_config = config.security.clone();
+            let task_executor: cratos_core::scheduler::TaskExecutor =
+                Arc::new(move |action: cratos_core::scheduler::TaskAction| {
                     let orch = sched_orch.clone();
                     let eb = sched_event_bus.clone();
+                    let sec = security_config.clone();
                     Box::pin(async move {
-                        crate::server::task_handler::execute_task(action, orch, eb).await
+                        crate::server::task_handler::execute_task(action, orch, eb, sec).await
                     })
-                },
-            );
+                });
 
             let scheduler_engine = Arc::new(
                 SchedulerEngine::new(Arc::new(scheduler_store), scheduler_config)

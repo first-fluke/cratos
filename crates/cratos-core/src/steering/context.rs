@@ -48,9 +48,7 @@ impl SteeringContext {
                 *self.state.write().await = SteerState::Aborted;
                 Ok(SteerDecision::Abort(reason))
             }
-            Ok(SteerMessage::SkipTool { tool_call_id }) => {
-                Ok(SteerDecision::Skip(tool_call_id))
-            }
+            Ok(SteerMessage::SkipTool { tool_call_id }) => Ok(SteerDecision::Skip(tool_call_id)),
             Ok(SteerMessage::UserText { content, .. }) => {
                 *self.state.write().await = SteerState::Pending(SteerMessage::UserText {
                     content,

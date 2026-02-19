@@ -12,9 +12,9 @@ use cratos_core::{
     nodes::NodeRegistry,
     Orchestrator,
 };
+use sqlx::SqlitePool;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use sqlx::SqlitePool;
 
 use tracing::{debug, info, warn};
 

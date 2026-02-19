@@ -184,8 +184,8 @@ mod tests {
     use cratos_core::nodes::NodeRegistry;
     use cratos_core::{Orchestrator, OrchestratorConfig};
     use cratos_tools::ToolRegistry;
-    use std::sync::Arc;
     use sqlx::SqlitePool;
+    use std::sync::Arc;
 
     fn admin_auth() -> AuthContext {
         AuthContext {
@@ -236,17 +236,17 @@ mod tests {
     }
 
     fn generate_node_creds() -> (String, String, String) {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
         use ed25519_dalek::{Signer, SigningKey};
-        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
         use rand::rngs::OsRng;
 
         let mut csprng = OsRng;
         let signing_key = SigningKey::generate(&mut csprng);
         let verifying_key = signing_key.verifying_key();
-        
+
         let challenge = "test-challenge";
         let signature = signing_key.sign(challenge.as_bytes());
-        
+
         let pub_b64 = URL_SAFE_NO_PAD.encode(verifying_key.as_bytes());
         let sig_b64 = URL_SAFE_NO_PAD.encode(signature.to_bytes());
 
@@ -387,7 +387,7 @@ mod tests {
                 // Let's capture the reg output first to debug if needed.
                 assert!(!nodes.is_empty(), "Expected at least one node in list");
             }
-             GatewayFrame::Response { error: Some(e), .. } => {
+            GatewayFrame::Response { error: Some(e), .. } => {
                 panic!("failed to list nodes: {:?}", e);
             }
             _ => panic!("expected ok response"),
@@ -436,7 +436,7 @@ mod tests {
             GatewayFrame::Response {
                 result: Some(v), ..
             } => v["node_id"].as_str().unwrap().to_string(),
-             GatewayFrame::Response { error: Some(e), .. } => {
+            GatewayFrame::Response { error: Some(e), .. } => {
                 panic!("failed to register node: {:?}", e);
             }
             _ => panic!("expected ok"),
@@ -467,9 +467,11 @@ mod tests {
                 // Policy denied should return Forbidden
                 assert_eq!(e.code, GatewayErrorCode::Forbidden);
             }
-             GatewayFrame::Response { result: Some(v), .. } => {
-                 panic!("Expected policy error but got success: {:?}", v);
-             }
+            GatewayFrame::Response {
+                result: Some(v), ..
+            } => {
+                panic!("Expected policy error but got success: {:?}", v);
+            }
             _ => panic!("expected policy error"),
         }
     }

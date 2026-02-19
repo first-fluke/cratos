@@ -28,8 +28,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
     draw_status_bar(frame, app, outer[0]);
     draw_body(frame, app, outer[1]);
-    
-    // Only draw suggestions if we have them, otherwise reuse space? 
+
+    // Only draw suggestions if we have them, otherwise reuse space?
     // Layout constraints are fixed, so we just draw blank if empty.
     draw_suggestions(frame, app, outer[2]);
     draw_input(frame, app, outer[3]);
@@ -39,9 +39,18 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
 fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode_span = match app.ui_state.mode {
-        AppMode::Normal => Span::styled(" NORMAL ", Style::default().bg(Color::Blue).fg(Color::Black).bold()),
-        AppMode::Insert => Span::styled(" INSERT ", Style::default().bg(Color::Green).fg(Color::Black).bold()),
-        AppMode::Command => Span::styled(" COMMAND ", Style::default().bg(Color::Yellow).fg(Color::Black).bold()),
+        AppMode::Normal => Span::styled(
+            " NORMAL ",
+            Style::default().bg(Color::Blue).fg(Color::Black).bold(),
+        ),
+        AppMode::Insert => Span::styled(
+            " INSERT ",
+            Style::default().bg(Color::Green).fg(Color::Black).bold(),
+        ),
+        AppMode::Command => Span::styled(
+            " COMMAND ",
+            Style::default().bg(Color::Yellow).fg(Color::Black).bold(),
+        ),
     };
 
     let version = env!("CARGO_PKG_VERSION");
@@ -52,7 +61,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         "[F2: Mouse Off]"
     };
-    
+
     let info_text = format!(
         " Cratos \u{00b7} {} \u{00b7} {} v{} {}",
         persona_display, app.provider_name, version, mouse_mode,
@@ -75,10 +84,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let right = right_parts.join(" \u{00b7} ");
 
     // Layout components
-    let mut spans = vec![
-        mode_span,
-        Span::raw(info_text),
-    ];
+    let mut spans = vec![mode_span, Span::raw(info_text)];
 
     // Align center/right is manual in standard Paragraph, but let's try just spacing
     // Getting area width to calculate padding
@@ -89,22 +95,30 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     let total_used = current_len + center_len + right_len;
     let remaining = width.saturating_sub(total_used);
-    
+
     // Distribute remaining space roughly equally
     let left_spacer = remaining / 2;
     let right_spacer = remaining.saturating_sub(left_spacer);
 
-    if left_spacer > 0 { spans.push(Span::raw(" ".repeat(left_spacer))); }
-    if !center.is_empty() {
-        spans.push(Span::styled(center, Style::default().fg(Color::Yellow).bold()));
+    if left_spacer > 0 {
+        spans.push(Span::raw(" ".repeat(left_spacer)));
     }
-    if right_spacer > 0 { spans.push(Span::raw(" ".repeat(right_spacer))); }
+    if !center.is_empty() {
+        spans.push(Span::styled(
+            center,
+            Style::default().fg(Color::Yellow).bold(),
+        ));
+    }
+    if right_spacer > 0 {
+        spans.push(Span::raw(" ".repeat(right_spacer)));
+    }
     if !right.is_empty() {
         spans.push(Span::styled(right, Style::default().fg(Color::Cyan)));
     }
 
     let line = Line::from(spans);
-    let p = Paragraph::new(line).style(Style::default().bg(Color::Rgb(20, 20, 20)).fg(Color::White));
+    let p =
+        Paragraph::new(line).style(Style::default().bg(Color::Rgb(20, 20, 20)).fg(Color::White));
     frame.render_widget(p, area);
 }
 
@@ -150,7 +164,10 @@ fn draw_chat(frame: &mut Frame, app: &mut App, area: Rect) {
         let (role_style, role_name) = match msg.role {
             Role::User => (Style::default().bold(), "You".to_string()),
             Role::Assistant => (Style::default().fg(Color::Cyan).bold(), msg.sender.clone()),
-            Role::System => (Style::default().fg(Color::Magenta).italic(), msg.sender.clone()),
+            Role::System => (
+                Style::default().fg(Color::Magenta).italic(),
+                msg.sender.clone(),
+            ),
         };
 
         let ts = msg.timestamp;
@@ -158,7 +175,10 @@ fn draw_chat(frame: &mut Frame, app: &mut App, area: Rect) {
 
         // Header: [12:30] Role
         all_lines.push(Line::from(vec![
-            Span::styled(format!("[{}] ", time_str), Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("[{}] ", time_str),
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::styled(role_name, role_style),
         ]));
 
@@ -190,8 +210,14 @@ fn draw_chat(frame: &mut Frame, app: &mut App, area: Rect) {
     if app.ui_state.is_loading {
         let dots = SPINNER_FRAMES[app.ui_state.loading_tick % SPINNER_FRAMES.len()];
         all_lines.push(Line::from(vec![
-            Span::styled(format!("{} ", app.persona), Style::default().fg(Color::Magenta).bold()),
-            Span::styled(format!("Thinking{}", dots), Style::default().fg(Color::DarkGray).italic()),
+            Span::styled(
+                format!("{} ", app.persona),
+                Style::default().fg(Color::Magenta).bold(),
+            ),
+            Span::styled(
+                format!("Thinking{}", dots),
+                Style::default().fg(Color::DarkGray).italic(),
+            ),
         ]));
     }
 
@@ -202,7 +228,7 @@ fn draw_chat(frame: &mut Frame, app: &mut App, area: Rect) {
     let total_lines = paragraph.line_count(inner.width) as u16;
     let view_height = inner.height;
     let max_scroll = total_lines.saturating_sub(view_height);
-    
+
     // If scroll_offset is huge (from bottom/end key), clamp it
     let scroll_pos = if app.ui_state.scroll_offset > max_scroll as usize {
         0
@@ -238,20 +264,26 @@ fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
         .title(" Sidebar ")
         .borders(Borders::ALL)
         .border_style(focus_style);
-    
+
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     // Reuse existing sidebar content logic roughly, but simpler layout
     // ...
     // Actually let's just render the quota info directly
-    
+
     let mut lines = Vec::new();
-    lines.push(Line::from(Span::styled("Persona:", Style::default().fg(Color::Cyan).bold())));
+    lines.push(Line::from(Span::styled(
+        "Persona:",
+        Style::default().fg(Color::Cyan).bold(),
+    )));
     lines.push(Line::from(format!("  {}", capitalize(&app.persona))));
     lines.push(Line::raw(""));
 
-    lines.push(Line::from(Span::styled("Commands:", Style::default().fg(Color::Green).bold())));
+    lines.push(Line::from(Span::styled(
+        "Commands:",
+        Style::default().fg(Color::Green).bold(),
+    )));
     lines.push(Line::from("  /help   - Show help"));
     lines.push(Line::from("  /clear  - Clear chat"));
     lines.push(Line::from("  /quit   - Exit"));
@@ -259,7 +291,10 @@ fn draw_sidebar(frame: &mut Frame, app: &App, area: Rect) {
     lines.push(Line::from("  i       - Insert Mode"));
     lines.push(Line::raw(""));
 
-    lines.push(Line::from(Span::styled("Quotas:", Style::default().fg(Color::Yellow).bold())));
+    lines.push(Line::from(Span::styled(
+        "Quotas:",
+        Style::default().fg(Color::Yellow).bold(),
+    )));
     if app.provider_quotas.is_empty() {
         lines.push(Line::from("  (awaiting data)"));
     } else {
@@ -305,9 +340,7 @@ fn draw_suggestions(frame: &mut Frame, app: &App, area: Rect) {
     for suggest in &app.ui_state.suggestions {
         spans.push(Span::styled(
             format!("/{} ", suggest),
-            Style::default()
-                .fg(Color::Yellow)
-                .bold(),
+            Style::default().fg(Color::Yellow).bold(),
         ));
     }
 
@@ -336,10 +369,10 @@ fn draw_input(frame: &mut Frame, app: &App, area: Rect) {
 
     let mut textarea = app.textarea.clone();
     textarea.set_block(block);
-    
+
     if app.ui_state.mode != AppMode::Insert {
-        textarea.set_cursor_style(Style::default().fg(Color::Reset)); 
-    } 
+        textarea.set_cursor_style(Style::default().fg(Color::Reset));
+    }
 
     frame.render_widget(&textarea, area);
 }

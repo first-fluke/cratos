@@ -6,15 +6,15 @@ use axum::{
     extract::Query,
     response::{Html, IntoResponse, Response},
     routing::get,
-    Router, Json,
+    Json, Router,
 };
 use cratos_llm::{
     oauth::{self, PkcePair},
     oauth_config,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Mutex};
 use std::sync::LazyLock;
+use std::{collections::HashMap, sync::Mutex};
 
 // -----------------------------------------------------------------------------
 // State
@@ -72,7 +72,9 @@ struct AuthStatusResponse {
 
 /// Check Google OAuth authentication status
 async fn status_google() -> Json<AuthStatusResponse> {
-    use cratos_llm::cli_auth::{check_cratos_google_pro_oauth_status, check_cratos_google_oauth_status, CratosOAuthStatus};
+    use cratos_llm::cli_auth::{
+        check_cratos_google_oauth_status, check_cratos_google_pro_oauth_status, CratosOAuthStatus,
+    };
 
     let pro_status = check_cratos_google_pro_oauth_status();
     let (status, is_pro) = match pro_status {
@@ -107,10 +109,13 @@ async fn login_google(Query(params): Query<LoginParams>) -> Response {
     // 3. Store PKCE pair mapped by state
     {
         let mut store = PENDING_AUTH.lock().expect("failed to lock pending auth");
-        store.insert(state.clone(), PendingAuth {
-            pkce: pkce.clone(),
-            is_pro: params.pro,
-        });
+        store.insert(
+            state.clone(),
+            PendingAuth {
+                pkce: pkce.clone(),
+                is_pro: params.pro,
+            },
+        );
     }
 
     // 4. Build Redirect URI
@@ -123,7 +128,8 @@ async fn login_google(Query(params): Query<LoginParams>) -> Response {
 
     // 6. Redirect user (Client-side to avoid proxy following 303)
     let safe_url = url.replace("\"", "&quot;");
-    Html(format!(r#"<!DOCTYPE html>
+    Html(format!(
+        r#"<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -134,14 +140,20 @@ async fn login_google(Query(params): Query<LoginParams>) -> Response {
     <p>Redirecting to Google...</p>
     <script>window.location.href = "{}";</script>
 </body>
-</html>"#, safe_url, url)).into_response()
+</html>"#,
+        safe_url, url
+    ))
+    .into_response()
 }
 
 /// Handle Google OAuth callback
 async fn callback_google(Query(params): Query<CallbackParams>) -> Response {
     if let Some(error) = params.error {
-        return Html(format!("<h1>Authentication Failed</h1><p>Error: {}</p>", error))
-            .into_response();
+        return Html(format!(
+            "<h1>Authentication Failed</h1><p>Error: {}</p>",
+            error
+        ))
+        .into_response();
     }
 
     // 1. Retrieve and remove PendingAuth
@@ -180,11 +192,15 @@ async fn callback_google(Query(params): Query<CallbackParams>) -> Response {
             // Logic handled by oauth::exchange_code? No, that returns OAuthTokens.
             // We need to save manually using config.token_file.
             if let Err(e) = oauth::save_tokens(&config.token_file, &tokens) {
-                return Html(format!("<h1>Token Error</h1><p>Failed to save tokens: {}</p>", e))
-                    .into_response();
+                return Html(format!(
+                    "<h1>Token Error</h1><p>Failed to save tokens: {}</p>",
+                    e
+                ))
+                .into_response();
             }
 
-            Html(r#"
+            Html(
+                r#"
                 <html>
                 <head><title>Authentication Successful</title></head>
                 <body style="font-family: system-ui; text-align: center; padding: 2rem;">
@@ -193,11 +209,14 @@ async fn callback_google(Query(params): Query<CallbackParams>) -> Response {
                     <p>You can close this window now.</p>
                 </body>
                 </html>
-            "#).into_response()
+            "#,
+            )
+            .into_response()
         }
-        Err(e) => {
-            Html(format!("<h1>Exchange Error</h1><p>Failed to exchange code: {}</p>", e))
-                .into_response()
-        }
+        Err(e) => Html(format!(
+            "<h1>Exchange Error</h1><p>Failed to exchange code: {}</p>",
+            e
+        ))
+        .into_response(),
     }
 }

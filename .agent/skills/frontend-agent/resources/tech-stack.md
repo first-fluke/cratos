@@ -1,36 +1,26 @@
 # Frontend Agent - Tech Stack Reference
 
 ## Core Stack
-- **Framework**: Next.js 14+ (App Router), React 18+
-- **Language**: TypeScript (strict mode)
-- **Styling**: Tailwind CSS 3+ (NO inline styles)
-- **Components**: shadcn/ui, Radix UI
-- **State**: React Context, Zustand, or Redux Toolkit
-- **Forms**: React Hook Form + Zod
-- **API Client**: TanStack Query
-- **Testing**: Vitest, React Testing Library, Playwright
+- **Framework**: Next.js 16+ (App Router)
+- **Library**: React 19+
+- **Language**: TypeScript 5.0+
+- **Desktop**: Tauri 2.0+
 
-## Code Standards
-- Explicit TypeScript interfaces for props
-- Tailwind classes only (no inline styles)
-- Semantic HTML with ARIA labels
-- Keyboard navigation support
+## UI & Styling
+- **Styling**: Tailwind CSS v4
+- **Components**: shadcn/ui (Radix UI based)
+- **Icons**: Lucide React
+- **Animation**: Framer Motion (optional)
 
-## Project Structure
+## State Management
+- **Server/IPC State**: TanStack Query v5 (React Query)
+- **Client State**: Zustand (Global), React Context (Scoped)
+- **URL State**: Nuqs (Type-safe search params)
 
-```
-src/
-  app/           # Next.js App Router pages
-  components/
-    ui/          # Reusable primitives (button, card)
-    [feature]/   # Feature components
-  lib/
-    api/         # API clients (TanStack Query hooks)
-    hooks/       # Custom hooks
-  types/         # TypeScript types
-```
+## Data Fetching / IPC
+- **Tauri**: `@tauri-apps/api`, `@tauri-apps/plugin-*`
+- **HTTP**: Axios or Fetch (for external APIs not via Rust)
 
-## Serena MCP Shortcuts
-- `find_symbol("ComponentName")`: Locate existing component
-- `get_symbols_overview("src/components")`: List all components
-- `find_referencing_symbols("Button")`: Find usages before changes
+## Testing
+- **Unit**: Vitest + React Testing Library
+- **E2E**: Playwright (if applicable)
