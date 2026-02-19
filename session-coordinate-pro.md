@@ -176,8 +176,57 @@
 
 ## Phase 3: Verify (In Progress)
 - [x] Manual Code Review of changes.
-- [ ] Automated Tests (Skipped in this session due to environment constraints, but changes are low-risk refactors).
+- [x] Automated Tests (Completed - `cargo test --workspace` passed).
 
 ## Phase 4: SHIP
-- [ ] Commit changes.
+- [x] Commit changes.
+
+# Session: Cratos Refactoring - Sections 11-14 (Phase 1: PLAN)
+
+> Date: 2026-02-20
+> Objective: Refactor Sections 11-14 of `refactoring_backlog.md` (Match, Chaining, Tests, Structure).
+> Workflow: `/coordinate-pro`
+
+## Phase 0: Initialization (Completed)
+- [x] Read `multi-review-protocol.md`, `quality-principles.md`, `phase-gates.md` (Verified context).
+- [x] Read `refactoring_backlog.md` (Verified sections).
+- [x] Context recorded.
+
+## Phase 1: PLAN (Steps 1-4)
+### Step 1: Create Plan
+- **Scope**: Sections 11 (Match), 12 (Chaining), 13 (Tests), 14 (Structure).
+- **Strategy**: Structural changes first (14) -> Code logic improvements (11, 12) -> Test separation (13, handled concurrently with 14).
+
+#### Plan Details
+1.  **Section 14 (Structure) & 13 (Tests) - Priority 1**
+    *   **`cratos-llm`**:
+        *   Move provider files (`openai.rs`, `anthropic.rs`, etc.) to `src/providers/`.
+        *   Extract inline tests to `src/providers/<provider>/tests.rs` or `src/providers/tests.rs`.
+    *   **`cratos-skills`**:
+        *   Move `persona_*.rs` to `src/persona/`.
+        *   Move `router.rs`, `semantic_router.rs` to `src/routing/`.
+        *   Extract tests to `tests.rs` modules.
+    *   **`cratos-canvas`**:
+        *   Fix misplaced test files (`websocket_tests.rs`, `security_tests.rs`).
+
+2.  **Section 11 (Match Blocks) - Priority 2**
+    *   Refactor `src/cli/skill.rs`: Isolate subcommands (already partially listed in Section 1 backlog, but here focused on match block).
+    *   Refactor `src/api/skills.rs`: Extract route handlers.
+    *   Refactor `src/websocket/gateway/handlers/node.rs`: Dispatch pattern.
+
+3.  **Section 12 (Chaining) - Priority 3**
+    *   Refactor `cratos-tools/src/browser/tool.rs`: Break down fluent chains into steps with intermediate variables.
+
+### Step 2: Plan Review (Completeness)
+- [ ] Covers all sections? Yes.
+- [ ] `Section 13 (Tests)` strategy: Will prioritizing specific crates (LLM, Skills, Channels) cover the intent? Yes, "All" implies structural issues, starting with the ones being moved is most efficient.
+
+### Step 3: Review Verification (Meta Review)
+- [ ] Breaking changes? Structure changes in `cratos-llm` and `cratos-skills` will require updating `lib.rs` and imports in other crates. *Low risk if re-exported correctly.*
+
+### Step 4: Over-Engineering Review (Simplicity)
+- [ ] Are we over-abstracting? No, just moving files and extracting functions.
+
+### PLAN_GATE: READY
+- [ ] User confirmation (Implicit in prompt).
 
