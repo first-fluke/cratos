@@ -1,2 +1,10 @@
 [tools]
 rust = "1.93"
+
+[tasks.dev]
+run = "cargo run -- serve"
+description = "Start the Cratos server in development mode"
+
+[tasks.build]
+run = "cargo build --release"
+description = "Build the Cratos binary in release mode"
