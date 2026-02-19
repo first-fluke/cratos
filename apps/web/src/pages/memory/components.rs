@@ -1,75 +1,57 @@
-//! Memory Page
-//!
-//! Visualizes the Graph RAG knowledge graph with premium interactivity.
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use leptos::*;
-
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use web_sys::{MouseEvent, ResizeObserver, ResizeObserverEntry};
 
-use crate::api::ApiClient;
-// use crate::components::StatCard;
-
-/// Generic API response wrapper
-#[derive(Debug, Clone, Deserialize, Default)]
-struct ApiResponse<T: Default> {
-    #[serde(default)]
-    #[allow(dead_code)]
-    success: bool,
-    #[serde(default)]
-    data: T,
-}
-
 /// Graph node from API
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
-struct GraphNode {
-    id: String,
-    label: String,
-    kind: String,
+pub struct GraphNode {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
     #[serde(default, alias = "mentionCount")]
-    mention_count: u32,
+    pub mention_count: u32,
 }
 
 /// Graph edge from API
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
-struct GraphEdge {
-    source: String,
-    target: String,
+pub struct GraphEdge {
+    pub source: String,
+    pub target: String,
     #[serde(default)]
-    weight: u32,
+    pub weight: u32,
     #[serde(default)]
-    kind: String,
+    pub kind: String,
 }
 
 /// Complete graph data
 #[derive(Debug, Clone, Deserialize, Default)]
-struct GraphData {
+pub struct GraphData {
     #[serde(default)]
-    nodes: Vec<GraphNode>,
+    pub nodes: Vec<GraphNode>,
     #[serde(default)]
-    edges: Vec<GraphEdge>,
+    pub edges: Vec<GraphEdge>,
 }
 
 /// Graph statistics
 #[derive(Debug, Clone, Deserialize, Default)]
-struct GraphStats {
+pub struct GraphStats {
     #[serde(default, alias = "turnCount")]
     #[allow(dead_code)]
-    turn_count: u32,
+    pub turn_count: u32,
     #[serde(default, alias = "entityCount")]
-    entity_count: u32,
+    pub entity_count: u32,
 }
 
 /// Simulation node state
 #[derive(Clone, Debug)]
 struct NodeState {
     #[allow(dead_code)]
-    id: String, // Keeping id for reference if needed, though HashMap key is id
+    id: String,
     x: f64,
     y: f64,
     vx: f64,
@@ -77,126 +59,8 @@ struct NodeState {
     is_dragged: bool,
 }
 
-/// Memory page showing knowledge graph
-#[component]
-pub fn Memory() -> impl IntoView {
-    let (stats, set_stats) = create_signal(GraphStats::default());
-    let (graph_data, set_graph_data) = create_signal(GraphData::default());
-    let (loading, set_loading) = create_signal(true);
-    let (error, set_error) = create_signal::<Option<String>>(None);
-
-    // Fetch data on mount
-    create_effect(move |_| {
-        spawn_local(async move {
-            let client = ApiClient::new();
-
-            // Fetch graph stats
-            match client.get::<ApiResponse<GraphStats>>("/api/v1/graph/stats").await {
-                Ok(resp) => {
-                    set_stats.set(resp.data);
-                }
-                Err(e) => {
-                    gloo_console::error!("Failed to fetch graph stats:", e.clone());
-                    set_error.set(Some(e));
-                }
-            }
-
-            // Fetch graph data
-            match client.get::<ApiResponse<GraphData>>("/api/v1/graph?limit=100").await {
-                Ok(resp) => {
-                    set_graph_data.set(resp.data);
-                }
-                Err(e) => {
-                    gloo_console::error!("Failed to fetch graph data:", e.clone());
-                    set_error.set(Some(e));
-                }
-            }
-
-            set_loading.set(false);
-        });
-    });
-
-    view! {
-        <div class="h-full flex flex-col space-y-4 animate-in fade-in duration-700">
-            // Header with Glassmorphism
-            <div class="flex items-center justify-between shrink-0 bg-theme-card/30 backdrop-blur-md p-4 rounded-xl border border-theme-border-default/50">
-                <div>
-                    <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-theme-info to-purple-400">
-                        "Neural Memory Graph"
-                    </h1>
-                    <p class="text-theme-secondary text-sm flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full bg-theme-success animate-pulse"></span>
-                        "Live Connection via Serena Bridge"
-                    </p>
-                </div>
-                <div class="text-xs font-mono text-theme-muted bg-theme-base/50 px-2 py-1 rounded border border-theme-border-default">
-                    {move || if loading.get() { "SYNCING..." } else { "ONLINE" }}
-                </div>
-            </div>
-
-            // Error display
-            <Show when=move || error.get().is_some()>
-                <div class="bg-theme-error/10 border border-theme-error/30 rounded-lg p-4 text-theme-error shrink-0">
-                    {move || error.get().unwrap_or_default()}
-                </div>
-            </Show>
-
-            // Graph visualization Container
-            <div class="flex-1 relative rounded-2xl overflow-hidden border border-theme-border-default shadow-2xl bg-[#0a0a0f] dark:bg-[#050508]">
-                 <Show
-                    when=move || !loading.get() && !graph_data.get().nodes.is_empty()
-                    fallback=move || view! {
-                        <div class="absolute inset-0 flex items-center justify-center text-theme-muted bg-theme-base/10 backdrop-blur-sm z-50">
-                            <Show
-                                when=move || loading.get()
-                                fallback=move || view! {
-                                    <div class="text-center">
-                                        <p class="text-2xl font-light">"Empty Void"</p>
-                                        <p class="text-sm mt-2 opacity-70">"No memories formed yet."</p>
-                                    </div>
-                                }
-                            >
-                                <div class="flex flex-col items-center">
-                                    <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-theme-info mb-6 shadow-[0_0_15px_var(--color-info)]"></div>
-                                    <div class="text-theme-info font-mono text-sm tracking-widest">"INITIALIZING NEURAL LINK"</div>
-                                </div>
-                            </Show>
-                        </div>
-                    }
-                >
-                    <ForceGraph
-                        nodes=Signal::derive(move || graph_data.get().nodes.clone())
-                        edges=Signal::derive(move || {
-                            let mut edges = graph_data.get().edges.clone();
-                            // Filter out "cooccurrence" labels to reduce visual spam
-                            for edge in &mut edges {
-                                if edge.kind == "cooccurrence" {
-                                    edge.kind = String::new();
-                                }
-                            }
-                            edges
-                        })
-                    />
-                </Show>
-
-                // Floating Stats Overlay (Top Right)
-                 <div class="absolute top-4 right-4 flex flex-col gap-2 pointer-events-none">
-                    <div class="bg-black/40 backdrop-blur-md border border-white/10 p-3 rounded-lg text-right pointer-events-auto hover:bg-black/60 transition-colors">
-                        <div class="text-xs text-theme-muted uppercase tracking-wider">"Entities"</div>
-                        <div class="text-xl font-bold text-white">{move || stats.get().entity_count}</div>
-                    </div>
-                    <div class="bg-black/40 backdrop-blur-md border border-white/10 p-3 rounded-lg text-right pointer-events-auto hover:bg-black/60 transition-colors">
-                         <div class="text-xs text-theme-muted uppercase tracking-wider">"Connections"</div>
-                        <div class="text-xl font-bold text-theme-info">{move || graph_data.get().edges.len()}</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
-}
-
 /// Get theme-aware color for entity kinds
-fn get_entity_color(kind: &str) -> &'static str {
+pub fn get_entity_color(kind: &str) -> &'static str {
     match kind.to_lowercase().as_str() {
         "file" | "module" => "var(--color-info)",
         "function" | "method" => "var(--color-success)",
@@ -210,9 +74,135 @@ fn get_entity_color(kind: &str) -> &'static str {
     }
 }
 
+#[component]
+pub fn GraphHeader(loading: Signal<bool>) -> impl IntoView {
+    view! {
+        <div class="flex items-center justify-between shrink-0 bg-theme-card/30 backdrop-blur-md p-4 rounded-xl border border-theme-border-default/50">
+            <div>
+                <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-theme-info to-purple-400">
+                    "Neural Memory Graph"
+                </h1>
+                <p class="text-theme-secondary text-sm flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-theme-success animate-pulse"></span>
+                    "Live Connection via Serena Bridge"
+                </p>
+            </div>
+            <div class="text-xs font-mono text-theme-muted bg-theme-base/50 px-2 py-1 rounded border border-theme-border-default">
+                {move || if loading.get() { "SYNCING..." } else { "ONLINE" }}
+            </div>
+        </div>
+    }
+}
+
+#[component]
+pub fn GraphStatsOverlay(
+    stats: Signal<GraphStats>,
+    edge_count: Signal<usize>,
+) -> impl IntoView {
+    view! {
+        <div class="absolute top-4 right-4 flex flex-col gap-2 pointer-events-none">
+            <div class="bg-black/40 backdrop-blur-md border border-white/10 p-3 rounded-lg text-right pointer-events-auto hover:bg-black/60 transition-colors">
+                <div class="text-xs text-theme-muted uppercase tracking-wider">"Entities"</div>
+                <div class="text-xl font-bold text-white">{move || stats.get().entity_count}</div>
+            </div>
+            <div class="bg-black/40 backdrop-blur-md border border-white/10 p-3 rounded-lg text-right pointer-events-auto hover:bg-black/60 transition-colors">
+                 <div class="text-xs text-theme-muted uppercase tracking-wider">"Connections"</div>
+                <div class="text-xl font-bold text-theme-info">{move || edge_count.get()}</div>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+pub fn GraphControls(
+    transform: Signal<(f64, f64, f64)>,
+    set_transform: WriteSignal<(f64, f64, f64)>,
+) -> impl IntoView {
+    view! {
+        <div class="absolute bottom-6 left-6 flex gap-2 pointer-events-auto">
+            <button 
+                class="p-2 bg-black/60 backdrop-blur text-white border border-white/10 rounded-lg hover:bg-white/10 transition-all active:scale-95"
+                on:click=move |_| set_transform.set((0.0, 0.0, 1.0))
+                title="Reset View"
+            >
+                <span class="text-lg">"⤢"</span>
+            </button>
+             <div class="px-3 py-2 bg-black/60 backdrop-blur border border-white/10 rounded-lg text-xs font-mono text-theme-info">
+                {move || format!("ZOOM: {:.0}%", transform.get().2 * 100.0)}
+            </div>
+        </div>
+    }
+}
+
+#[component]
+pub fn GraphLegend() -> impl IntoView {
+    view! {
+        <div class="absolute bottom-6 right-6 bg-black/60 backdrop-blur border border-white/10 rounded-xl p-4 pointer-events-auto">
+            <div class="text-[10px] font-bold text-white/50 uppercase mb-3">"Semantic Entities"</div>
+            <div class="grid grid-cols-2 gap-x-6 gap-y-2">
+                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-info shadow-[0_0_5px_var(--color-info)]"></div><span class="text-xs text-white/80">"File/Mod"</span></div>
+                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-success shadow-[0_0_5px_var(--color-success)]"></div><span class="text-xs text-white/80">"Func/Meth"</span></div>
+                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-warning shadow-[0_0_5px_var(--color-warning)]"></div><span class="text-xs text-white/80">"Tool"</span></div>
+                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-error shadow-[0_0_5px_var(--color-error)]"></div><span class="text-xs text-white/80">"Error"</span></div>
+                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#a855f7] shadow-[0_0_5px_#a855f7]"></div><span class="text-xs text-white/80">"Crate"</span></div>
+                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#ec4899] shadow-[0_0_5px_#ec4899]"></div><span class="text-xs text-white/80">"Config"</span></div>
+                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#6366f1] shadow-[0_0_5px_#6366f1]"></div><span class="text-xs text-white/80">"Concept"</span></div>
+                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#f59e0b] shadow-[0_0_5px_#f59e0b]"></div><span class="text-xs text-white/80">"Persona"</span></div>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+pub fn NodeDetailsPanel(
+
+    selected_node: Signal<Option<GraphNode>>,
+    set_selected_node_id: WriteSignal<Option<String>>,
+) -> impl IntoView {
+    view! {
+        <Show when=move || selected_node.get().is_some()>
+            <div class="absolute top-6 left-6 w-72 bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl animate-in slide-in-from-left-4 duration-300">
+                {
+                    let node = selected_node.get().unwrap();
+                    let label = node.label.clone();
+                    let kind = node.kind.clone();
+                    let id_str = node.id.clone();
+                    let mentions = node.mention_count;
+
+                    view! {
+                        <div class="space-y-4">
+                            <div class="flex items-start justify-between">
+                                <h3 class="text-lg font-bold text-white break-words">{label}</h3>
+                                <button class="text-white/50 hover:text-white" on:click=move |_| set_selected_node_id.set(None)>"✕"</button>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="px-2 py-0.5 rounded-full text-[10px] uppercase font-bold bg-white/10 text-white/80 border border-white/10">
+                                    {kind}
+                                </span>
+                                <span class="text-xs text-white/40">"ID: " {if id_str.len() > 8 { format!("{}...", &id_str[..8]) } else { id_str }}</span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 pt-2">
+                                <div class="bg-white/5 p-2 rounded text-center">
+                                    <div class="text-xs text-white/40 uppercase">"Mentions"</div>
+                                    <div class="text-lg font-bold text-theme-info">{mentions}</div>
+                                </div>
+                                // Placeholder for other stats
+                                <div class="bg-white/5 p-2 rounded text-center">
+                                    <div class="text-xs text-white/40 uppercase">"Strength"</div>
+                                    <div class="text-lg font-bold text-theme-success">"High"</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </Show>
+    }
+}
+
 /// Force-directed graph visualization
 #[component]
-fn ForceGraph(
+pub fn ForceGraph(
     nodes: Signal<Vec<GraphNode>>,
     edges: Signal<Vec<GraphEdge>>,
 ) -> impl IntoView {
@@ -231,7 +221,7 @@ fn ForceGraph(
     let (resize_observer, set_resize_observer) = create_signal::<Option<ResizeObserver>>(None);
     // Keep closure alive
     #[allow(clippy::type_complexity)]
-    let (resize_closure, set_resize_closure) = create_signal::<Option<Closure<dyn FnMut(Vec<js_sys::Object>, JsValue)>>>(None);
+    let (_resize_closure, set_resize_closure) = create_signal::<Option<Closure<dyn FnMut(Vec<js_sys::Object>, JsValue)>>>(None);
 
     let selected_node = move || {
         let id = selected_node_id.get()?;
@@ -599,73 +589,11 @@ fn ForceGraph(
                 </g>
             </svg>
 
-            // Controls Overlay
-            <div class="absolute bottom-6 left-6 flex gap-2 pointer-events-auto">
-                <button 
-                    class="p-2 bg-black/60 backdrop-blur text-white border border-white/10 rounded-lg hover:bg-white/10 transition-all active:scale-95"
-                    on:click=move |_| set_transform.set((0.0, 0.0, 1.0))
-                    title="Reset View"
-                >
-                    <span class="text-lg">"⤢"</span>
-                </button>
-                 <div class="px-3 py-2 bg-black/60 backdrop-blur border border-white/10 rounded-lg text-xs font-mono text-theme-info">
-                    {move || format!("ZOOM: {:.0}%", transform.get().2 * 100.0)}
-                </div>
-            </div>
-
-            // Legend
-            <div class="absolute bottom-6 right-6 bg-black/60 backdrop-blur border border-white/10 rounded-xl p-4 pointer-events-auto">
-                <div class="text-[10px] font-bold text-white/50 uppercase mb-3">"Semantic Entities"</div>
-                <div class="grid grid-cols-2 gap-x-6 gap-y-2">
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-info shadow-[0_0_5px_var(--color-info)]"></div><span class="text-xs text-white/80">"File/Mod"</span></div>
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-success shadow-[0_0_5px_var(--color-success)]"></div><span class="text-xs text-white/80">"Func/Meth"</span></div>
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-warning shadow-[0_0_5px_var(--color-warning)]"></div><span class="text-xs text-white/80">"Tool"</span></div>
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-theme-error shadow-[0_0_5px_var(--color-error)]"></div><span class="text-xs text-white/80">"Error"</span></div>
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#a855f7] shadow-[0_0_5px_#a855f7]"></div><span class="text-xs text-white/80">"Crate"</span></div>
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#ec4899] shadow-[0_0_5px_#ec4899]"></div><span class="text-xs text-white/80">"Config"</span></div>
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#6366f1] shadow-[0_0_5px_#6366f1]"></div><span class="text-xs text-white/80">"Concept"</span></div>
-                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-[#f59e0b] shadow-[0_0_5px_#f59e0b]"></div><span class="text-xs text-white/80">"Persona"</span></div>
-                </div>
-            </div>
+            <GraphControls transform=transform.into() set_transform=set_transform />
             
-            // Selection Detail Panel
-             <Show when=move || selected_node().is_some()>
-                <div class="absolute top-6 left-6 w-72 bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl animate-in slide-in-from-left-4 duration-300">
-                    {
-                        let node = selected_node().unwrap();
-                        let label = node.label.clone();
-                        let kind = node.kind.clone();
-                        let id_str = node.id.clone();
-                        let mentions = node.mention_count;
-
-                        view! {
-                            <div class="space-y-4">
-                                <div class="flex items-start justify-between">
-                                    <h3 class="text-lg font-bold text-white break-words">{label}</h3>
-                                    <button class="text-white/50 hover:text-white" on:click=move |_| set_selected_node_id.set(None)>"✕"</button>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] uppercase font-bold bg-white/10 text-white/80 border border-white/10">
-                                        {kind}
-                                    </span>
-                                    <span class="text-xs text-white/40">"ID: " {if id_str.len() > 8 { format!("{}...", &id_str[..8]) } else { id_str }}</span>
-                                </div>
-                                <div class="grid grid-cols-2 gap-2 pt-2">
-                                    <div class="bg-white/5 p-2 rounded text-center">
-                                        <div class="text-xs text-white/40 uppercase">"Mentions"</div>
-                                        <div class="text-lg font-bold text-theme-info">{mentions}</div>
-                                    </div>
-                                    // Placeholder for other stats
-                                    <div class="bg-white/5 p-2 rounded text-center">
-                                        <div class="text-xs text-white/40 uppercase">"Strength"</div>
-                                        <div class="text-lg font-bold text-theme-success">"High"</div>
-                                    </div>
-                                </div>
-                            </div>
-                        }
-                    }
-                </div>
-            </Show>
+            <GraphLegend />
+            
+            <NodeDetailsPanel selected_node=selected_node.into() set_selected_node_id=set_selected_node_id />
         </div>
     }
 }

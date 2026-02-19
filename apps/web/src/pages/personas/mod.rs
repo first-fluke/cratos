@@ -97,6 +97,7 @@ pub struct Chronicle {
 #[derive(Debug, Clone, Deserialize, Default)]
 struct PersonaDetailResponse {
     #[serde(default)]
+    #[allow(dead_code)]
     success: bool,
     #[serde(default)]
     data: PersonaDetailData,
