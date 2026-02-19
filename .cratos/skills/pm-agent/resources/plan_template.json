@@ -1,0 +1,32 @@
+{
+    "goal": "",
+    "priority": "Medium",
+    "constraints": [],
+    "assumptions": [],
+    "alternatives": [],
+    "tasks": [],
+    "reviews": {
+        "step2_completeness": {
+            "status": "pending",
+            "reviewer": "",
+            "check": ""
+        },
+        "step3_meta": {
+            "status": "pending",
+            "reviewer": "",
+            "check": ""
+        },
+        "step4_simplicity": {
+            "status": "pending",
+            "reviewer": "",
+            "check": ""
+        }
+    },
+    "gates": {
+        "PLAN_GATE": false,
+        "IMPL_GATE": false,
+        "VERIFY_GATE": false,
+        "REFINE_GATE": false,
+        "SHIP_GATE": false
+    }
+}

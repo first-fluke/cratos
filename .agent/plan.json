@@ -1,27 +1,84 @@
 {
-    "tasks": [
+    "project": "Cratos",
+    "task": "Split 4 large files into modules",
+    "phase": "REFINE",
+    "step": 13,
+    "status": "completed",
+    "description": "Verified module interactions, analyzed side effects, ensured naming consistency, and cleaned up dead code in CLI skill modules.",
+    "subtasks": [
         {
-            "id": "PRUNE-001",
-            "title": "Implement Stale Skill Pruning Logic",
-            "description": "Add `prune_stale_skills` and `list_stale_skills` to `SkillStore`.",
+            "id": "TASK-01",
+            "title": "Split cratos-memory/src/store.rs",
             "status": "completed",
-            "priority": "HIGH"
+            "description": "Split 1,146 lines into store/mod.rs, crud.rs, query.rs, migrations.rs, tests.rs",
+            "files": [
+                "crates/cratos-memory/src/store.rs",
+                "crates/cratos-memory/src/store/mod.rs",
+                "crates/cratos-memory/src/store/crud.rs",
+                "crates/cratos-memory/src/store/query.rs",
+                "crates/cratos-memory/src/store/migrations.rs",
+                "crates/cratos-memory/src/store/tests.rs"
+            ]
         },
         {
-            "id": "PRUNE-002",
-            "title": "Implement Prune CLI",
-            "description": "Add `cratos skill prune` command.",
+            "id": "TASK-02",
+            "title": "Split cratos-channels/src/slack.rs",
             "status": "completed",
-            "priority": "HIGH"
+            "description": "Split 1,038 lines into slack/mod.rs, api.rs, events.rs, formatting.rs, tests.rs",
+            "files": [
+                "crates/cratos-channels/src/slack.rs",
+                "crates/cratos-channels/src/slack/mod.rs",
+                "crates/cratos-channels/src/slack/api.rs",
+                "crates/cratos-channels/src/slack/events.rs",
+                "crates/cratos-channels/src/slack/formatting.rs",
+                "crates/cratos-channels/src/slack/tests.rs"
+            ]
         },
         {
-            "id": "PRUNE-003",
-            "title": "Automate Stale Skill Pruning",
-            "description": "Integrate skill pruning into scheduler.",
-            "status": "in-progress",
-            "priority": "HIGH"
+            "id": "TASK-03",
+            "title": "Split cratos-skills/src/store.rs",
+            "status": "completed",
+            "description": "Split 1,021 lines into store/mod.rs, patterns.rs, queries.rs, stats.rs, tests.rs",
+            "files": [
+                "crates/cratos-skills/src/store.rs",
+                "crates/cratos-skills/src/store/mod.rs",
+                "crates/cratos-skills/src/store/patterns.rs",
+                "crates/cratos-skills/src/store/queries.rs",
+                "crates/cratos-skills/src/store/stats.rs",
+                "crates/cratos-skills/src/store/tests.rs"
+            ]
+        },
+        {
+            "id": "TASK-04",
+            "title": "Split src/cli/skill.rs",
+            "status": "completed",
+            "description": "Split 1,015 lines into skill/mod.rs, generate.rs, list.rs, convert.rs",
+            "files": [
+                "src/cli/skill.rs",
+                "src/cli/skill/mod.rs",
+                "src/cli/skill/generate.rs",
+                "src/cli/skill/list.rs",
+                "src/cli/skill/convert.rs"
+            ]
         }
     ],
+    "reviews": {
+        "step2_completeness": {
+            "status": "completed",
+            "reviewer": "PM Agent",
+            "check": "All 4 files identified in backlog are mapped to tasks."
+        },
+        "step3_meta": {
+            "status": "completed",
+            "reviewer": "PM Agent",
+            "check": "Plan covers module structure, function assignment, and test separation."
+        },
+        "step4_simplicity": {
+            "status": "completed",
+            "reviewer": "PM Agent",
+            "check": "Plan uses standard Rust module patterns without over-engineering."
+        }
+    },
     "gates": {
         "PLAN_GATE": true,
         "IMPL_GATE": true,

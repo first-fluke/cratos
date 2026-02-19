@@ -31,7 +31,7 @@ description: Thorough version of coordinate - high-quality development workflow 
 ### Step 1: Create Plan & Review
 // turbo
 Spawn PM Agent to execute Steps 1-4 (Creation + 3 Reviews).
-Command: `oh-my-ag agent:spawn pm-agent "Analyze requirements. Execute Step 1: Create Plan. Then execute Step 2 (Completeness), Step 3 (Meta Review), and Step 4 (Over-Engineering Review). Save plan to .agent/plan.json and memory." session-id`
+Command: `oh-my-ag agent:spawn pm-agent "Analyze requirements. Execute Step 1: Create Plan using .cratos/skills/pm-agent/resources/plan_template.json. Then execute Step 2 (Completeness), Step 3 (Meta Review), and Step 4 (Over-Engineering Review). Save plan to .agent/plan.json and memory." session-id`
 
 ### Step 2: Plan Review (Completeness)
 - **Delegated to PM Agent**: Ensure requirements are fully mapped.
