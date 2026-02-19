@@ -69,6 +69,13 @@
       "description": "Add `cratos skill prune` command with --dry-run and --confirm flags.",
       "status": "completed",
       "priority": "HIGH"
+    },
+    {
+      "id": "PRUNE-003",
+      "title": "Automate Stale Skill Pruning",
+      "description": "Integrate skill pruning into the Cratos scheduler as a recurring system task.",
+      "status": "completed",
+      "priority": "HIGH"
     }
   ],
   "gates": {

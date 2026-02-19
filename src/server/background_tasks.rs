@@ -18,6 +18,7 @@ pub async fn start_scheduler(
     data_dir: &Path,
     orchestrator: &Arc<Orchestrator>,
     event_bus: &Arc<EventBus>,
+    skill_store: &Arc<SkillStore>,
     shutdown_controller: &ShutdownController,
 ) -> Option<Arc<SchedulerEngine>> {
     if !config.scheduler.enabled {
@@ -36,21 +37,54 @@ pub async fn start_scheduler(
             // Build real executor using orchestrator and event bus
             let sched_orch = orchestrator.clone();
             let sched_event_bus = event_bus.clone();
+            let sched_skill_store = skill_store.clone();
             let security_config = config.security.clone();
             let task_executor: cratos_core::scheduler::TaskExecutor =
                 Arc::new(move |action: cratos_core::scheduler::TaskAction| {
                     let orch = sched_orch.clone();
                     let eb = sched_event_bus.clone();
+                    let ss = sched_skill_store.clone();
                     let sec = security_config.clone();
                     Box::pin(async move {
-                        crate::server::task_handler::execute_task(action, orch, eb, sec).await
+                        crate::server::task_handler::execute_task(action, orch, eb, ss, sec).await
                     })
                 });
 
+            let scheduler_store_arc = Arc::new(scheduler_store);
             let scheduler_engine = Arc::new(
-                SchedulerEngine::new(Arc::new(scheduler_store), scheduler_config)
+                SchedulerEngine::new(scheduler_store_arc.clone(), scheduler_config)
                     .with_executor(task_executor),
             );
+
+            // Register default system tasks
+            let store_for_init = scheduler_store_arc.clone();
+            tokio::spawn(async move {
+                // Check if prune task exists
+                let prune_task_name = "system_prune_stale_skills";
+                let exists = match store_for_init.list_all_tasks().await {
+                    Ok(tasks) => tasks.iter().any(|t| t.name == prune_task_name),
+                    Err(e) => {
+                        warn!("Failed to list tasks for init checks: {}", e);
+                        false
+                    }
+                };
+
+                if !exists {
+                    let task = cratos_core::scheduler::ScheduledTask::new(
+                        prune_task_name,
+                        cratos_core::scheduler::TriggerType::cron("0 4 * * 0"), // Weekly at 04:00
+                        cratos_core::scheduler::TaskAction::prune_stale_skills(90),
+                    )
+                    .with_description("Automatically prune stale skills unused for 90 days");
+
+                    if let Err(e) = store_for_init.create_task(&task).await {
+                        warn!("Failed to create default prune task: {}", e);
+                    } else {
+                        info!("Registered default system task: {}", prune_task_name);
+                    }
+                }
+            });
+
             let scheduler_shutdown = shutdown_controller.token();
 
             // Clone for the background run loop

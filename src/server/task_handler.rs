@@ -3,6 +3,7 @@ use std::sync::Arc;
 use cratos_core::orchestrator::{Orchestrator, OrchestratorInput};
 use cratos_core::scheduler::{SchedulerError, TaskAction};
 use cratos_core::EventBus;
+use cratos_skills::SkillStore;
 use cratos_tools::builtins::{ExecConfig, ExecMode, ExecTool};
 use cratos_tools::registry::Tool;
 use tracing::{info, warn};
@@ -14,9 +15,24 @@ pub async fn execute_task(
     action: TaskAction,
     orchestrator: Arc<Orchestrator>,
     _event_bus: Arc<EventBus>,
+    skill_store: Arc<SkillStore>,
     security_config: SecurityConfig,
 ) -> Result<String, SchedulerError> {
     match action {
+        TaskAction::PruneStaleSkills { days } => {
+            info!("Pruning skills older than {} days...", days);
+            match skill_store.prune_stale_skills(days).await {
+                Ok(count) => {
+                    let msg = format!("Pruned {} stale skills.", count);
+                    info!("{}", msg);
+                    Ok(msg)
+                },
+                Err(e) => {
+                    warn!("Failed to prune stale skills: {}", e);
+                    Err(SchedulerError::Execution(e.to_string()))
+                }
+            }
+        }
         TaskAction::NaturalLanguage { prompt, channel } => {
             info!("Executing scheduled prompt: {}", prompt);
             let input = OrchestratorInput::new(

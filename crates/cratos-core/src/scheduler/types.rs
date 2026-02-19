@@ -157,6 +157,11 @@ pub enum TaskAction {
         /// Dry run mode
         dry_run: bool,
     },
+    /// Prune stale skills
+    PruneStaleSkills {
+        /// Retention days
+        days: u32,
+    },
 }
 
 impl TaskAction {
@@ -192,6 +197,11 @@ impl TaskAction {
     /// Create a skill analysis action
     pub fn run_skill_analysis(dry_run: bool) -> Self {
         Self::RunSkillAnalysis { dry_run }
+    }
+
+    /// Create a prune stale skills action
+    pub fn prune_stale_skills(days: u32) -> Self {
+        Self::PruneStaleSkills { days }
     }
 }
 

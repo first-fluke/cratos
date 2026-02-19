@@ -336,6 +336,7 @@ pub async fn run() -> Result<()> {
         &data_dir,
         &orchestrator,
         &event_bus,
+        &skill_store,
         &shutdown_controller,
     )
     .await;
