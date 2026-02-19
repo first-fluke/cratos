@@ -1,10 +1,10 @@
 {
     "project": "Cratos",
     "task": "Split 4 large files into modules",
-    "phase": "REFINE",
-    "step": 13,
+    "phase": "SHIP",
+    "step": 16,
     "status": "completed",
-    "description": "Verified module interactions, analyzed side effects, ensured naming consistency, and cleaned up dead code in CLI skill modules.",
+    "description": "Completed final quality review (clippy, fmt, tests), verified CLI UX (skill list), and confirmed all changes are committed and clean.",
     "subtasks": [
         {
             "id": "TASK-01",
@@ -84,6 +84,6 @@
         "IMPL_GATE": true,
         "VERIFY_GATE": true,
         "REFINE_GATE": true,
-        "SHIP_GATE": false
+        "SHIP_GATE": true
     }
 }
