@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::mod_impl::ExecutionViewer;
-    use super::types::{truncate, ReplayOptions};
-    use uuid::Uuid;
+    use crate::viewer::types::{truncate, ReplayOptions};
 
     #[test]
     fn test_truncate() {

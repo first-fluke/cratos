@@ -70,6 +70,7 @@ use crate::skill::Skill;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
 use tracing::{debug, instrument};
 
 /// Reason why a skill was matched
@@ -90,7 +91,7 @@ pub enum MatchReason {
 #[derive(Debug, Clone)]
 pub struct RoutingResult {
     /// The matched skill
-    pub skill: Skill,
+    pub skill: std::sync::Arc<Skill>,
     /// Match score (0.0 - 1.0)
     pub score: f32,
     /// Reason for the match
@@ -215,7 +216,7 @@ impl SkillRouter {
     /// Check if a specific skill matches the input
     fn match_skill(
         &mut self,
-        skill: &Skill,
+        skill: &std::sync::Arc<Skill>,
         input_text: &str,
         input_lower: &str,
         input_words: &[&str],

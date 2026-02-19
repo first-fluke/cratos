@@ -45,7 +45,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct SkillRegistry {
     /// Skills indexed by ID
-    skills_by_id: Arc<RwLock<HashMap<Uuid, Skill>>>,
+    skills_by_id: Arc<RwLock<HashMap<Uuid, Arc<Skill>>>>,
     /// Skills indexed by name
     skills_by_name: Arc<RwLock<HashMap<String, Uuid>>>,
     /// Keyword index for fast lookup
@@ -90,7 +90,7 @@ impl SkillRegistry {
         // Add to ID index
         {
             let mut skills = self.skills_by_id.write().await;
-            skills.insert(skill_id, skill);
+            skills.insert(skill_id, Arc::new(skill));
         }
 
         // Add to name index
@@ -147,13 +147,13 @@ impl SkillRegistry {
     }
 
     /// Get a skill by ID
-    pub async fn get(&self, skill_id: Uuid) -> Option<Skill> {
+    pub async fn get(&self, skill_id: Uuid) -> Option<Arc<Skill>> {
         let skills = self.skills_by_id.read().await;
         skills.get(&skill_id).cloned()
     }
 
     /// Get a skill by name
-    pub async fn get_by_name(&self, name: &str) -> Option<Skill> {
+    pub async fn get_by_name(&self, name: &str) -> Option<Arc<Skill>> {
         let names = self.skills_by_name.read().await;
         if let Some(skill_id) = names.get(name) {
             let skills = self.skills_by_id.read().await;
@@ -164,7 +164,7 @@ impl SkillRegistry {
     }
 
     /// Get all skills matching a keyword
-    pub async fn get_by_keyword(&self, keyword: &str) -> Vec<Skill> {
+    pub async fn get_by_keyword(&self, keyword: &str) -> Vec<Arc<Skill>> {
         let keyword_lower = keyword.to_lowercase();
         let index = self.keyword_index.read().await;
 
@@ -180,19 +180,19 @@ impl SkillRegistry {
     }
 
     /// Get all active skills
-    pub async fn get_active(&self) -> Vec<Skill> {
+    pub async fn get_active(&self) -> Vec<Arc<Skill>> {
         let skills = self.skills_by_id.read().await;
         skills.values().filter(|s| s.is_active()).cloned().collect()
     }
 
     /// Get all skills
-    pub async fn get_all(&self) -> Vec<Skill> {
+    pub async fn get_all(&self) -> Vec<Arc<Skill>> {
         let skills = self.skills_by_id.read().await;
         skills.values().cloned().collect()
     }
 
     /// Get skills by category
-    pub async fn get_by_category(&self, category: SkillCategory) -> Vec<Skill> {
+    pub async fn get_by_category(&self, category: SkillCategory) -> Vec<Arc<Skill>> {
         let skills = self.skills_by_id.read().await;
         skills
             .values()
@@ -202,7 +202,7 @@ impl SkillRegistry {
     }
 
     /// Get skills by origin
-    pub async fn get_by_origin(&self, origin: SkillOrigin) -> Vec<Skill> {
+    pub async fn get_by_origin(&self, origin: SkillOrigin) -> Vec<Arc<Skill>> {
         let skills = self.skills_by_id.read().await;
         skills
             .values()
@@ -262,7 +262,7 @@ impl SkillRegistry {
         // Update skill
         {
             let mut skills = self.skills_by_id.write().await;
-            skills.insert(skill_id, skill);
+            skills.insert(skill_id, Arc::new(skill));
         }
 
         // Update name index

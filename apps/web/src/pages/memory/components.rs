@@ -225,7 +225,7 @@ pub fn ForceGraph(
 
     let selected_node = move || {
         let id = selected_node_id.get()?;
-        nodes.get().into_iter().find(|n| n.id == id)
+        nodes.with(|ns| ns.iter().find(|n| n.id == id).cloned())
     };
 
     // Physics Simulation State
@@ -236,7 +236,7 @@ pub fn ForceGraph(
     // Initialize & Simulation Loop
     let node_positions_init = node_positions.clone();
     create_effect(move |_| {
-         let ns = nodes.get();
+         nodes.with(|ns| {
         if ns.is_empty() { return; }
         let w = width.get();
         let h = height.get();
@@ -258,6 +258,7 @@ pub fn ForceGraph(
                 });
             }
         }
+        });
     });
 
     let node_positions_anim = node_positions.clone();
@@ -270,8 +271,8 @@ pub fn ForceGraph(
         let closure_clone = closure.clone();
 
         *closure.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-            let ns = nodes.get();
-            let es = edges.get();
+            nodes.with_untracked(|ns| {
+            edges.with_untracked(|es| {
             let w = width.get();
             let h = height.get();
             
@@ -355,7 +356,8 @@ pub fn ForceGraph(
                     }
                 }
                 set_render_nodes.set(render_list);
-            }
+            });
+            });
             if let Ok(h) = window().request_animation_frame(closure_clone.borrow().as_ref().unwrap().as_ref().unchecked_ref()) {
                  *handle_clone.borrow_mut() = Some(h);
             }

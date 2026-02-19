@@ -2,10 +2,10 @@ use super::config::WhatsAppBusinessConfig;
 use super::types::{ApiResponse, WebhookMessage, WhatsAppBusinessWebhook};
 use crate::error::{Error, Result};
 use crate::message::{ChannelAdapter, ChannelType, NormalizedMessage, OutgoingMessage};
-use crate::util::mask_for_logging;
+
 use serde::Serialize;
-use std::sync::Arc;
-use tracing::{debug, error, info, instrument};
+
+use tracing::{debug, info};
 
 /// WhatsApp Business API adapter
 pub struct WhatsAppBusinessAdapter {

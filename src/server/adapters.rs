@@ -70,8 +70,8 @@ impl cratos_core::SkillRouting for SkillRouterAdapter {
             .await
             .map(|m| cratos_core::SkillMatch {
                 skill_id: m.skill.id,
-                skill_name: m.skill.name,
-                description: m.skill.description,
+                skill_name: m.skill.name.clone(),
+                description: m.skill.description.clone(),
                 score: m.score,
             })
     }

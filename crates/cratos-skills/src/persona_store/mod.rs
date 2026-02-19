@@ -297,13 +297,13 @@ impl PersonaSkillStore {
         .bind(binding.skill_id.to_string())
         .bind(&binding.skill_name)
         .bind(binding.ownership_type.as_str())
-        .bind(binding.usage_count as i64)
-        .bind(binding.success_count as i64)
-        .bind(binding.failure_count as i64)
+        .bind(i64::try_from(binding.usage_count).unwrap_or(i64::MAX))
+        .bind(i64::try_from(binding.success_count).unwrap_or(i64::MAX))
+        .bind(i64::try_from(binding.failure_count).unwrap_or(i64::MAX))
         .bind(binding.success_rate)
-        .bind(binding.avg_duration_ms.map(|d| d as i64))
+        .bind(binding.avg_duration_ms.map(|d| i64::try_from(d).unwrap_or(i64::MAX)))
         .bind(binding.last_used_at.map(|t| t.to_rfc3339()))
-        .bind(binding.consecutive_successes as i32)
+        .bind(i32::try_from(binding.consecutive_successes).unwrap_or(i32::MAX))
         .bind(binding.auto_assigned_at.map(|t| t.to_rfc3339()))
         .bind(binding.created_at.to_rfc3339())
         .bind(binding.updated_at.to_rfc3339())
@@ -385,7 +385,7 @@ impl PersonaSkillStore {
             "#,
         )
         .bind(persona_name)
-        .bind(limit as i64)
+        .bind(i64::try_from(limit).unwrap_or(i64::MAX))
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
@@ -409,7 +409,7 @@ impl PersonaSkillStore {
             "#,
         )
         .bind(skill_id.to_string())
-        .bind(limit as i64)
+        .bind(i64::try_from(limit).unwrap_or(i64::MAX))
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
@@ -490,7 +490,7 @@ impl PersonaSkillStore {
         .bind(exec.skill_id.to_string())
         .bind(exec.execution_id.map(|id| id.to_string()))
         .bind(exec.success)
-        .bind(exec.duration_ms.map(|d| d as i64))
+        .bind(exec.duration_ms.map(|d| i64::try_from(d).unwrap_or(i64::MAX)))
         .bind(&exec.error_message)
         .bind(exec.started_at.to_rfc3339())
         .execute(&self.pool)
@@ -574,7 +574,7 @@ impl PersonaSkillStore {
             "#,
         )
         .bind(persona_name)
-        .bind(limit as i64)
+        .bind(i64::try_from(limit).unwrap_or(i64::MAX))
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
@@ -644,15 +644,15 @@ impl PersonaSkillStore {
             skill_id,
             skill_name: row.get("skill_name"),
             ownership_type,
-            usage_count: row.get::<i64, _>("usage_count") as u64,
-            success_count: row.get::<i64, _>("success_count") as u64,
-            failure_count: row.get::<i64, _>("failure_count") as u64,
+            usage_count: u64::try_from(row.get::<i64, _>("usage_count")).unwrap_or(0),
+            success_count: u64::try_from(row.get::<i64, _>("success_count")).unwrap_or(0),
+            failure_count: u64::try_from(row.get::<i64, _>("failure_count")).unwrap_or(0),
             success_rate: row.get("success_rate"),
             avg_duration_ms: row
                 .get::<Option<i64>, _>("avg_duration_ms")
-                .map(|d| d as u64),
+                .map(|d| u64::try_from(d).unwrap_or(0)),
             last_used_at,
-            consecutive_successes: row.get::<i32, _>("consecutive_successes") as u32,
+            consecutive_successes: u32::try_from(row.get::<i32, _>("consecutive_successes")).unwrap_or(0),
             auto_assigned_at,
             created_at,
             updated_at,
@@ -684,7 +684,7 @@ impl PersonaSkillStore {
             skill_id,
             execution_id,
             success: row.get("success"),
-            duration_ms: row.get::<Option<i64>, _>("duration_ms").map(|d| d as u64),
+            duration_ms: row.get::<Option<i64>, _>("duration_ms").map(|d| u64::try_from(d).unwrap_or(0)),
             error_message: row.get("error_message"),
             started_at,
         })

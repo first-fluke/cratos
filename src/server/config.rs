@@ -10,7 +10,7 @@ use std::path::Path;
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct AppConfig {
     pub server: ServerConfig,
     #[serde(default)]
@@ -75,7 +75,7 @@ impl Default for AppConfig {
 
 /// Scheduler configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[allow(dead_code)]
+
 pub struct SchedulerAppConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -114,7 +114,7 @@ pub struct ServerConfig {
 
 /// Authentication configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct AuthConfig {
     /// Enable authentication
     #[serde(default)]
@@ -149,7 +149,7 @@ pub struct RedisConfig {
 
 /// LLM configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct LlmConfig {
     pub default_provider: String,
     pub openai: Option<OpenAiLlmConfig>,
@@ -160,28 +160,28 @@ pub struct LlmConfig {
 
 /// OpenAI-specific config
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct OpenAiLlmConfig {
     pub default_model: String,
 }
 
 /// Anthropic-specific config
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct AnthropicLlmConfig {
     pub default_model: String,
 }
 
 /// Gemini-specific config
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct GeminiLlmConfig {
     pub default_model: String,
 }
 
 /// Routing configuration for model selection
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct RoutingConfig {
     pub classification: Option<String>,
     pub planning: Option<String>,
@@ -252,14 +252,14 @@ impl Default for ChannelsConfig {
 
 /// Approval configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct ApprovalConfig {
     pub default_mode: String,
 }
 
 /// Security configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[allow(dead_code)]
+
 pub struct SecurityConfig {
     #[serde(default)]
     pub exec: ExecSecurityConfig,
@@ -273,7 +273,7 @@ pub struct SecurityConfig {
 
 /// Exec security configuration (from [security.exec] in TOML)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct ExecSecurityConfig {
     /// "permissive" (default) or "strict"
     #[serde(default = "default_exec_mode")]
@@ -330,7 +330,7 @@ fn default_blocked_paths() -> Vec<String> {
 
 /// Replay configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct ReplayConfig {
     pub retention_days: u32,
     pub max_events_per_execution: u32,
@@ -338,7 +338,7 @@ pub struct ReplayConfig {
 
 /// Channels configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+
 pub struct ChannelsConfig {
     pub telegram: TelegramChannelConfig,
     pub slack: SlackChannelConfig,
@@ -366,7 +366,7 @@ pub struct SlackChannelConfig {
 
 /// Discord channel config
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[allow(dead_code)]
+
 pub struct DiscordChannelConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -374,7 +374,7 @@ pub struct DiscordChannelConfig {
 
 /// Matrix channel config
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[allow(dead_code)]
+
 pub struct MatrixChannelConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -382,7 +382,7 @@ pub struct MatrixChannelConfig {
 
 /// WhatsApp (Baileys) channel config
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[allow(dead_code)]
+
 pub struct WhatsAppChannelConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -396,7 +396,7 @@ fn default_whatsapp_bridge_url() -> String {
 
 /// WhatsApp Business API channel config
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[allow(dead_code)]
+
 pub struct WhatsAppBusinessChannelConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -404,7 +404,7 @@ pub struct WhatsAppBusinessChannelConfig {
 
 /// Vector search configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[allow(dead_code)]
+
 pub struct VectorSearchConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -414,7 +414,7 @@ pub struct VectorSearchConfig {
 
 /// Canvas (live document editing) configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[allow(dead_code)]
+
 pub struct CanvasConfig {
     /// Enable canvas feature
     #[serde(default)]

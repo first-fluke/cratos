@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::Result;
 use serde::Deserialize;
 
 /// Default Baileys bridge server URL

@@ -335,7 +335,7 @@ impl BrowserAction {
     fn to_js_function(&self) -> String {
         match self {
             Self::Click { selector, button } => {
-                let sel = serde_json::to_string(selector).unwrap();
+                let sel = serde_json::to_string(selector).expect("serialization failed");
                 let btn = match button.as_deref() {
                     Some("right") => 2,
                     Some("middle") => 1,
@@ -357,8 +357,8 @@ impl BrowserAction {
                 text,
                 delay,
             } => {
-                let sel = serde_json::to_string(selector).unwrap();
-                let val = serde_json::to_string(text).unwrap();
+                let sel = serde_json::to_string(selector).expect("serialization failed");
+                let val = serde_json::to_string(text).expect("serialization failed");
                 let delay_ms = delay.unwrap_or(50);
                 format!(
                     "async () => {{ const el = document.querySelector({sel}); \
@@ -376,8 +376,8 @@ impl BrowserAction {
                 )
             }
             Self::Fill { selector, value } => {
-                let sel = serde_json::to_string(selector).unwrap();
-                let val = serde_json::to_string(value).unwrap();
+                let sel = serde_json::to_string(selector).expect("serialization failed");
+                let val = serde_json::to_string(value).expect("serialization failed");
                 format!(
                     "() => {{ const el = document.querySelector({sel}); \
                      if (!el) throw new Error('Element not found: ' + {sel}); \
@@ -393,12 +393,12 @@ impl BrowserAction {
                 )
             }
             Self::GetText { selector } => {
-                let sel = serde_json::to_string(selector).unwrap();
+                let sel = serde_json::to_string(selector).expect("serialization failed");
                 format!("() => {{ const el = document.querySelector({}); return el ? el.innerText : null; }}", sel)
             }
             Self::GetHtml { selector, outer } => {
                 let selector = selector.as_deref().unwrap_or("html");
-                let sel = serde_json::to_string(selector).unwrap();
+                let sel = serde_json::to_string(selector).expect("serialization failed");
                 let prop = if *outer { "outerHTML" } else { "innerHTML" };
 
                 // Script to clean and return HTML (prevents huge token usage)
@@ -425,14 +425,14 @@ impl BrowserAction {
                 selector,
                 attribute,
             } => {
-                let sel = serde_json::to_string(selector).unwrap();
-                let attr = serde_json::to_string(attribute).unwrap();
+                let sel = serde_json::to_string(selector).expect("serialization failed");
+                let attr = serde_json::to_string(attribute).expect("serialization failed");
                 format!("() => {{ const el = document.querySelector({}); return el ? el.getAttribute({}) : null; }}", sel, attr)
             }
             Self::WaitForSelector {
                 selector, timeout, ..
             } => {
-                let sel = serde_json::to_string(selector).unwrap();
+                let sel = serde_json::to_string(selector).expect("serialization failed");
                 format!(
                     r#"
                     async () => {{
@@ -465,25 +465,25 @@ impl BrowserAction {
                 }
             }
             Self::Select { selector, value } => {
-                let sel = serde_json::to_string(selector).unwrap();
-                let val = serde_json::to_string(value).unwrap();
+                let sel = serde_json::to_string(selector).expect("serialization failed");
+                let val = serde_json::to_string(value).expect("serialization failed");
                 format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.value = {}; el.dispatchEvent(new Event('change', {{ bubbles: true }})); }}", sel, val)
             }
             Self::Check { selector, checked } => {
-                let sel = serde_json::to_string(selector).unwrap();
+                let sel = serde_json::to_string(selector).expect("serialization failed");
                 format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.checked = {}; el.dispatchEvent(new Event('change', {{ bubbles: true }})); }}", sel, checked)
             }
             Self::Hover { selector } => {
-                let sel = serde_json::to_string(selector).unwrap();
+                let sel = serde_json::to_string(selector).expect("serialization failed");
                 format!("() => {{ const el = document.querySelector({}); if (!el) throw new Error('Element not found'); el.dispatchEvent(new MouseEvent('mouseover', {{ bubbles: true }})); }}", sel)
             }
             Self::Press { key, count } => {
-                let k = serde_json::to_string(key).unwrap();
+                let k = serde_json::to_string(key).expect("serialization failed");
                 format!("() => {{ for(let i=0; i<{}; i++) document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {{ key: {}, bubbles: true }})); }}", count, k)
             }
             Self::Scroll { selector, x, y } => {
                 if let Some(s) = selector {
-                    let sel = serde_json::to_string(s).unwrap();
+                    let sel = serde_json::to_string(s).expect("serialization failed");
                     format!("() => {{ const el = document.querySelector({}); if(el) el.scrollBy({}, {}); else window.scrollBy({}, {}); }}", sel, x, y, x, y)
                 } else {
                     format!("() => {{ window.scrollBy({}, {}); }}", x, y)

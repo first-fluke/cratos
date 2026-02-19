@@ -6,11 +6,11 @@ use crate::error::{Error, Result};
 use crate::message::{
     ChannelAdapter, ChannelType, NormalizedMessage, OutgoingAttachment, OutgoingMessage,
 };
-use crate::util::mask_for_logging;
+
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use tracing::{debug, error, info, instrument, warn};
+
+use tracing::{debug, info, warn};
 
 /// WhatsApp adapter (Baileys bridge)
 pub struct WhatsAppAdapter {

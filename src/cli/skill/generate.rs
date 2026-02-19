@@ -133,7 +133,7 @@ pub async fn generate_skills(store: &SkillStore, dry_run: bool, auto_enable: boo
                                                 "  ℹ️ Found semantic match: '{}' (Score: {:.2})",
                                                 best.skill.name, best.score
                                             );
-                                            existing_skill = Some(best.skill.clone());
+                                            existing_skill = Some((*best.skill).clone());
                                         }
                                     }
                                 }

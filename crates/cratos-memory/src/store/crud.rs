@@ -75,7 +75,7 @@ impl GraphStore {
             .fetch_one(&self.pool)
             .await?;
 
-        Ok(row.try_get::<Option<i32>, _>("max_idx")?.map(|v| v as u32))
+        Ok(row.try_get::<Option<i32>, _>("max_idx")?.map(|v| u32::try_from(v).unwrap_or(0)))
     }
 
     pub(crate) fn row_to_turn(row: &sqlx::sqlite::SqliteRow) -> Result<Turn> {
@@ -90,8 +90,8 @@ impl GraphStore {
             },
             content: row.try_get("content")?,
             summary: row.try_get("summary")?,
-            turn_index: row.try_get::<i32, _>("turn_index")? as u32,
-            token_count: row.try_get::<i32, _>("token_count")? as u32,
+            turn_index: u32::try_from(row.try_get::<i32, _>("turn_index")?).unwrap_or(0),
+            token_count: u32::try_from(row.try_get::<i32, _>("token_count")?).unwrap_or(0),
             created_at: DateTime::parse_from_rfc3339(&created_str)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
@@ -141,7 +141,7 @@ impl GraphStore {
             first_seen: DateTime::parse_from_rfc3339(&seen_str)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
-            mention_count: row.try_get::<i32, _>("mention_count")? as u32,
+            mention_count: u32::try_from(row.try_get::<i32, _>("mention_count")?).unwrap_or(0),
         })
     }
 
@@ -314,7 +314,7 @@ impl GraphStore {
             updated_at: DateTime::parse_from_rfc3339(&updated_str)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
-            access_count: row.try_get::<i32, _>("access_count")? as u32,
+            access_count: u32::try_from(row.try_get::<i32, _>("access_count")?).unwrap_or(0),
         })
     }
 }

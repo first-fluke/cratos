@@ -68,7 +68,7 @@ impl GraphStore {
              FROM entity_relations
              LIMIT ?1",
         )
-        .bind(limit as i32)
+        .bind(i32::try_from(limit).unwrap_or(i32::MAX))
         .fetch_all(&self.pool)
         .await?;
 
@@ -133,7 +133,7 @@ impl GraphStore {
             .map(|r| {
                 let other: String = r.get("other_id");
                 let count: i32 = r.get("cooccurrence_count");
-                (other, count as u32)
+                (other, u32::try_from(count).unwrap_or(0))
             })
             .collect())
     }
@@ -145,7 +145,7 @@ impl GraphStore {
         let row = sqlx::query("SELECT COUNT(*) as cnt FROM turns")
             .fetch_one(&self.pool)
             .await?;
-        Ok(row.try_get::<i32, _>("cnt")? as u32)
+        Ok(u32::try_from(row.try_get::<i32, _>("cnt")?).unwrap_or(0))
     }
 
     /// Total number of entities stored.
@@ -153,7 +153,7 @@ impl GraphStore {
         let row = sqlx::query("SELECT COUNT(*) as cnt FROM entities")
             .fetch_one(&self.pool)
             .await?;
-        Ok(row.try_get::<i32, _>("cnt")? as u32)
+        Ok(u32::try_from(row.try_get::<i32, _>("cnt")?).unwrap_or(0))
     }
 
     // ── Graph Data Export ─────────────────────────────────────
@@ -166,7 +166,7 @@ impl GraphStore {
              ORDER BY mention_count DESC
              LIMIT ?1",
         )
-        .bind(limit as i32)
+        .bind(i32::try_from(limit).unwrap_or(i32::MAX))
         .fetch_all(&self.pool)
         .await?;
 
@@ -181,7 +181,7 @@ impl GraphStore {
                     first_seen: DateTime::parse_from_rfc3339(&first_seen_str)
                         .map(|dt| dt.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
-                    mention_count: r.try_get::<i32, _>("mention_count")? as u32,
+                    mention_count: u32::try_from(r.try_get::<i32, _>("mention_count")?).unwrap_or(0),
                 })
             })
             .collect()
@@ -195,7 +195,7 @@ impl GraphStore {
              ORDER BY cooccurrence_count DESC
              LIMIT ?1",
         )
-        .bind(limit as i32)
+        .bind(i32::try_from(limit).unwrap_or(i32::MAX))
         .fetch_all(&self.pool)
         .await?;
 
@@ -205,7 +205,7 @@ impl GraphStore {
                 let a: String = r.get("entity_a");
                 let b: String = r.get("entity_b");
                 let count: i32 = r.get("cooccurrence_count");
-                (a, b, count as u32)
+                (a, b, u32::try_from(count).unwrap_or(0))
             })
             .collect())
     }

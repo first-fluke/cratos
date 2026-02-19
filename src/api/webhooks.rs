@@ -7,7 +7,9 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use cratos_channels::{WhatsAppBusinessAdapter, WhatsAppBusinessWebhook};
+use cratos_channels::{
+    whatsapp::business::WhatsAppBusinessHandler, WhatsAppBusinessAdapter, WhatsAppBusinessWebhook,
+};
 use cratos_core::Orchestrator;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -57,8 +59,11 @@ async fn whatsapp_business_webhook(
 ) -> StatusCode {
     info!("Received WhatsApp Business webhook");
 
+    // Create handler
+    let handler = WhatsAppBusinessHandler::new(adapter, orchestrator);
+
     // Process the webhook
-    if let Err(e) = adapter.handle_webhook(orchestrator, payload).await {
+    if let Err(e) = handler.handle_webhook(payload).await {
         error!(error = %e, "Failed to process WhatsApp Business webhook");
     }
 

@@ -33,7 +33,7 @@ impl MockProvider {
 
     /// Add a response to the queue.
     pub fn add_tool_response(&self, response: ToolCompletionResponse) {
-        self.responses.lock().unwrap().push_back(response);
+        self.responses.lock().unwrap_or_else(|e| e.into_inner()).push_back(response);
     }
 }
 
@@ -69,7 +69,7 @@ impl LlmProvider for MockProvider {
         &self,
         _request: ToolCompletionRequest,
     ) -> Result<ToolCompletionResponse> {
-        let mut responses = self.responses.lock().unwrap();
+        let mut responses = self.responses.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(resp) = responses.pop_front() {
             Ok(resp)
         } else {

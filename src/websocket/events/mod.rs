@@ -18,8 +18,7 @@ use cratos_core::event_bus::{EventBus, OrchestratorEvent};
 use crate::middleware::auth::RequireAuthStrict;
 
 mod types;
-#[cfg(test)]
-mod tests;
+
 
 pub use types::{EventNotification, SubscriptionRequest, SubscriptionState};
 

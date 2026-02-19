@@ -2,14 +2,118 @@
 //!
 //! `cratos skill` - List, show, enable, and disable skills
 
-use super::SkillCommands;
 use anyhow::{Context, Result};
 use chrono::Utc;
+use clap::Subcommand;
 use cratos_skills::{SkillStatus, SkillStore};
 
 pub mod convert;
 pub mod generate;
 pub mod list;
+
+#[derive(Subcommand, Debug)]
+pub enum SkillCommands {
+    /// List available skills
+    List {
+        /// Show only active skills
+        #[arg(long, short)]
+        active: bool,
+    },
+    /// Show skill details
+    Show {
+        /// Skill name
+        name: String,
+    },
+    /// Enable a skill
+    Enable {
+        /// Skill name
+        name: String,
+    },
+    /// Disable a skill
+    Disable {
+        /// Skill name
+        name: String,
+    },
+    /// Export a skill
+    Export {
+        /// Skill name
+        name: String,
+        /// Output file path (optional)
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Export as Markdown agent skill (SKILL.md)
+        #[arg(long)]
+        markdown: bool,
+    },
+    /// Import a skill
+    Import {
+        /// File path
+        #[arg(help = "Path to the skill file (.json or .skill.json)")]
+        path: String,
+    },
+    /// Create a skill bundle
+    Bundle {
+        /// Bundle name
+        name: String,
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Search remote skill registry
+    Search {
+        /// Query string
+        query: String,
+        /// Registry URL (optional)
+        #[arg(long)]
+        registry: Option<String>,
+    },
+    /// Install skill from registry
+    Install {
+        /// Skill name
+        name: String,
+        /// Registry URL (optional)
+        #[arg(long)]
+        registry: Option<String>,
+    },
+    /// Publish skill to registry
+    Publish {
+        /// Skill name
+        name: String,
+        /// Registry token
+        #[arg(long)]
+        token: Option<String>,
+        /// Registry URL (optional)
+        #[arg(long)]
+        registry: Option<String>,
+    },
+    /// Analyze usage patterns
+    Analyze {
+        /// Dry run (don't save patterns)
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Generate skills from patterns
+    Generate {
+        /// Dry run (don't create skills)
+        #[arg(long)]
+        dry_run: bool,
+        /// Auto-enable generated skills
+        #[arg(long)]
+        enable: bool,
+    },
+    /// Prune stale skills
+    Prune {
+        /// Days without usage
+        #[arg(long, default_value = "30")]
+        older_than: u32,
+        /// Dry run
+        #[arg(long)]
+        dry_run: bool,
+        /// Confirm deletion
+        #[arg(long)]
+        confirm: bool,
+    },
+}
 
 /// Status indicator for active skill
 pub(crate) const ICON_ACTIVE: &str = "\u{1f7e2}"; // 🟢

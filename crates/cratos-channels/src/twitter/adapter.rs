@@ -3,8 +3,7 @@ use crate::error::{Error, Result};
 use crate::message::{
     ChannelAdapter, ChannelType, OutgoingAttachment, OutgoingMessage,
 };
-use std::sync::Arc;
-use tokio::sync::RwLock;
+
 
 /// Twitter adapter (placeholder for now)
 pub struct TwitterAdapter {

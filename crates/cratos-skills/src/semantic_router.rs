@@ -75,7 +75,7 @@ pub enum SemanticMatchReason {
 #[derive(Debug, Clone)]
 pub struct SemanticRoutingResult {
     /// The matched skill
-    pub skill: Skill,
+    pub skill: Arc<Skill>,
     /// Combined score (0.0 - 1.0)
     pub score: f32,
     /// Keyword match score (0.0 - 1.0)
