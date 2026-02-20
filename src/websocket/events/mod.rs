@@ -2,7 +2,6 @@
 //!
 //! Provides real-time event stream functionality.
 
-use std::sync::Arc;
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
@@ -10,15 +9,15 @@ use axum::{
 };
 use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
-use cratos_core::event_bus::{EventBus, OrchestratorEvent};
 use crate::middleware::auth::RequireAuthStrict;
+use cratos_core::event_bus::{EventBus, OrchestratorEvent};
 
 mod types;
-
 
 pub use types::{EventNotification, SubscriptionRequest, SubscriptionState};
 

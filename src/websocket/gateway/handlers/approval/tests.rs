@@ -97,7 +97,13 @@ async fn test_approval_respond_scope() {
         event_bus: &eb,
         approval_manager: None,
     };
-    let result = super::handle("10", "approval.respond", serde_json::json!({"request_id": "00000000-0000-0000-0000-000000000000", "approved": true}), &ctx).await;
+    let result = super::handle(
+        "10",
+        "approval.respond",
+        serde_json::json!({"request_id": "00000000-0000-0000-0000-000000000000", "approved": true}),
+        &ctx,
+    )
+    .await;
     assert!(matches!(
         result,
         GatewayFrame::Response {

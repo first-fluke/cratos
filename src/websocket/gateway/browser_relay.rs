@@ -99,14 +99,9 @@ impl BrowserRelay {
 
         // Await response with timeout
         match tokio::time::timeout(tokio::time::Duration::from_secs(RELAY_TIMEOUT_SECS), rx).await {
-            Ok(Ok(Ok(value))) => Ok(value),
-            Ok(Ok(Err(gw_err))) => Err(gw_err.message),
-            Ok(Err(_)) => {
-                // Sender dropped (connection closed)
-                let mut pending = self.pending.lock().await;
-                pending.remove(&id);
-                Err("Extension connection closed".to_string())
-            }
+            Ok(response) => response
+                .map_err(|_| "Extension connection closed".to_string())?
+                .map_err(|e| e.message),
             Err(_) => {
                 // Timeout
                 let mut pending = self.pending.lock().await;
