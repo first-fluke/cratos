@@ -48,22 +48,24 @@ description: Thorough version of coordinate - high-quality development workflow 
 // turbo
 Activate PM Agent to execute Steps 1-4 (Creation + 3 Reviews):
 
-1. Read `.cratos/skills/pm-agent/SKILL.md` and follow its instructions.
-2. Analyze requirements using MCP code analysis tools.
-3. Execute Step 1: Create Plan using `.cratos/skills/pm-agent/resources/plan_template.json`.
-4. Save plan to `.agent/plan.json` and use memory write tool to record plan completion.
-5. Execute Step 2 (Completeness Review): Ensure all requirements are fully mapped.
-6. Execute Step 3 (Meta Review): Self-verify if the review was sufficient.
-7. Execute Step 4 (Over-Engineering Review): Check for unnecessary complexity (MVP focus).
+1. Analyze requirements.
+2. Define API contracts.
+3. Create a prioritized task breakdown.
+4. Execute Plan Review - Completeness (Step 2).
+5. Execute Meta Review (Step 3).
+6. Execute Over-Engineering Review (Step 4).
+7. Save plan to `.agent/plan.json`.
+8. Create `task-board.md` in memory path for dashboard compatibility.
+9. Use memory write tool to record plan completion.
 
 ### Step 2: Plan Review (Completeness)
-- **Activated inline**: Ensure requirements are fully mapped.
+- **Executed by PM Agent**: Ensure requirements are fully mapped.
 
 ### Step 3: Review Verification (Meta Review)
-- **Activated inline**: Self-verify if the review was sufficient.
+- **Executed by PM Agent**: Self-verify if the review was sufficient.
 
 ### Step 4: Over-Engineering Review (Simplicity)
-- **Activated inline**: Check for unnecessary complexity (MVP focus).
+- **Executed by PM Agent**: Check for unnecessary complexity (MVP focus).
 
 ### PLAN_GATE
 - [ ] Plan documented in `.agent/plan.json`
@@ -212,16 +214,16 @@ Manually (or via script) remove temporary memory files to keep the workspace cle
 
 ## Review Steps Summary
 
-| Phase   | Steps | Mode             | Agent       | Perspective                       |
+| Phase   | Steps | Execution        | Agent       | Perspective                       |
 | ------- | ----- | ---------------- | ----------- | --------------------------------- |
-| PLAN    | 1-4   | **Activate**     | PM Agent    | Completeness, Meta, Simplicity    |
+| PLAN    | 1-4   | **Inline**       | PM Agent    | Completeness, Meta, Simplicity    |
 | IMPL    | 5     | Spawn (parallel) | Dev Agents  | Implementation                    |
 | VERIFY  | 6-8   | Spawn            | QA Agent    | Alignment, Safety, Regression     |
 | REFINE  | 9-13  | Spawn            | Debug Agent | Reusability, Cascade, Consistency |
 | SHIP    | 14-17 | Spawn            | QA Agent    | Quality, UX, Cascade 2nd, Deploy  |
 | CLEANUP | 18    | Coordinator      | —           | Workspace Hygiene                 |
 
-> **Activate** = 현재 에이전트가 해당 Skill을 직접 읽고 인라인으로 실행 (외부 프로세스 없음)
+> **Inline** = 현재 에이전트가 해당 Skill을 직접 읽고 인라인으로 실행 (외부 프로세스 없음)
 > **Spawn** = `oh-my-ag agent:spawn`으로 별도 CLI 프로세스 실행 (모니터링 가능)
 
 **Total 11 review steps + Cleanup → High quality guaranteed**
