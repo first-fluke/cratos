@@ -1,45 +1,46 @@
 {
-  "project": "cratos-llm refactoring",
-  "assumptions": [
-    "No external API requirements change",
-    "Only internal code structuring and optimizations according to gemini module pattern"
-  ],
-  "alternatives_considered": [
-    "Alternative 1: Keep them as single large files but optimize internals (Rejected: Files exceed 600 lines, violating size constraints)",
-    "Alternative 2: Modularize each provider similar to gemini provider (Selected: Improves maintainability and testability)"
-  ],
+  "phase": "Phase 1: Planning & Task Board Setup",
+  "status": "IN_PROGRESS",
   "tasks": [
     {
-      "id": "T1",
-      "agent": "backend-agent-1",
-      "description": "Split anthropic.rs into anthropic/ (mod.rs, types.rs, convert.rs, provider.rs, tests.rs)",
-      "priority": 1,
-      "status": "pending",
-      "workspace": "./"
+      "id": "1_define_errors",
+      "description": "Define ChronicleError, SchedulerStoreError, and MemoryError in crates/cratos-core/src/error.rs or their respective modules.",
+      "status": "PENDING"
     },
     {
-      "id": "T2",
-      "agent": "backend-agent-2",
-      "description": "Split openrouter.rs into openrouter/ (mod.rs, types.rs, provider.rs, tests.rs)",
-      "priority": 1,
-      "status": "pending",
-      "workspace": "./"
+      "id": "2_refactor_chronicles",
+      "description": "Remove .unwrap() from crates/cratos-core/src/chronicles/store.rs and implement proper error handling.",
+      "status": "PENDING"
     },
     {
-      "id": "T3",
-      "agent": "backend-agent-3",
-      "description": "Split ollama.rs into ollama/ (mod.rs, types.rs, provider.rs, tests.rs)",
-      "priority": 1,
-      "status": "pending",
-      "workspace": "./"
+      "id": "3_refactor_scheduler",
+      "description": "Remove .unwrap() from crates/cratos-core/src/scheduler/store.rs and implement proper error handling.",
+      "status": "PENDING"
     },
     {
-      "id": "T4",
-      "agent": "backend-agent-4",
-      "description": "Optimize .clone() in openai and glm, separate tests for other providers (groq, moonshot, deepseek, etc.)",
-      "priority": 2,
-      "status": "pending",
-      "workspace": "./"
+      "id": "4_refactor_memory",
+      "description": "Remove .unwrap() from crates/cratos-core/src/memory/store.rs and crates/cratos-core/src/memory/sqlite_store.rs.",
+      "status": "PENDING"
+    },
+    {
+      "id": "5_split_scheduler",
+      "description": "Split crates/cratos-core/src/scheduler/store.rs into mod.rs, types.rs, queries.rs, and migrations.rs.",
+      "status": "PENDING"
+    },
+    {
+      "id": "6_split_memory",
+      "description": "Split crates/cratos-core/src/memory/store.rs into mod.rs, cache.rs, persistent.rs, and session.rs.",
+      "status": "PENDING"
+    },
+    {
+      "id": "7_extract_tests",
+      "description": "Extract inline tests to separate files for scheduler and memory modules.",
+      "status": "PENDING"
+    },
+    {
+      "id": "8_verify",
+      "description": "Run all-checks and ensure all tests pass.",
+      "status": "PENDING"
     }
   ]
 }

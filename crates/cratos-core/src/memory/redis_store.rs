@@ -2,7 +2,7 @@ use super::{SessionContext, SessionStore};
 use crate::error::MemoryStoreError;
 pub type Result<T> = std::result::Result<T, MemoryStoreError>;
 use async_trait::async_trait;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, warn};
 /// Redis-backed session store (for production)
 ///
 /// # Security Features
