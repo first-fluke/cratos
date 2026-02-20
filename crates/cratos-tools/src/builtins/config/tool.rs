@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 use tracing::debug;
 
-use super::types::{ConfigAction, ConfigInput, ConfigTarget};
 use super::handler;
+use super::types::{ConfigAction, ConfigInput, ConfigTarget};
 use super::wol;
 use crate::builtins::config_manager::ConfigManager;
 

@@ -118,8 +118,6 @@ impl WhatsAppBusinessAdapter {
         Some(normalized)
     }
 
-
-
     /// Mark message as read
     pub async fn mark_as_read(&self, message_id: &str) -> Result<()> {
         let url = self.config.messages_url();

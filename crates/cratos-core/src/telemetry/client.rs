@@ -5,8 +5,8 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use super::config::{TelemetryConfig, ENV_TELEMETRY_ENABLED};
-use super::types::{TelemetryEvent, TelemetryRecord};
 use super::stats::TelemetryStats;
+use super::types::{TelemetryEvent, TelemetryRecord};
 
 /// Maximum queue size to prevent unbounded memory growth
 const MAX_QUEUE_SIZE: usize = 1000;

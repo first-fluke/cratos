@@ -1,7 +1,7 @@
 use super::*;
-use std::sync::atomic::Ordering;
 use config::DEFAULT_BATCH_SIZE;
 use config::DEFAULT_FLUSH_INTERVAL_SECS;
+use std::sync::atomic::Ordering;
 
 fn create_test_config(enabled: bool, batch_size: usize) -> TelemetryConfig {
     TelemetryConfig {
@@ -54,7 +54,10 @@ async fn test_stats_update_even_when_disabled() {
         })
         .await;
 
-    assert_eq!(telemetry.stats().commands_executed.load(Ordering::Relaxed), 2);
+    assert_eq!(
+        telemetry.stats().commands_executed.load(Ordering::Relaxed),
+        2
+    );
     assert_eq!(
         telemetry.stats().commands_succeeded.load(Ordering::Relaxed),
         1

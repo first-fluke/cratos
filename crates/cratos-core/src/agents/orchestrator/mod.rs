@@ -3,20 +3,20 @@
 //! Unified multi-agent orchestration system for Cratos.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-mod types;
-mod parsing;
-mod execution;
 mod budget;
+mod execution;
+mod parsing;
+mod types;
 
 pub use types::{
-    AgentResponse, ExecutionContext, OrchestratorConfig, OrchestratorError,
-    OrchestratorResult, ParsedAgentTask, TaskStatus,
+    AgentResponse, ExecutionContext, OrchestratorConfig, OrchestratorError, OrchestratorResult,
+    ParsedAgentTask, TaskStatus,
 };
 
 use super::cli_registry::CliRegistry;

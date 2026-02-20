@@ -1,8 +1,8 @@
 //! Exec tool - Shell command execution
 
 pub mod config;
-pub mod security;
 pub mod runner;
+pub mod security;
 pub mod tool;
 
 #[cfg(test)]

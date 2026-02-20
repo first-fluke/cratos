@@ -1,8 +1,8 @@
+use super::security;
 use crate::error::{Error, Result};
 use crate::registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolResult};
 use std::time::Instant;
-use tracing::{debug};
-use super::security;
+use tracing::debug;
 
 /// Default maximum entries for directory listing
 const DEFAULT_MAX_ENTRIES: u64 = 1000;

@@ -37,7 +37,7 @@ impl TwitterConfig {
             .map_err(|_| Error::Config("TWITTER_ACCESS_TOKEN not set".to_string()))?;
         let access_token_secret = std::env::var("TWITTER_ACCESS_TOKEN_SECRET")
             .map_err(|_| Error::Config("TWITTER_ACCESS_TOKEN_SECRET not set".to_string()))?;
-        
+
         let bearer_token = std::env::var("TWITTER_BEARER_TOKEN").ok();
 
         let allowed_users = std::env::var("TWITTER_ALLOWED_USERS")

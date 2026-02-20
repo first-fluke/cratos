@@ -1,10 +1,13 @@
-use super::*;
 use super::parsing::AgentTaskParser;
+use super::*;
 
 #[test]
 fn test_parse_single_mention() {
     let orchestrator = AgentOrchestrator::default();
-    let parser = AgentTaskParser::new(&orchestrator.agents, orchestrator.config.default_agent.clone());
+    let parser = AgentTaskParser::new(
+        &orchestrator.agents,
+        orchestrator.config.default_agent.clone(),
+    );
     let tasks = parser.parse_input("@backend implement the API").unwrap();
 
     assert_eq!(tasks.len(), 1);

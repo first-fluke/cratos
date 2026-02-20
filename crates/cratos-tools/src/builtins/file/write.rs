@@ -1,8 +1,8 @@
+use super::security;
 use crate::error::{Error, Result};
 use crate::registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolResult};
 use std::time::Instant;
 use tracing::{debug, warn};
-use super::security;
 
 /// Tool for writing file contents
 pub struct FileWriteTool {

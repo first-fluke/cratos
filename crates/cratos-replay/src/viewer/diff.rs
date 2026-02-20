@@ -1,10 +1,10 @@
 //! Viewer Diff - Execution comparison and diffing
 
-use uuid::Uuid;
-use tracing::instrument;
-use crate::error::Result;
 use super::mod_impl::ExecutionViewer;
 use super::types::{ExecutionComparison, ExecutionDiff};
+use crate::error::Result;
+use tracing::instrument;
+use uuid::Uuid;
 
 impl ExecutionViewer {
     /// Compare two executions (useful for debugging)

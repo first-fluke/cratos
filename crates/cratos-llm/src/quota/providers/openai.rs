@@ -128,10 +128,22 @@ mod tests {
     fn test_parse_openai_headers() {
         let mut headers = HeaderMap::new();
         headers.insert("x-ratelimit-limit-requests", HeaderValue::from_static("60"));
-        headers.insert("x-ratelimit-remaining-requests", HeaderValue::from_static("12"));
-        headers.insert("x-ratelimit-limit-tokens", HeaderValue::from_static("15000"));
-        headers.insert("x-ratelimit-remaining-tokens", HeaderValue::from_static("8500"));
-        headers.insert("x-ratelimit-reset-requests", HeaderValue::from_static("2m14s"));
+        headers.insert(
+            "x-ratelimit-remaining-requests",
+            HeaderValue::from_static("12"),
+        );
+        headers.insert(
+            "x-ratelimit-limit-tokens",
+            HeaderValue::from_static("15000"),
+        );
+        headers.insert(
+            "x-ratelimit-remaining-tokens",
+            HeaderValue::from_static("8500"),
+        );
+        headers.insert(
+            "x-ratelimit-reset-requests",
+            HeaderValue::from_static("2m14s"),
+        );
 
         let partial = parse_openai_headers(&headers);
         assert_eq!(partial.requests_limit, Some(60));

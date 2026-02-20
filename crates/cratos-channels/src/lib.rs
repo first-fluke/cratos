@@ -38,10 +38,10 @@ pub use slack::{SlackAdapter, SlackConfig};
 pub use discord::{DiscordAdapter, DiscordConfig};
 
 // Re-export WhatsApp adapters
+pub use whatsapp::business::WhatsAppBusinessWebhook;
 pub use whatsapp::{
     WhatsAppAdapter, WhatsAppBusinessAdapter, WhatsAppBusinessConfig, WhatsAppConfig,
 };
-pub use whatsapp::business::WhatsAppBusinessWebhook;
 
 // Re-export Twitter adapter
 pub use twitter::{TwitterAdapter, TwitterConfig};

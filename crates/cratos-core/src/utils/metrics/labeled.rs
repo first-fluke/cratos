@@ -1,6 +1,6 @@
+use super::types::{Counter, Histogram};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use super::types::{Counter, Histogram};
 
 /// Label key — a sorted vector of (key, value) pairs.
 pub type LabelKey = Vec<(String, String)>;

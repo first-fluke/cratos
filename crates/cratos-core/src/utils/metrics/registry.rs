@@ -1,7 +1,7 @@
+use super::labeled::{format_labels, LabeledCounter, LabeledHistogram};
+use super::types::{Counter, Gauge, Histogram};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use super::types::{Counter, Gauge, Histogram};
-use super::labeled::{LabeledCounter, LabeledHistogram, format_labels};
 
 /// Metrics registry for managing multiple metrics
 #[derive(Default, Clone)]

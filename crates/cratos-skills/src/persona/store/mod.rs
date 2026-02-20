@@ -301,7 +301,11 @@ impl PersonaSkillStore {
         .bind(i64::try_from(binding.success_count).unwrap_or(i64::MAX))
         .bind(i64::try_from(binding.failure_count).unwrap_or(i64::MAX))
         .bind(binding.success_rate)
-        .bind(binding.avg_duration_ms.map(|d| i64::try_from(d).unwrap_or(i64::MAX)))
+        .bind(
+            binding
+                .avg_duration_ms
+                .map(|d| i64::try_from(d).unwrap_or(i64::MAX)),
+        )
         .bind(binding.last_used_at.map(|t| t.to_rfc3339()))
         .bind(i32::try_from(binding.consecutive_successes).unwrap_or(i32::MAX))
         .bind(binding.auto_assigned_at.map(|t| t.to_rfc3339()))
@@ -652,7 +656,8 @@ impl PersonaSkillStore {
                 .get::<Option<i64>, _>("avg_duration_ms")
                 .map(|d| u64::try_from(d).unwrap_or(0)),
             last_used_at,
-            consecutive_successes: u32::try_from(row.get::<i32, _>("consecutive_successes")).unwrap_or(0),
+            consecutive_successes: u32::try_from(row.get::<i32, _>("consecutive_successes"))
+                .unwrap_or(0),
             auto_assigned_at,
             created_at,
             updated_at,
@@ -684,13 +689,14 @@ impl PersonaSkillStore {
             skill_id,
             execution_id,
             success: row.get("success"),
-            duration_ms: row.get::<Option<i64>, _>("duration_ms").map(|d| u64::try_from(d).unwrap_or(0)),
+            duration_ms: row
+                .get::<Option<i64>, _>("duration_ms")
+                .map(|d| u64::try_from(d).unwrap_or(0)),
             error_message: row.get("error_message"),
             started_at,
         })
     }
 }
-
 
 #[cfg(test)]
 mod tests;

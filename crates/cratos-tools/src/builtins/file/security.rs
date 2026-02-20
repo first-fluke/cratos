@@ -7,18 +7,47 @@ use tracing::{debug, warn};
 /// Sensitive file patterns that require extra caution
 static SENSITIVE_FILE_PATTERNS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     HashSet::from([
-        ".env", ".env.local", ".env.production", ".env.development",
-        "credentials", "credentials.json", "secrets", "secret",
-        ".aws", ".ssh", "id_rsa", "id_ed25519", ".gitconfig", ".npmrc", ".pypirc",
-        "token", "api_key", "apikey", "password", ".htpasswd", "shadow", "passwd",
+        ".env",
+        ".env.local",
+        ".env.production",
+        ".env.development",
+        "credentials",
+        "credentials.json",
+        "secrets",
+        "secret",
+        ".aws",
+        ".ssh",
+        "id_rsa",
+        "id_ed25519",
+        ".gitconfig",
+        ".npmrc",
+        ".pypirc",
+        "token",
+        "api_key",
+        "apikey",
+        "password",
+        ".htpasswd",
+        "shadow",
+        "passwd",
     ])
 });
 
 /// Blocked directory patterns
 static BLOCKED_DIRECTORIES: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
     vec![
-        "/etc", "/root", "/var/log", "/boot", "/dev", "/proc", "/sys",
-        "/usr/bin", "/usr/sbin", "/bin", "/sbin", "/var/run", "/run",
+        "/etc",
+        "/root",
+        "/var/log",
+        "/boot",
+        "/dev",
+        "/proc",
+        "/sys",
+        "/usr/bin",
+        "/usr/sbin",
+        "/bin",
+        "/sbin",
+        "/var/run",
+        "/run",
     ]
 });
 
@@ -116,9 +145,20 @@ pub fn is_sensitive_file(path: &Path) -> bool {
 pub fn content_appears_sensitive(content: &str) -> bool {
     let lower = content.to_lowercase();
     let patterns = [
-        "api_key=", "apikey=", "api-key=", "secret=", "password=", "passwd=",
-        "token=", "bearer ", "authorization:", "aws_secret", "private_key",
-        "-----begin", "-----begin rsa", "-----begin openssh",
+        "api_key=",
+        "apikey=",
+        "api-key=",
+        "secret=",
+        "password=",
+        "passwd=",
+        "token=",
+        "bearer ",
+        "authorization:",
+        "aws_secret",
+        "private_key",
+        "-----begin",
+        "-----begin rsa",
+        "-----begin openssh",
     ];
 
     patterns.iter().any(|p| lower.contains(p))

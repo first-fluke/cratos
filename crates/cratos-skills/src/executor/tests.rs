@@ -147,8 +147,11 @@ async fn test_step_failure_handling() {
 
     let executor = SkillExecutor::new(mock);
 
-    let skill = Skill::new("fail_skill", "Test", SkillCategory::Custom)
-        .with_step(SkillStep::new(1, "failing_tool", json!({})));
+    let skill = Skill::new("fail_skill", "Test", SkillCategory::Custom).with_step(SkillStep::new(
+        1,
+        "failing_tool",
+        json!({}),
+    ));
 
     let result = executor.execute(&skill, &HashMap::new()).await.unwrap();
 

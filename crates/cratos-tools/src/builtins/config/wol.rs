@@ -1,9 +1,12 @@
-use crate::error::{Error, Result};
-use tracing::{info};
-use super::types::{ConfigInput, ConfigAction};
 use super::super::config_manager::{ConfigManager, MacAddressGuide};
+use super::types::{ConfigAction, ConfigInput};
+use crate::error::{Error, Result};
+use tracing::info;
 
-pub async fn handle_wol(manager: &mut ConfigManager, params: &ConfigInput) -> Result<serde_json::Value> {
+pub async fn handle_wol(
+    manager: &mut ConfigManager,
+    params: &ConfigInput,
+) -> Result<serde_json::Value> {
     match params.action {
         ConfigAction::Set => handle_wol_set(manager, params).await,
         ConfigAction::List => handle_wol_list(manager).await,
@@ -12,7 +15,10 @@ pub async fn handle_wol(manager: &mut ConfigManager, params: &ConfigInput) -> Re
     }
 }
 
-async fn handle_wol_set(manager: &mut ConfigManager, params: &ConfigInput) -> Result<serde_json::Value> {
+async fn handle_wol_set(
+    manager: &mut ConfigManager,
+    params: &ConfigInput,
+) -> Result<serde_json::Value> {
     let device_name = params.device_name.as_ref().ok_or_else(|| {
         Error::InvalidInput("device_name is required for WoL registration".to_string())
     })?;
@@ -81,7 +87,10 @@ pub async fn handle_wol_list(manager: &ConfigManager) -> Result<serde_json::Valu
     }))
 }
 
-async fn handle_wol_get(manager: &ConfigManager, params: &ConfigInput) -> Result<serde_json::Value> {
+async fn handle_wol_get(
+    manager: &ConfigManager,
+    params: &ConfigInput,
+) -> Result<serde_json::Value> {
     let device_name = params
         .device_name
         .as_ref()
@@ -102,7 +111,10 @@ async fn handle_wol_get(manager: &ConfigManager, params: &ConfigInput) -> Result
     }))
 }
 
-pub async fn handle_wol_delete(manager: &mut ConfigManager, params: &ConfigInput) -> Result<serde_json::Value> {
+pub async fn handle_wol_delete(
+    manager: &mut ConfigManager,
+    params: &ConfigInput,
+) -> Result<serde_json::Value> {
     let device_name = params
         .device_name
         .as_ref()

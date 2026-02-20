@@ -1,6 +1,6 @@
-use super::types::{OrchestratorResult, ParsedAgentTask, MENTION_REGEX, OrchestratorError};
-use std::collections::HashMap;
 use super::super::config::AgentConfig;
+use super::types::{OrchestratorError, OrchestratorResult, ParsedAgentTask, MENTION_REGEX};
+use std::collections::HashMap;
 
 pub struct AgentTaskParser<'a> {
     pub(crate) agents: &'a HashMap<String, AgentConfig>,
@@ -9,7 +9,10 @@ pub struct AgentTaskParser<'a> {
 
 impl<'a> AgentTaskParser<'a> {
     pub fn new(agents: &'a HashMap<String, AgentConfig>, default_agent: String) -> Self {
-        Self { agents, default_agent }
+        Self {
+            agents,
+            default_agent,
+        }
     }
 
     /// Parse input into agent tasks

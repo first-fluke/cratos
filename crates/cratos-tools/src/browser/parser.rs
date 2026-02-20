@@ -1,6 +1,6 @@
-use crate::error::{Error, Result};
-use super::tool::BrowserTool;
 use super::actions::BrowserAction;
+use super::tool::BrowserTool;
+use crate::error::{Error, Result};
 
 impl BrowserTool {
     /// Parse input JSON into a BrowserAction

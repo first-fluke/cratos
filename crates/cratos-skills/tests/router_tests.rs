@@ -6,22 +6,19 @@ async fn create_test_router() -> SkillRouter {
     let registry = SkillRegistry::new();
 
     // Add a test skill
-    let mut skill = Skill::new("file_reader", "Read files", SkillCategory::Custom)
-        .with_trigger(
-            SkillTrigger::with_keywords(vec!["read".to_string(), "file".to_string()])
-                .add_pattern(r"read\s+(?P<path>\S+)")
-                .add_intent("file_operation")
-                .with_priority(10),
-        );
+    let mut skill = Skill::new("file_reader", "Read files", SkillCategory::Custom).with_trigger(
+        SkillTrigger::with_keywords(vec!["read".to_string(), "file".to_string()])
+            .add_pattern(r"read\s+(?P<path>\S+)")
+            .add_intent("file_operation")
+            .with_priority(10),
+    );
     skill.activate();
     registry.register(skill).await.unwrap();
 
     // Add another skill
-    let mut skill2 = Skill::new("git_committer", "Git commit", SkillCategory::Custom)
-        .with_trigger(
-            SkillTrigger::with_keywords(vec!["commit".to_string(), "git".to_string()])
-                .with_priority(5),
-        );
+    let mut skill2 = Skill::new("git_committer", "Git commit", SkillCategory::Custom).with_trigger(
+        SkillTrigger::with_keywords(vec!["commit".to_string(), "git".to_string()]).with_priority(5),
+    );
     skill2.activate();
     registry.register(skill2).await.unwrap();
 

@@ -1,7 +1,7 @@
+use super::types::{OrchestratorError, OrchestratorResult};
+use super::AgentOrchestrator;
 use std::sync::atomic::Ordering;
 use tracing::{debug, warn};
-use super::AgentOrchestrator;
-use super::types::{OrchestratorError, OrchestratorResult};
 
 impl AgentOrchestrator {
     /// Add tokens to usage counter, returns error if budget exceeded

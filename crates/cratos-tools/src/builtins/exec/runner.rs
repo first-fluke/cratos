@@ -1,7 +1,7 @@
+use super::config::{ExecConfig, ExecHost};
+use crate::error::{Error, Result};
 use std::process::Stdio;
 use tokio::process::Command;
-use crate::error::{Error, Result};
-use super::config::{ExecConfig, ExecHost};
 
 pub async fn run_command(
     config: &ExecConfig,
@@ -41,9 +41,7 @@ pub async fn run_command(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
-    let child = cmd.spawn().map_err(|e| {
-        Error::Execution(e.to_string())
-    })?;
+    let child = cmd.spawn().map_err(|e| Error::Execution(e.to_string()))?;
 
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(timeout_secs),

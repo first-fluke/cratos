@@ -178,7 +178,6 @@ impl WhatsAppAdapter {
 
         Some(normalized)
     }
-
 }
 
 #[async_trait::async_trait]

@@ -1,7 +1,7 @@
-use super::*;
-use crate::registry::{Tool, RiskLevel, ToolCategory};
-use std::path::Path;
 use super::security;
+use super::*;
+use crate::registry::{RiskLevel, Tool, ToolCategory};
+use std::path::Path;
 
 #[test]
 fn test_file_read_definition() {
@@ -60,8 +60,12 @@ fn test_sensitive_file_detection() {
 fn test_sensitive_content_detection() {
     assert!(security::content_appears_sensitive("API_KEY=sk-1234567890"));
     assert!(security::content_appears_sensitive("password=secret123"));
-    assert!(security::content_appears_sensitive("Bearer eyJhbGciOiJIUzI1NiJ9"));
-    assert!(security::content_appears_sensitive("-----BEGIN RSA PRIVATE KEY-----"));
+    assert!(security::content_appears_sensitive(
+        "Bearer eyJhbGciOiJIUzI1NiJ9"
+    ));
+    assert!(security::content_appears_sensitive(
+        "-----BEGIN RSA PRIVATE KEY-----"
+    ));
     assert!(security::content_appears_sensitive(
         "aws_secret_access_key=AKIAIOSFODNN7EXAMPLE"
     ));
@@ -70,7 +74,9 @@ fn test_sensitive_content_detection() {
     assert!(!security::content_appears_sensitive(
         "fn main() { println!(\"Hello\"); }"
     ));
-    assert!(!security::content_appears_sensitive("# Configuration\nport = 8080"));
+    assert!(!security::content_appears_sensitive(
+        "# Configuration\nport = 8080"
+    ));
 }
 
 #[tokio::test]

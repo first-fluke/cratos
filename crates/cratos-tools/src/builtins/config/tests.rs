@@ -1,8 +1,8 @@
+use super::types::{ConfigAction, ConfigInput, ConfigTarget};
 use super::*;
-use tempfile::TempDir;
-use crate::registry::Tool;
-use super::types::{ConfigInput, ConfigAction, ConfigTarget};
 use crate::registry::RiskLevel;
+use crate::registry::Tool;
+use tempfile::TempDir;
 
 fn create_test_tool() -> (ConfigTool, TempDir) {
     let temp_dir = TempDir::new().unwrap();

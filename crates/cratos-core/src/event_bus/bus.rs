@@ -1,5 +1,5 @@
-use tokio::sync::broadcast;
 use super::types::OrchestratorEvent;
+use tokio::sync::broadcast;
 
 /// Broadcast-based event bus for real-time orchestrator events.
 ///

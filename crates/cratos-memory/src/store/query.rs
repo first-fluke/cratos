@@ -181,7 +181,8 @@ impl GraphStore {
                     first_seen: DateTime::parse_from_rfc3339(&first_seen_str)
                         .map(|dt| dt.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
-                    mention_count: u32::try_from(r.try_get::<i32, _>("mention_count")?).unwrap_or(0),
+                    mention_count: u32::try_from(r.try_get::<i32, _>("mention_count")?)
+                        .unwrap_or(0),
                 })
             })
             .collect()

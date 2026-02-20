@@ -1,6 +1,6 @@
-use super::*;
-use crate::registry::{Tool, RiskLevel, ToolCategory};
 use super::security;
+use super::*;
+use crate::registry::{RiskLevel, Tool, ToolCategory};
 
 #[test]
 fn test_exec_definition() {
@@ -40,7 +40,7 @@ fn test_blocked_commands_permissive() {
     assert!(!security::is_command_blocked(&tool.config, "npm"));
     assert!(!security::is_command_blocked(&tool.config, "pip"));
     assert!(!security::is_command_blocked(&tool.config, "brew"));
-    
+
     // osascript is now blocked (H1: command wrapper)
     assert!(security::is_command_blocked(&tool.config, "osascript"));
 
@@ -117,8 +117,14 @@ fn test_dangerous_paths() {
 
     // Safe paths should pass
     assert!(!security::is_path_dangerous(&tool.config, "/tmp/test"));
-    assert!(!security::is_path_dangerous(&tool.config, "/home/user/project"));
-    assert!(!security::is_path_dangerous(&tool.config, "./relative/path"));
+    assert!(!security::is_path_dangerous(
+        &tool.config,
+        "/home/user/project"
+    ));
+    assert!(!security::is_path_dangerous(
+        &tool.config,
+        "./relative/path"
+    ));
 }
 
 #[test]
@@ -128,7 +134,10 @@ fn test_custom_blocked_paths() {
         ..ExecConfig::default()
     });
 
-    assert!(security::is_path_dangerous(&tool.config, "/custom/secret/file.txt"));
+    assert!(security::is_path_dangerous(
+        &tool.config,
+        "/custom/secret/file.txt"
+    ));
     // Default paths no longer blocked (replaced by custom list)
     assert!(!security::is_path_dangerous(&tool.config, "/etc/passwd"));
 }

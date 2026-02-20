@@ -138,7 +138,9 @@ impl Tool for ExecTool {
 
         // SECURITY: Check args for dangerous patterns
         for arg in &args {
-            if (arg.contains("..") || arg.starts_with('/')) && security::is_path_dangerous(&self.config, arg) {
+            if (arg.contains("..") || arg.starts_with('/'))
+                && security::is_path_dangerous(&self.config, arg)
+            {
                 warn!(arg = %arg, "Blocked dangerous path in argument");
                 return Err(Error::PermissionDenied(format!(
                     "Argument '{}' references a restricted path",
@@ -176,14 +178,8 @@ impl Tool for ExecTool {
 
         debug!(command = %command, args = ?args, host = ?host, "Executing command");
 
-        let (stdout, stderr, exit_code, success) = runner::run_command(
-            &self.config,
-            host,
-            command,
-            &args,
-            cwd,
-            timeout_secs,
-        ).await?;
+        let (stdout, stderr, exit_code, success) =
+            runner::run_command(&self.config, host, command, &args, cwd, timeout_secs).await?;
 
         let duration = start.elapsed().as_millis() as u64;
 

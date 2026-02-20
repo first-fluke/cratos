@@ -484,5 +484,3 @@ impl SkillRouter {
             .find(|r| r.score >= self.config.min_score)
     }
 }
-
-

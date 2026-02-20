@@ -1,9 +1,9 @@
 //! Viewer Types - Common types for the execution viewer
 
+use crate::event::{Event, EventType, Execution, ExecutionStatus, TimelineEntry};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::event::{Execution, ExecutionStatus, TimelineEntry, EventType, Event};
 
 /// Detailed view of an execution
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -75,7 +75,9 @@ impl GraphStore {
             .fetch_one(&self.pool)
             .await?;
 
-        Ok(row.try_get::<Option<i32>, _>("max_idx")?.map(|v| u32::try_from(v).unwrap_or(0)))
+        Ok(row
+            .try_get::<Option<i32>, _>("max_idx")?
+            .map(|v| u32::try_from(v).unwrap_or(0)))
     }
 
     pub(crate) fn row_to_turn(row: &sqlx::sqlite::SqliteRow) -> Result<Turn> {

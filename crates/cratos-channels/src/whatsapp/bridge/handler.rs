@@ -23,10 +23,7 @@ impl WhatsAppHandler {
 
     /// Handle incoming webhook message
     #[instrument(skip(self, msg))]
-    pub async fn handle_webhook(
-        &self,
-        msg: WhatsAppWebhookMessage,
-    ) -> Result<()> {
+    pub async fn handle_webhook(&self, msg: WhatsAppWebhookMessage) -> Result<()> {
         let Some(normalized) = self.adapter.normalize_webhook_message(&msg) else {
             return Ok(());
         };
@@ -60,20 +57,23 @@ impl WhatsAppHandler {
                 if response_text.len() > WHATSAPP_MESSAGE_LIMIT {
                     for chunk in response_text.as_bytes().chunks(WHATSAPP_MESSAGE_LIMIT) {
                         if let Ok(text) = std::str::from_utf8(chunk) {
-                            let _ = self.adapter
+                            let _ = self
+                                .adapter
                                 .send_message(&msg.from, OutgoingMessage::text(text))
                                 .await;
                         }
                     }
                 } else {
-                    let _ = self.adapter
+                    let _ = self
+                        .adapter
                         .send_message(&msg.from, OutgoingMessage::text(response_text))
                         .await;
                 }
             }
             Err(e) => {
                 error!(error = %e, "Failed to process WhatsApp message");
-                let _ = self.adapter
+                let _ = self
+                    .adapter
                     .send_message(
                         &msg.from,
                         OutgoingMessage::text("Sorry, I encountered an error. Please try again."),

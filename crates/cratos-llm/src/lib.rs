@@ -56,9 +56,9 @@ pub use cost::{
     global_tracker, CostReport, CostTracker, ModelPricing, SavingsPotential, UsageRecord,
     UsageStats,
 };
-pub use providers::gemini_quota;
 pub use error::{Error, Result};
 pub use gemini_quota::start_gemini_quota_poller;
+pub use providers::gemini_quota;
 pub use quota::{
     format_compact_number, format_duration, global_quota_tracker, QuotaSource, QuotaState,
     QuotaTracker,

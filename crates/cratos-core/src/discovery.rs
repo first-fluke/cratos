@@ -4,9 +4,9 @@
 //! can discover the server automatically on the local network.
 
 use std::sync::Arc;
-use tracing::warn;
 #[cfg(feature = "mdns")]
 use tracing::info;
+use tracing::warn;
 
 /// Service type for mDNS advertisement.
 pub const SERVICE_TYPE: &str = "_cratos._tcp.local.";
@@ -99,7 +99,10 @@ impl DiscoveryService {
             "mDNS service registered"
         );
 
-        let mut guard = self.daemon.lock().map_err(|_| crate::Error::Internal("mDNS daemon lock poisoned".to_string()))?;
+        let mut guard = self
+            .daemon
+            .lock()
+            .map_err(|_| crate::Error::Internal("mDNS daemon lock poisoned".to_string()))?;
         *guard = Some(daemon);
 
         Ok(())

@@ -6,8 +6,8 @@ pub mod handler;
 pub mod types;
 
 pub use adapter::WhatsAppAdapter;
-pub use handler::WhatsAppHandler;
 pub use config::WhatsAppConfig;
+pub use handler::WhatsAppHandler;
 pub use types::*;
 
 #[cfg(test)]

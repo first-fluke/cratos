@@ -23,14 +23,12 @@ impl WhatsAppBusinessHandler {
 
     /// Handle incoming webhook payload
     #[instrument(skip(self, webhook))]
-    pub async fn handle_webhook(
-        &self,
-        webhook: WhatsAppBusinessWebhook,
-    ) -> Result<()> {
+    pub async fn handle_webhook(&self, webhook: WhatsAppBusinessWebhook) -> Result<()> {
         let messages = self.adapter.extract_messages(&webhook);
 
         for (sender_name, msg) in messages {
-            let Some(normalized) = self.adapter.normalize_webhook_message(&sender_name, &msg) else {
+            let Some(normalized) = self.adapter.normalize_webhook_message(&sender_name, &msg)
+            else {
                 continue;
             };
 
@@ -60,20 +58,23 @@ impl WhatsAppBusinessHandler {
                     if response_text.len() > WHATSAPP_MESSAGE_LIMIT {
                         for chunk in response_text.as_bytes().chunks(WHATSAPP_MESSAGE_LIMIT) {
                             if let Ok(text) = std::str::from_utf8(chunk) {
-                                let _ = self.adapter
+                                let _ = self
+                                    .adapter
                                     .send_message(&msg.from, OutgoingMessage::text(text))
                                     .await;
                             }
                         }
                     } else {
-                        let _ = self.adapter
+                        let _ = self
+                            .adapter
                             .send_message(&msg.from, OutgoingMessage::text(response_text))
                             .await;
                     }
                 }
                 Err(e) => {
                     error!(error = %e, "Failed to process WhatsApp Business message");
-                    let _ = self.adapter
+                    let _ = self
+                        .adapter
                         .send_message(
                             &msg.from,
                             OutgoingMessage::text(

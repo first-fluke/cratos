@@ -1,3 +1,4 @@
+use super::security;
 use crate::error::{Error, Result};
 use crate::registry::{RiskLevel, Tool, ToolCategory, ToolDefinition, ToolResult};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -5,7 +6,6 @@ use std::path::Path;
 use std::time::Instant;
 use tokio::io::AsyncReadExt;
 use tracing::{debug, warn};
-use super::security;
 
 /// Tool for reading file contents
 pub struct FileReadTool {

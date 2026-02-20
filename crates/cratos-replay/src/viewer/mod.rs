@@ -3,11 +3,11 @@
 //! This module provides the query and visualization layer for the replay system.
 //! It transforms raw events into human-readable timelines and summaries.
 
-pub mod types;
-pub mod timeline;
-pub mod stats;
-pub mod replay;
 pub mod diff;
+pub mod replay;
+pub mod stats;
+pub mod timeline;
+pub mod types;
 
 // Internal module for partial impls to refer to
 pub(crate) mod mod_impl {

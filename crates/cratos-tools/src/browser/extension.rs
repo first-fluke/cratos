@@ -1,7 +1,7 @@
-use tracing::{info, warn, debug};
-use crate::error::{Error, Result};
-use super::tool::BrowserTool;
 use super::actions::{BrowserAction, BrowserActionResult};
+use super::tool::BrowserTool;
+use crate::error::{Error, Result};
+use tracing::{debug, info, warn};
 
 impl BrowserTool {
     /// Check if the browser extension is connected (via REST status endpoint).
@@ -68,7 +68,10 @@ impl BrowserTool {
     }
 
     /// Execute via Chrome extension relay (REST API).
-    pub(super) async fn execute_via_extension(&self, action: BrowserAction) -> Result<BrowserActionResult> {
+    pub(super) async fn execute_via_extension(
+        &self,
+        action: BrowserAction,
+    ) -> Result<BrowserActionResult> {
         // Route to correct REST endpoint based on action type
         let (endpoint, params) = match &action {
             BrowserAction::Navigate { url, .. } => {

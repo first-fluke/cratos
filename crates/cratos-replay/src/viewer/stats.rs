@@ -1,11 +1,15 @@
 //! Viewer Stats - Execution statistics and summaries
 
-use crate::event::{Event, EventType, Execution};
 use super::mod_impl::ExecutionViewer;
-use super::types::{ExecutionStats, ExecutionSummary, truncate};
+use super::types::{truncate, ExecutionStats, ExecutionSummary};
+use crate::event::{Event, EventType, Execution};
 
 impl ExecutionViewer {
-    pub(super) fn build_summary(&self, execution: &Execution, events: &[Event]) -> ExecutionSummary {
+    pub(super) fn build_summary(
+        &self,
+        execution: &Execution,
+        events: &[Event],
+    ) -> ExecutionSummary {
         let tool_calls: Vec<_> = events
             .iter()
             .filter(|e| e.event_type == EventType::ToolCall)

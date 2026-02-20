@@ -1,9 +1,9 @@
 //! Viewer Timeline - Timeline building and event summarization
 
-use uuid::Uuid;
-use crate::event::{Event, EventType, TimelineEntry};
 use super::mod_impl::ExecutionViewer;
 use super::types::truncate;
+use crate::event::{Event, EventType, TimelineEntry};
+use uuid::Uuid;
 
 impl ExecutionViewer {
     pub(super) fn build_timeline(&self, events: &[Event]) -> Vec<TimelineEntry> {

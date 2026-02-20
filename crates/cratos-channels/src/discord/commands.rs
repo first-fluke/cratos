@@ -1,6 +1,6 @@
+use cratos_core::Orchestrator;
 use serenity::all::CreateEmbed;
 use std::sync::Arc;
-use cratos_core::Orchestrator;
 use uuid::Uuid;
 
 /// Discord Slash Command Handlers

@@ -1,12 +1,12 @@
 //! Viewer Replay - Rerun functionality for executions
 
-use uuid::Uuid;
-use tracing::instrument;
+use super::mod_impl::ExecutionViewer;
+use super::types::{ReplayOptions, ReplayResult, ReplayStep};
 use crate::error::Result;
 use crate::event::{Event, EventType};
 use crate::store::EventStoreTrait;
-use super::mod_impl::ExecutionViewer;
-use super::types::{ReplayOptions, ReplayResult, ReplayStep};
+use tracing::instrument;
+use uuid::Uuid;
 
 impl ExecutionViewer {
     /// Replay an execution with the given options.

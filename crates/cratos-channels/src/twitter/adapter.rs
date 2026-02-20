@@ -1,21 +1,18 @@
 use super::config::TwitterConfig;
 use crate::error::{Error, Result};
-use crate::message::{
-    ChannelAdapter, ChannelType, OutgoingAttachment, OutgoingMessage,
-};
-
+use crate::message::{ChannelAdapter, ChannelType, OutgoingAttachment, OutgoingMessage};
 
 /// Twitter adapter (placeholder for now)
 pub struct TwitterAdapter {
-    pub(crate) config: TwitterConfig,
-    pub(crate) client: reqwest::Client,
+    pub(crate) _config: TwitterConfig,
+    pub(crate) _client: reqwest::Client,
 }
 
 impl TwitterAdapter {
     pub fn new(config: TwitterConfig) -> Self {
         Self {
-            config,
-            client: reqwest::Client::new(),
+            _config: config,
+            _client: reqwest::Client::new(),
         }
     }
 
@@ -32,7 +29,9 @@ impl ChannelAdapter for TwitterAdapter {
     }
 
     async fn send_message(&self, _channel_id: &str, _message: OutgoingMessage) -> Result<String> {
-        Err(Error::Twitter("Sending messages not implemented yet".to_string()))
+        Err(Error::Twitter(
+            "Sending messages not implemented yet".to_string(),
+        ))
     }
 
     async fn edit_message(
@@ -41,11 +40,15 @@ impl ChannelAdapter for TwitterAdapter {
         _message_id: &str,
         _message: OutgoingMessage,
     ) -> Result<()> {
-        Err(Error::Twitter("Editing messages not implemented yet".to_string()))
+        Err(Error::Twitter(
+            "Editing messages not implemented yet".to_string(),
+        ))
     }
 
     async fn delete_message(&self, _channel_id: &str, _message_id: &str) -> Result<()> {
-        Err(Error::Twitter("Deleting messages not implemented yet".to_string()))
+        Err(Error::Twitter(
+            "Deleting messages not implemented yet".to_string(),
+        ))
     }
 
     async fn send_typing(&self, _channel_id: &str) -> Result<()> {
@@ -58,6 +61,8 @@ impl ChannelAdapter for TwitterAdapter {
         _attachment: OutgoingAttachment,
         _reply_to: Option<&str>,
     ) -> Result<String> {
-        Err(Error::Twitter("Sending attachments not implemented yet".to_string()))
+        Err(Error::Twitter(
+            "Sending attachments not implemented yet".to_string(),
+        ))
     }
 }

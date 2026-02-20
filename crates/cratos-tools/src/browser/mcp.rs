@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use tracing::{info, warn, debug};
+use super::actions::{BrowserAction, BrowserActionResult};
+use super::tool::BrowserTool;
 use crate::error::{Error, Result};
 use crate::mcp::{McpClient, McpServerConfig, McpTransport};
-use super::tool::BrowserTool;
-use super::actions::{BrowserAction, BrowserActionResult};
+use std::collections::HashMap;
+use tracing::{debug, info, warn};
 
 impl BrowserTool {
     /// Ensure MCP client is connected
@@ -50,7 +50,10 @@ impl BrowserTool {
     }
 
     /// Execute via MCP server (Playwright/Puppeteer).
-    pub(super) async fn execute_via_mcp(&self, action: BrowserAction) -> Result<BrowserActionResult> {
+    pub(super) async fn execute_via_mcp(
+        &self,
+        action: BrowserAction,
+    ) -> Result<BrowserActionResult> {
         self.ensure_connected().await?;
 
         let client_guard = self.mcp_client.read().await;

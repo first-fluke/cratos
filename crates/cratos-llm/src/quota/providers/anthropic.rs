@@ -22,11 +22,26 @@ mod tests {
     #[test]
     fn test_parse_anthropic_headers() {
         let mut headers = HeaderMap::new();
-        headers.insert("anthropic-ratelimit-requests-limit", HeaderValue::from_static("1000"));
-        headers.insert("anthropic-ratelimit-requests-remaining", HeaderValue::from_static("987"));
-        headers.insert("anthropic-ratelimit-tokens-limit", HeaderValue::from_static("100000"));
-        headers.insert("anthropic-ratelimit-tokens-remaining", HeaderValue::from_static("45200"));
-        headers.insert("anthropic-ratelimit-requests-reset", HeaderValue::from_static("2026-02-06T15:30:00Z"));
+        headers.insert(
+            "anthropic-ratelimit-requests-limit",
+            HeaderValue::from_static("1000"),
+        );
+        headers.insert(
+            "anthropic-ratelimit-requests-remaining",
+            HeaderValue::from_static("987"),
+        );
+        headers.insert(
+            "anthropic-ratelimit-tokens-limit",
+            HeaderValue::from_static("100000"),
+        );
+        headers.insert(
+            "anthropic-ratelimit-tokens-remaining",
+            HeaderValue::from_static("45200"),
+        );
+        headers.insert(
+            "anthropic-ratelimit-requests-reset",
+            HeaderValue::from_static("2026-02-06T15:30:00Z"),
+        );
 
         let partial = parse_anthropic_headers(&headers);
         assert_eq!(partial.requests_limit, Some(1000));

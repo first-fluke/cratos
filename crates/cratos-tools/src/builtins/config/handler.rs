@@ -1,10 +1,13 @@
-use crate::error::{Error, Result};
-use tracing::{info};
-use super::types::{ConfigInput, ConfigAction, ConfigTarget};
-use super::super::config_manager::{ConfigManager};
+use super::super::config_manager::ConfigManager;
+use super::types::{ConfigAction, ConfigInput, ConfigTarget};
 use super::wol;
+use crate::error::{Error, Result};
+use tracing::info;
 
-pub async fn handle_set(manager: &mut ConfigManager, params: &ConfigInput) -> Result<serde_json::Value> {
+pub async fn handle_set(
+    manager: &mut ConfigManager,
+    params: &ConfigInput,
+) -> Result<serde_json::Value> {
     let value = params.value.as_ref().ok_or_else(|| {
         Error::InvalidInput(format!(
             "value is required for setting {}. Available options: {:?}",
@@ -64,7 +67,10 @@ pub async fn handle_set(manager: &mut ConfigManager, params: &ConfigInput) -> Re
     }))
 }
 
-pub async fn handle_get(manager: &ConfigManager, params: &ConfigInput) -> Result<serde_json::Value> {
+pub async fn handle_get(
+    manager: &ConfigManager,
+    params: &ConfigInput,
+) -> Result<serde_json::Value> {
     let config = manager.config();
 
     let current_value = match params.target {
@@ -132,7 +138,10 @@ pub async fn handle_get(manager: &ConfigManager, params: &ConfigInput) -> Result
     }))
 }
 
-pub async fn handle_list(manager: &ConfigManager, params: &ConfigInput) -> Result<serde_json::Value> {
+pub async fn handle_list(
+    manager: &ConfigManager,
+    params: &ConfigInput,
+) -> Result<serde_json::Value> {
     if params.target == ConfigTarget::WolDevice {
         return wol::handle_wol_list(manager).await;
     }
@@ -148,7 +157,10 @@ pub async fn handle_list(manager: &ConfigManager, params: &ConfigInput) -> Resul
     }))
 }
 
-pub async fn handle_delete(manager: &mut ConfigManager, params: &ConfigInput) -> Result<serde_json::Value> {
+pub async fn handle_delete(
+    manager: &mut ConfigManager,
+    params: &ConfigInput,
+) -> Result<serde_json::Value> {
     if params.target == ConfigTarget::WolDevice {
         return wol::handle_wol_delete(manager, params).await;
     }

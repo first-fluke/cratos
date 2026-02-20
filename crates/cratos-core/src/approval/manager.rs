@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use tokio::sync::{oneshot, RwLock};
 use uuid::Uuid;
 
+use super::types::{ApprovalError, ApprovalRequest, ApprovalStatus};
 use crate::auth::AuthContext;
 use crate::event_bus::{EventBus, OrchestratorEvent};
-use super::types::{ApprovalError, ApprovalRequest, ApprovalStatus};
 
 /// Manager for approval requests
 pub struct ApprovalManager {

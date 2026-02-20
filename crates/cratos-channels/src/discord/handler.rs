@@ -4,8 +4,8 @@ use crate::util::{mask_for_logging, sanitize_error_for_user, DISCORD_MESSAGE_LIM
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use cratos_core::{Orchestrator, OrchestratorInput};
 use serenity::all::{
-    Command, CommandInteraction, CommandOptionType, ComponentInteraction, Context, CreateAttachment,
-    CreateCommand, CreateCommandOption, CreateInteractionResponse,
+    Command, CommandInteraction, CommandOptionType, ComponentInteraction, Context,
+    CreateAttachment, CreateCommand, CreateCommandOption, CreateInteractionResponse,
     CreateInteractionResponseMessage, CreateMessage, EventHandler, Interaction, Message,
     MessageReference, Ready,
 };
@@ -89,15 +89,14 @@ impl EventHandler for DiscordHandler {
                         let embed = self.commands.handle_status();
                         CreateInteractionResponseMessage::new().embed(embed)
                     }
-                    "sessions" => {
-                        CreateInteractionResponseMessage::new().content(self.commands.handle_sessions())
-                    }
-                    "tools" => {
-                        CreateInteractionResponseMessage::new().content(self.commands.handle_tools())
-                    }
+                    "sessions" => CreateInteractionResponseMessage::new()
+                        .content(self.commands.handle_sessions()),
+                    "tools" => CreateInteractionResponseMessage::new()
+                        .content(self.commands.handle_tools()),
                     "cancel" => {
                         let id = get_string_option(&command, "id").unwrap_or_default();
-                        CreateInteractionResponseMessage::new().content(self.commands.handle_cancel(&id))
+                        CreateInteractionResponseMessage::new()
+                            .content(self.commands.handle_cancel(&id))
                     }
                     "approve" => {
                         let id = get_string_option(&command, "id").unwrap_or_default();

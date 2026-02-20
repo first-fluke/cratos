@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use super::types::TelemetryEvent;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Aggregated statistics (local only, never sent)
 #[derive(Debug, Default)]
