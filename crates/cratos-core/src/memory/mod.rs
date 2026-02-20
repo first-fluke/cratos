@@ -16,12 +16,16 @@
 //!
 //! Redis is available for high-scale deployments but is entirely optional.
 
+mod cache;
+mod persistent;
+mod redis_store;
 mod session;
-mod sqlite_store;
 mod store;
 mod working;
 
+pub use cache::MemoryStore;
+pub use persistent::{SessionBackend, SessionBackendConfig, SqliteStore};
+pub use redis_store::RedisStore;
 pub use session::SessionContext;
-pub use sqlite_store::{SessionBackend, SessionBackendConfig, SqliteStore};
-pub use store::{MemoryStore, RedisStore, SessionStore};
+pub use store::SessionStore;
 pub use working::{ToolExecution, WorkingMemory};

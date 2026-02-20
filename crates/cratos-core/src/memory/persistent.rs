@@ -25,7 +25,10 @@
 //! ```
 
 use super::{SessionContext, SessionStore};
-use crate::error::{Error, Result};
+use crate::error::MemoryStoreError;
+
+/// Result type for sqlite memory operations
+pub type Result<T> = std::result::Result<T, MemoryStoreError>;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
@@ -63,12 +66,12 @@ impl SqliteStore {
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                Error::Internal(format!("Failed to create database directory: {}", e))
+                MemoryStoreError::Internal(format!("Failed to create database directory: {}", e))
             })?;
         }
 
         let options = SqliteConnectOptions::from_str(&format!("sqlite:{}", path.display()))
-            .map_err(|e| Error::Internal(format!("Invalid SQLite path: {}", e)))?
+            .map_err(|e| MemoryStoreError::Internal(format!("Invalid SQLite path: {}", e)))?
             .create_if_missing(true)
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
 
@@ -76,7 +79,7 @@ impl SqliteStore {
             .max_connections(5)
             .connect_with(options)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to connect to SQLite: {}", e)))?;
+            .map_err(|e| MemoryStoreError::Internal(format!("Failed to connect to SQLite: {}", e)))?;
 
         let store = Self { pool, ttl_hours };
         store.init_schema().await?;
@@ -94,7 +97,7 @@ impl SqliteStore {
     /// Get the default database path
     pub fn default_path() -> Result<PathBuf> {
         let home = dirs::home_dir()
-            .ok_or_else(|| Error::Internal("Could not determine home directory".to_string()))?;
+            .ok_or_else(|| MemoryStoreError::Internal("Could not determine home directory".to_string()))?;
         Ok(home.join(".cratos").join("sessions.db"))
     }
 
@@ -112,7 +115,7 @@ impl SqliteStore {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Internal(format!("Failed to create sessions table: {}", e)))?;
+        .map_err(|e| MemoryStoreError::Internal(format!("Failed to create sessions table: {}", e)))?;
 
         // Create index for faster cleanup queries
         sqlx::query(
@@ -122,7 +125,7 @@ impl SqliteStore {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Internal(format!("Failed to create index: {}", e)))?;
+        .map_err(|e| MemoryStoreError::Internal(format!("Failed to create index: {}", e)))?;
 
         debug!("SQLite session schema initialized");
         Ok(())
@@ -133,7 +136,7 @@ impl SqliteStore {
         sqlx::query("SELECT 1")
             .fetch_one(&self.pool)
             .await
-            .map_err(|e| Error::Internal(format!("Health check failed: {}", e)))?;
+            .map_err(|e| MemoryStoreError::Internal(format!("Health check failed: {}", e)))?;
         Ok(true)
     }
 }
@@ -146,12 +149,12 @@ impl SessionStore for SqliteStore {
                 .bind(session_key)
                 .fetch_optional(&self.pool)
                 .await
-                .map_err(|e| Error::Internal(format!("Failed to get session: {}", e)))?;
+                .map_err(|e| MemoryStoreError::Internal(format!("Failed to get session: {}", e)))?;
 
         match row {
             Some((data,)) => {
                 let session: SessionContext = serde_json::from_str(&data).map_err(|e| {
-                    Error::Internal(format!("Failed to deserialize session: {}", e))
+                    MemoryStoreError::Internal(format!("Failed to deserialize session: {}", e))
                 })?;
                 debug!(session_key = %session_key, "Session loaded from SQLite");
                 Ok(Some(session))
@@ -162,7 +165,7 @@ impl SessionStore for SqliteStore {
 
     async fn save(&self, session: &SessionContext) -> Result<()> {
         let data = serde_json::to_string(session)
-            .map_err(|e| Error::Internal(format!("Failed to serialize session: {}", e)))?;
+            .map_err(|e| MemoryStoreError::Internal(format!("Failed to serialize session: {}", e)))?;
 
         let now = Utc::now().to_rfc3339();
 
@@ -181,7 +184,7 @@ impl SessionStore for SqliteStore {
         .bind(&now)
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Internal(format!("Failed to save session: {}", e)))?;
+        .map_err(|e| MemoryStoreError::Internal(format!("Failed to save session: {}", e)))?;
 
         debug!(session_key = %session.session_key, "Session saved to SQLite");
         Ok(())
@@ -192,7 +195,7 @@ impl SessionStore for SqliteStore {
             .bind(session_key)
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to delete session: {}", e)))?;
+            .map_err(|e| MemoryStoreError::Internal(format!("Failed to delete session: {}", e)))?;
 
         let deleted = result.rows_affected() > 0;
         debug!(session_key = %session_key, deleted = deleted, "Session deleted from SQLite");
@@ -204,7 +207,7 @@ impl SessionStore for SqliteStore {
             .bind(session_key)
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to check session: {}", e)))?;
+            .map_err(|e| MemoryStoreError::Internal(format!("Failed to check session: {}", e)))?;
 
         Ok(row.is_some())
     }
@@ -213,7 +216,7 @@ impl SessionStore for SqliteStore {
         let rows: Vec<(String,)> = sqlx::query_as("SELECT session_key FROM sessions")
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to list sessions: {}", e)))?;
+            .map_err(|e| MemoryStoreError::Internal(format!("Failed to list sessions: {}", e)))?;
 
         let keys: Vec<String> = rows.into_iter().map(|(k,)| k).collect();
         warn!(count = keys.len(), "Listed all session keys from SQLite");
@@ -224,7 +227,7 @@ impl SessionStore for SqliteStore {
         let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sessions")
             .fetch_one(&self.pool)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to count sessions: {}", e)))?;
+            .map_err(|e| MemoryStoreError::Internal(format!("Failed to count sessions: {}", e)))?;
 
         Ok(row.0 as usize)
     }
@@ -236,7 +239,7 @@ impl SessionStore for SqliteStore {
             .bind(&cutoff)
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to cleanup sessions: {}", e)))?;
+            .map_err(|e| MemoryStoreError::Internal(format!("Failed to cleanup sessions: {}", e)))?;
 
         let removed = result.rows_affected() as usize;
         if removed > 0 {
@@ -309,7 +312,7 @@ impl SessionBackend {
         match config.backend.as_str() {
             "sqlite" => {
                 let home = dirs::home_dir().ok_or_else(|| {
-                    Error::Internal("Could not determine home directory".to_string())
+                    MemoryStoreError::Internal("Could not determine home directory".to_string())
                 })?;
                 let path = home.join(".cratos").join(&config.sqlite_path);
                 let ttl_hours = (config.expiry_seconds / 3600) as i64;
@@ -328,7 +331,7 @@ impl SessionBackend {
                 let store = super::MemoryStore::try_new()?;
                 Ok(Self::Memory(store))
             }
-            other => Err(Error::Configuration(format!(
+            other => Err(MemoryStoreError::Internal(format!(
                 "Unknown session backend: '{}'. Use 'sqlite', 'redis', or 'memory'.",
                 other
             ))),
