@@ -50,12 +50,6 @@ pub use webhooks::webhooks_routes;
 
 use crate::api::config::ConfigState;
 
-/// Create the API router with all endpoints (default states)
-#[allow(dead_code)]
-pub fn api_router() -> Router {
-    api_router_with_state(SessionState::new(), ConfigState::new())
-}
-
 /// Create the API router with shared states
 pub fn api_router_with_state(session_state: SessionState, config_state: ConfigState) -> Router {
     Router::new()

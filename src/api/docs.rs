@@ -61,16 +61,16 @@ Authorization: Bearer <api_key>
         // Tools
         crate::api::tools::list_tools,
         // Executions
-        crate::api::executions::list_executions,
-        crate::api::executions::get_execution,
-        crate::api::executions::get_replay_events,
-        crate::api::executions::rerun_execution,
+        crate::api::executions::handlers::list_executions,
+        crate::api::executions::handlers::get_execution,
+        crate::api::executions::handlers::get_replay_events,
+        crate::api::executions::handlers::rerun_execution,
         // Scheduler
-        crate::api::scheduler::list_tasks,
-        crate::api::scheduler::create_task,
-        crate::api::scheduler::get_task,
-        crate::api::scheduler::update_task,
-        crate::api::scheduler::delete_task,
+        crate::api::scheduler::handlers::list_tasks,
+        crate::api::scheduler::handlers::create_task,
+        crate::api::scheduler::handlers::get_task,
+        crate::api::scheduler::handlers::update_task,
+        crate::api::scheduler::handlers::delete_task,
         // Quota
         crate::api::quota::get_quota,
         // Pantheon

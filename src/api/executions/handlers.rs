@@ -1,86 +1,20 @@
-//! Executions API endpoints
-//!
-//! GET /api/v1/executions - List recent executions
-//! GET /api/v1/executions/:id - Get execution details
-
-use std::sync::Arc;
-
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
-    Extension, Json, Router,
+    Extension, Json,
 };
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use utoipa::{IntoParams, ToSchema};
+use chrono::Utc;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use cratos_replay::{EventStore, ExecutionViewer, ReplayOptions};
 
-use super::config::ApiResponse;
+use super::super::config::ApiResponse;
+use super::types::{
+    EventSummary, ExecutionDetail, ExecutionStats, ExecutionSummary, ListExecutionsQuery,
+};
 use crate::middleware::auth::RequireAuth;
-
-/// Query parameters for listing executions
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
-pub struct ListExecutionsQuery {
-    /// Maximum number of results
-    #[serde(default = "default_limit")]
-    pub limit: i64,
-    /// Filter by channel type
-    pub channel: Option<String>,
-    /// Filter by status
-    pub status: Option<String>,
-    /// Filter by date (from)
-    pub from: Option<DateTime<Utc>>,
-    /// Filter by date (to)
-    pub to: Option<DateTime<Utc>>,
-}
-
-fn default_limit() -> i64 {
-    50
-}
-
-/// Execution summary for list view
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct ExecutionSummary {
-    pub id: Uuid,
-    pub channel_type: String,
-    pub channel_id: String,
-    pub user_id: String,
-    pub input_text: String,
-    pub output_text: Option<String>,
-    pub status: String,
-    pub created_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
-}
-
-/// Detailed execution view
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct ExecutionDetail {
-    pub id: Uuid,
-    pub channel_type: String,
-    pub channel_id: String,
-    pub user_id: String,
-    pub thread_id: Option<String>,
-    pub input_text: String,
-    pub output_text: Option<String>,
-    pub status: String,
-    pub created_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
-    pub events: Vec<EventSummary>,
-}
-
-/// Event summary
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct EventSummary {
-    pub id: Uuid,
-    pub sequence_num: i32,
-    pub event_type: String,
-    pub timestamp: DateTime<Utc>,
-    pub duration_ms: Option<i32>,
-}
 
 /// List recent executions (requires authentication)
 #[utoipa::path(
@@ -320,12 +254,6 @@ pub async fn rerun_execution(
     }
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ExecutionStats {
-    pub labels: Vec<String>,
-    pub series: Vec<f64>,
-}
-
 /// Get execution statistics for traffic analysis (requires authentication)
 #[utoipa::path(
     get,
@@ -369,35 +297,10 @@ pub async fn get_execution_stats(
         }
     }
 
-    // Sort labels and create series
-    // Logic: 00:00, 04:00, ... 6 points or just last 24h?
-    // Dashboard chart expects specific labels? No, generic Chart expects labels.
-    // Let's return last 12 hours in 2-hour intervals or similar to match the mock data style
-    // Mock data: 00:00, 04:00, 08:00... (4 hour intervals)
-
     let mut labels = Vec::new();
     let mut series = Vec::new();
 
-    // Generate 6 points (every 4 hours) working backwards from now rounded to nearest 4h
-    // Or just return the raw hourly data? The Chart component needs to handle it.
-    // Le's simply return last 6 hours hourly? Or last 24h in 4h chunks.
-
-    let mut buckets = std::collections::BTreeMap::new();
-    for i in (0..=6).map(|x| x * 4).rev() {
-        // 24, 20, 16... 0
-        let time = now - chrono::Duration::hours(i);
-        let label = time.format("%H:%M").to_string();
-        buckets.insert(time, (label, 0));
-    }
-
-    // Re-aggregate into these buckets
-    // This is approximate but fine for a dashboard
-    // Better: just fetch all recent and let frontend decide?
-    // No, backend aggregation is safer.
-
     // Simple approach: Return last 7 hours hourly
-    labels.clear();
-    series.clear();
     for i in (0..7).rev() {
         let time = now - chrono::Duration::hours(i);
         let key = time.format("%H:00").to_string();
@@ -406,96 +309,4 @@ pub async fn get_execution_stats(
     }
 
     Json(ApiResponse::success(ExecutionStats { labels, series }))
-}
-
-/// Create executions routes
-pub fn executions_routes() -> Router {
-    Router::new()
-        .route("/api/v1/executions", get(list_executions))
-        .route("/api/v1/executions/:id", get(get_execution))
-        .route("/api/v1/executions/:id/replay", get(get_replay_events))
-        .route("/api/v1/executions/:id/rerun", post(rerun_execution))
-        .route("/api/v1/executions/stats", get(get_execution_stats))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_execution_summary_serialization() {
-        let summary = ExecutionSummary {
-            id: Uuid::nil(),
-            channel_type: "telegram".to_string(),
-            channel_id: "123".to_string(),
-            user_id: "user1".to_string(),
-            input_text: "hello".to_string(),
-            output_text: Some("world".to_string()),
-            status: "completed".to_string(),
-            created_at: Utc::now(),
-            completed_at: Some(Utc::now()),
-        };
-        let json = serde_json::to_string(&summary).unwrap();
-        assert!(json.contains("\"channel_type\":\"telegram\""));
-        assert!(json.contains("\"status\":\"completed\""));
-    }
-
-    #[test]
-    fn test_execution_detail_serialization() {
-        let detail = ExecutionDetail {
-            id: Uuid::nil(),
-            channel_type: "websocket".to_string(),
-            channel_id: "ws1".to_string(),
-            user_id: "user1".to_string(),
-            thread_id: None,
-            input_text: "test input".to_string(),
-            output_text: Some("test output".to_string()),
-            status: "completed".to_string(),
-            created_at: Utc::now(),
-            completed_at: Some(Utc::now()),
-            events: vec![EventSummary {
-                id: Uuid::nil(),
-                sequence_num: 1,
-                event_type: "user_input".to_string(),
-                timestamp: Utc::now(),
-                duration_ms: None,
-            }],
-        };
-        let json = serde_json::to_string(&detail).unwrap();
-        assert!(json.contains("\"events\""));
-        assert!(json.contains("\"user_input\""));
-    }
-
-    #[test]
-    fn test_default_limit() {
-        assert_eq!(default_limit(), 50);
-    }
-
-    #[test]
-    fn test_list_query_deserialization() {
-        let json = r#"{"limit": 10, "channel": "telegram"}"#;
-        let query: ListExecutionsQuery = serde_json::from_str(json).unwrap();
-        assert_eq!(query.limit, 10);
-        assert_eq!(query.channel.as_deref(), Some("telegram"));
-    }
-
-    #[test]
-    fn test_replay_options_deserialization() {
-        let json = r#"{"dry_run": true, "skip_tools": ["exec"]}"#;
-        let opts: cratos_replay::ReplayOptions = serde_json::from_str(json).unwrap();
-        assert!(opts.dry_run);
-        assert_eq!(opts.skip_tools, vec!["exec"]);
-    }
-
-    #[test]
-    fn test_replay_result_serialization() {
-        let result = cratos_replay::ReplayResult {
-            original_execution_id: Uuid::nil(),
-            new_execution_id: None,
-            steps: vec![],
-            dry_run: true,
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("\"dry_run\":true"));
-    }
 }
