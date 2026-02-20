@@ -4,6 +4,87 @@
 
 use thiserror::Error;
 
+/// Chronicles/History error
+#[derive(Debug, Error)]
+pub enum ChronicleError {
+    /// Database error
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+
+    /// Serialization/deserialization error
+    #[error("serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    /// Chronicle record not found
+    #[error("chronicle not found: {0}")]
+    NotFound(String),
+
+    /// Invalid data format
+    #[error("invalid data: {0}")]
+    InvalidData(String),
+
+    /// File I/O error
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+/// Scheduler storage error
+#[derive(Debug, Error)]
+pub enum SchedulerStoreError {
+    /// Database error
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+
+    /// Serialization/deserialization error
+    #[error("serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    /// Scheduled task not found
+    #[error("task not found: {0}")]
+    TaskNotFound(uuid::Uuid),
+
+    /// Trigger expression parsing error
+    #[error("trigger parse error: {0}")]
+    TriggerParse(String),
+
+    /// Database transaction error
+    #[error("transaction error: {0}")]
+    Transaction(String),
+
+    /// Invalid configuration
+    #[error("invalid configuration: {0}")]
+    InvalidConfig(String),
+
+    /// Task execution error
+    #[error("execution error: {0}")]
+    Execution(String),
+}
+
+/// Session/Memory storage error
+#[derive(Debug, Error)]
+pub enum MemoryStoreError {
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+
+    #[error("serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    #[error("memory record not found: {0}")]
+    NotFound(String),
+
+    #[error("cache error: {0}")]
+    Cache(String),
+
+    #[error("lock poisoned")]
+    Poisoned,
+
+    #[error("internal error: {0}")]
+    Internal(String),
+
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
 /// Core error type
 #[derive(Debug, Error)]
 pub enum Error {
@@ -44,7 +125,15 @@ pub enum Error {
 
     /// Memory error
     #[error("memory error: {0}")]
-    Memory(String),
+    Memory(#[from] MemoryStoreError),
+
+    /// Chronicles/History error
+    #[error("chronicle error: {0}")]
+    Chronicle(#[from] ChronicleError),
+
+    /// Scheduler error
+    #[error("scheduler error: {0}")]
+    Scheduler(#[from] SchedulerStoreError),
 
     /// Approval timeout or rejection
     #[error("approval error: {0}")]
@@ -124,7 +213,7 @@ impl UserFriendlyError for Error {
                 }
             }
             Error::InvalidConfig { field, message } => {
-                format!("⚙️ Configuration error in '{}': {}", field, message)
+                format!("⚙️ Configuration error in \"{}\": {}", field, message)
             }
             Error::Planning(msg) => {
                 format!("📋 Planning failed: {}", msg)
@@ -132,8 +221,14 @@ impl UserFriendlyError for Error {
             Error::Execution(msg) => {
                 format!("⚡ Execution failed: {}", msg)
             }
-            Error::Memory(msg) => {
-                format!("🧠 Memory error: {}", msg)
+            Error::Memory(e) => {
+                format!("🧠 Memory error: {}", e)
+            }
+            Error::Chronicle(e) => {
+                format!("📜 Chronicle error: {}", e)
+            }
+            Error::Scheduler(e) => {
+                format!("📅 Scheduler error: {}", e)
             }
             Error::Approval(msg) => {
                 format!("✋ Approval required: {}", msg)
@@ -184,13 +279,18 @@ impl UserFriendlyError for Error {
                 Some("💡 Try using a different model or wait before retrying.".to_string())
             }
             Error::InvalidConfig { field, .. } => Some(format!(
-                "💡 Check the '{}' setting in config/default.toml or .env file.",
+                "💡 Check the \"{}\" setting in config/default.toml or .env file.",
                 field
             )),
             Error::Planning(_) => {
                 Some("💡 Try breaking down your request into smaller steps.".to_string())
             }
             Error::Execution(_) => Some("💡 Check the tool parameters and try again.".to_string()),
+            Error::Memory(MemoryStoreError::Database(_)) | 
+            Error::Chronicle(ChronicleError::Database(_)) | 
+            Error::Scheduler(SchedulerStoreError::Database(_)) => {
+                Some("💡 Database connection issue. Check if SQLite/Postgres is running.".to_string())
+            }
             Error::Approval(_) => {
                 Some("💡 Review the pending approval and respond with 'yes' or 'no'.".to_string())
             }
@@ -209,6 +309,9 @@ impl UserFriendlyError for Error {
             Error::InvalidConfig { .. } | Error::Configuration(_) => {
                 Some("https://docs.cratos.dev/configuration")
             }
+            Error::Memory(_) => Some("https://docs.cratos.dev/architecture/memory"),
+            Error::Chronicle(_) => Some("https://docs.cratos.dev/architecture/chronicles"),
+            Error::Scheduler(_) => Some("https://docs.cratos.dev/usage/scheduler"),
             Error::Approval(_) => Some("https://docs.cratos.dev/security/approvals"),
             _ => None,
         }
@@ -251,80 +354,5 @@ pub fn format_error_for_chat(error: &Error) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod tests;
 
-    #[test]
-    fn test_api_key_missing_message() {
-        let error = Error::ApiKeyMissing {
-            provider: "Anthropic".to_string(),
-        };
-
-        let msg = error.user_message();
-        assert!(msg.contains("Anthropic"));
-        assert!(msg.contains("API key"));
-
-        let suggestion = error.suggestion().unwrap();
-        assert!(suggestion.contains("ANTHROPIC_API_KEY"));
-    }
-
-    #[test]
-    fn test_rate_limited_message() {
-        let error = Error::RateLimited {
-            retry_after: Some(30),
-        };
-
-        let msg = error.user_message();
-        assert!(msg.contains("30 seconds"));
-
-        let suggestion = error.suggestion().unwrap();
-        assert!(suggestion.contains("different model"));
-    }
-
-    #[test]
-    fn test_network_error_message() {
-        let error = Error::NetworkError("connection refused".to_string());
-
-        let msg = error.user_message();
-        assert!(msg.contains("Network"));
-
-        let url = error.docs_url().unwrap();
-        assert!(url.contains("network"));
-    }
-
-    #[test]
-    fn test_invalid_config_message() {
-        let error = Error::InvalidConfig {
-            field: "llm.timeout".to_string(),
-            message: "must be positive".to_string(),
-        };
-
-        let msg = error.user_message();
-        assert!(msg.contains("llm.timeout"));
-        assert!(msg.contains("must be positive"));
-
-        let suggestion = error.suggestion().unwrap();
-        assert!(suggestion.contains("llm.timeout"));
-    }
-
-    #[test]
-    fn test_format_error_for_cli() {
-        let error = Error::ApiKeyMissing {
-            provider: "OpenAI".to_string(),
-        };
-
-        let output = format_error_for_cli(&error);
-        assert!(output.contains("OpenAI"));
-        assert!(output.contains("OPENAI_API_KEY"));
-        assert!(output.contains("docs.cratos.dev"));
-    }
-
-    #[test]
-    fn test_format_error_for_chat() {
-        let error = Error::NetworkError("timeout".to_string());
-
-        let output = format_error_for_chat(&error);
-        assert!(output.contains("Network"));
-        assert!(output.contains("internet connection"));
-    }
-}

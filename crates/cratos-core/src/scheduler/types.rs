@@ -10,28 +10,12 @@ use uuid::Uuid;
 
 use super::triggers::TriggerType;
 
+pub use crate::error::SchedulerStoreError as SchedulerError;
+
 /// Result type for scheduler operations
 pub type Result<T> = std::result::Result<T, SchedulerError>;
 
-/// Scheduler error types
-#[derive(Debug, thiserror::Error)]
-pub enum SchedulerError {
-    /// Database error
-    #[error("database error: {0}")]
-    Database(#[from] sqlx::Error),
-    /// Serialization error
-    #[error("serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
-    /// Task not found
-    #[error("task not found: {0}")]
-    TaskNotFound(Uuid),
-    /// Invalid configuration
-    #[error("invalid configuration: {0}")]
-    InvalidConfig(String),
-    /// Task execution error
-    #[error("execution error: {0}")]
-    Execution(String),
-}
+
 
 /// Scheduled task definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -283,8 +267,16 @@ impl TryFrom<TaskRow> for ScheduledTask {
                 .map_err(|e| SchedulerError::InvalidConfig(format!("Invalid task ID: {}", e)))?,
             name: row.name,
             description: row.description,
-            trigger: serde_json::from_str(&row.trigger_json)?,
-            action: serde_json::from_str(&row.action_json)?,
+            trigger: serde_json::from_str(&row.trigger_json).unwrap_or_else(|e| {
+                tracing::warn!("Failed to parse trigger JSON for task {}: {}", row.id, e);
+                // Fallback to a safe interval (1 year)
+                TriggerType::interval(31536000)
+            }),
+            action: serde_json::from_str(&row.action_json).unwrap_or_else(|e| {
+                tracing::warn!("Failed to parse action JSON for task {}: {}", row.id, e);
+                // Fallback to basic action
+                TaskAction::natural_language(format!("Error parsing action: {}", e))
+            }),
             enabled: row.enabled,
             priority: row.priority,
             max_retries: row.max_retries,

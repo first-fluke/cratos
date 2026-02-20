@@ -3,7 +3,7 @@
 //! Stores chronicles as JSON files in `~/.cratos/chronicles/` directory
 
 use super::Chronicle;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
@@ -45,22 +45,15 @@ impl ChronicleStore {
     ///
     /// Filename format: `{persona_name}_lv{level}.json`
     pub fn save(&self, chronicle: &Chronicle) -> Result<PathBuf> {
-        std::fs::create_dir_all(&self.data_dir).map_err(|e| {
-            Error::Internal(format!(
-                "Failed to create chronicles directory {:?}: {}",
-                self.data_dir, e
-            ))
-        })?;
+        std::fs::create_dir_all(&self.data_dir).map_err(crate::error::ChronicleError::from)?;
 
         let filename = Self::filename(&chronicle.persona_name, chronicle.level);
         let path = self.data_dir.join(&filename);
 
         let content = serde_json::to_string_pretty(chronicle)
-            .map_err(|e| Error::Internal(format!("Failed to serialize chronicle: {}", e)))?;
+            .map_err(crate::error::ChronicleError::from)?;
 
-        std::fs::write(&path, content).map_err(|e| {
-            Error::Internal(format!("Failed to write chronicle to {:?}: {}", path, e))
-        })?;
+        std::fs::write(&path, content).map_err(crate::error::ChronicleError::from)?;
 
         info!(
             persona = %chronicle.persona_name,
@@ -82,12 +75,7 @@ impl ChronicleStore {
         let name_lower = persona_name.to_lowercase();
         let mut latest: Option<Chronicle> = None;
 
-        let entries = std::fs::read_dir(&self.data_dir).map_err(|e| {
-            Error::Internal(format!(
-                "Failed to read chronicles directory {:?}: {}",
-                self.data_dir, e
-            ))
-        })?;
+        let entries = std::fs::read_dir(&self.data_dir).map_err(crate::error::ChronicleError::from)?;
 
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
@@ -136,12 +124,7 @@ impl ChronicleStore {
             return Ok(chronicles);
         }
 
-        let entries = std::fs::read_dir(&self.data_dir).map_err(|e| {
-            Error::Internal(format!(
-                "Failed to read chronicles directory {:?}: {}",
-                self.data_dir, e
-            ))
-        })?;
+        let entries = std::fs::read_dir(&self.data_dir).map_err(crate::error::ChronicleError::from)?;
 
         // Sort by filename (reversed for descending level order)
         let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
@@ -177,12 +160,7 @@ impl ChronicleStore {
             return Ok(Vec::new());
         }
 
-        let entries = std::fs::read_dir(&self.data_dir).map_err(|e| {
-            Error::Internal(format!(
-                "Failed to read chronicles directory {:?}: {}",
-                self.data_dir, e
-            ))
-        })?;
+        let entries = std::fs::read_dir(&self.data_dir).map_err(crate::error::ChronicleError::from)?;
 
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
@@ -208,9 +186,7 @@ impl ChronicleStore {
             return Ok(false);
         }
 
-        std::fs::remove_file(&path).map_err(|e| {
-            Error::Internal(format!("Failed to delete chronicle {:?}: {}", path, e))
-        })?;
+        std::fs::remove_file(&path).map_err(crate::error::ChronicleError::from)?;
 
         info!(persona = %persona_name, level, "Chronicle deleted");
         Ok(true)
@@ -237,10 +213,9 @@ impl ChronicleStore {
 
     fn load_file(&self, path: &Path) -> Result<Chronicle> {
         let content = std::fs::read_to_string(path)
-            .map_err(|e| Error::Internal(format!("Failed to read {:?}: {}", path, e)))?;
+            .map_err(crate::error::ChronicleError::from)?;
 
-        serde_json::from_str(&content)
-            .map_err(|e| Error::Internal(format!("Failed to parse {:?}: {}", path, e)))
+        serde_json::from_str(&content).map_err(|e| crate::error::ChronicleError::from(e).into())
     }
 
     fn filename(persona_name: &str, level: u8) -> String {
@@ -255,139 +230,5 @@ impl Default for ChronicleStore {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
+mod tests;
 
-    fn create_test_chronicle(name: &str, level: u8) -> Chronicle {
-        let mut chronicle = Chronicle::new(name);
-        chronicle.level = level;
-        chronicle.add_entry("Test task", Some("1"));
-        chronicle
-    }
-
-    #[test]
-    fn test_store_new() {
-        let store = ChronicleStore::new();
-        assert!(store.data_dir().ends_with("chronicles"));
-    }
-
-    #[test]
-    fn test_store_with_path() {
-        let store = ChronicleStore::with_path("/custom/path");
-        assert_eq!(store.data_dir(), Path::new("/custom/path"));
-    }
-
-    #[test]
-    fn test_save_and_load() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = ChronicleStore::with_path(temp_dir.path());
-
-        let chronicle = create_test_chronicle("sindri", 1);
-        let path = store.save(&chronicle).unwrap();
-
-        assert!(path.exists());
-        assert!(path.to_string_lossy().contains("sindri_lv1.json"));
-
-        let loaded = store.load("sindri").unwrap();
-        assert!(loaded.is_some());
-
-        let loaded = loaded.unwrap();
-        assert_eq!(loaded.persona_name, "sindri");
-        assert_eq!(loaded.level, 1);
-    }
-
-    #[test]
-    fn test_load_latest_level() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = ChronicleStore::with_path(temp_dir.path());
-
-        // Save multiple levels
-        store.save(&create_test_chronicle("athena", 1)).unwrap();
-        store.save(&create_test_chronicle("athena", 2)).unwrap();
-        store.save(&create_test_chronicle("athena", 3)).unwrap();
-
-        let loaded = store.load("athena").unwrap().unwrap();
-        assert_eq!(loaded.level, 3); // Latest level
-    }
-
-    #[test]
-    fn test_load_specific_level() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = ChronicleStore::with_path(temp_dir.path());
-
-        store.save(&create_test_chronicle("heimdall", 1)).unwrap();
-        store.save(&create_test_chronicle("heimdall", 2)).unwrap();
-
-        let loaded = store.load_level("heimdall", 1).unwrap().unwrap();
-        assert_eq!(loaded.level, 1);
-    }
-
-    #[test]
-    fn test_load_nonexistent() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = ChronicleStore::with_path(temp_dir.path());
-
-        let loaded = store.load("nonexistent").unwrap();
-        assert!(loaded.is_none());
-    }
-
-    #[test]
-    fn test_load_all() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = ChronicleStore::with_path(temp_dir.path());
-
-        store.save(&create_test_chronicle("sindri", 1)).unwrap();
-        store.save(&create_test_chronicle("athena", 2)).unwrap();
-        store.save(&create_test_chronicle("heimdall", 1)).unwrap();
-
-        let all = store.load_all().unwrap();
-        assert_eq!(all.len(), 3);
-    }
-
-    #[test]
-    fn test_list_personas() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = ChronicleStore::with_path(temp_dir.path());
-
-        store.save(&create_test_chronicle("sindri", 1)).unwrap();
-        store.save(&create_test_chronicle("athena", 1)).unwrap();
-        store.save(&create_test_chronicle("sindri", 2)).unwrap(); // duplicate
-
-        let personas = store.list_personas().unwrap();
-        assert_eq!(personas.len(), 2);
-        assert!(personas.contains(&"sindri".to_string()));
-        assert!(personas.contains(&"athena".to_string()));
-    }
-
-    #[test]
-    fn test_delete() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = ChronicleStore::with_path(temp_dir.path());
-
-        store.save(&create_test_chronicle("mimir", 1)).unwrap();
-        assert!(store.exists("mimir"));
-
-        let deleted = store.delete("mimir", 1).unwrap();
-        assert!(deleted);
-        assert!(!store.exists("mimir"));
-    }
-
-    #[test]
-    fn test_exists() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = ChronicleStore::with_path(temp_dir.path());
-
-        assert!(!store.exists("sindri"));
-
-        store.save(&create_test_chronicle("sindri", 1)).unwrap();
-        assert!(store.exists("sindri"));
-        assert!(store.exists("SINDRI")); // case-insensitive
-    }
-
-    #[test]
-    fn test_filename() {
-        assert_eq!(ChronicleStore::filename("Sindri", 1), "sindri_lv1.json");
-        assert_eq!(ChronicleStore::filename("ATHENA", 3), "athena_lv3.json");
-    }
-}
