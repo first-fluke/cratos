@@ -5,6 +5,8 @@
 
 pub mod memory;
 pub mod status;
+pub mod persona;
 
 pub use memory::MemoryTool;
 pub use status::StatusTool;
+pub use persona::PersonaTool;

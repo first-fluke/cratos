@@ -1,84 +1,47 @@
 {
-    "goal": "Refactor Section 3 of refactoring_backlog.md (Deep Nesting)",
-    "steps": [
-        {
-            "id": 1,
-            "name": "Refactor Personas Page (Level 130)",
-            "description": "Extract components from `apps/web/src/pages/personas.rs` to reduce nesting.",
-            "file": "apps/web/src/pages/personas.rs",
-            "action": "extract_components",
-            "targets": [
-                "PersonaDetailModal",
-                "PersonaGrid",
-                "PersonaHeader"
-            ],
-            "commit_message": "refactor(web): extract components from personas page to reduce nesting"
-        },
-        {
-            "id": 2,
-            "name": "Refactor Memory Page (Level 36)",
-            "description": "Extract components from `apps/web/src/pages/memory.rs`.",
-            "file": "apps/web/src/pages/memory.rs",
-            "action": "extract_components",
-            "targets": [
-                "GraphHeader",
-                "GraphControls",
-                "GraphLegend",
-                "NodeDetailsPanel"
-            ],
-            "commit_message": "refactor(web): extract components from memory page"
-        },
-        {
-            "id": 3,
-            "name": "Refactor Voice Controller (Level 45)",
-            "description": "Flatten nested logic in `crates/cratos-audio/src/controller.rs`.",
-            "file": "crates/cratos-audio/src/controller.rs",
-            "action": "flatten_logic",
-            "targets": [
-                "handle_voice_command",
-                "process_audio_samples"
-            ],
-            "commit_message": "refactor(audio): flatten voice controller loop logic"
-        },
-        {
-            "id": 4,
-            "name": "Refactor MCP Transport (Level 24)",
-            "description": "Flatten SSE parsing logic in `crates/cratos-tools/src/mcp/transport.rs`.",
-            "file": "crates/cratos-tools/src/mcp/transport.rs",
-            "action": "flatten_logic",
-            "commit_message": "refactor(tools): flatten mcp transport sse parsing"
-        },
-        {
-            "id": 5,
-            "name": "Refactor CLI Skill (Level 23)",
-            "description": "Flatten CLI handler in `src/cli/skill`.",
-            "file": "src/cli/skill",
-            "action": "flatten_logic",
-            "commit_message": "refactor(cli): flatten skill command handlers"
-        },
-        {
-            "id": 6,
-            "name": "Refactor Tool & Routing Logic (Level 6)",
-            "description": "Refactor `bash/tool.rs` and `orchestrator/routing.rs`.",
-            "files": [
-                "crates/cratos-tools/src/builtins/bash/tool.rs",
-                "crates/cratos-core/src/orchestrator/routing.rs"
-            ],
-            "action": "apply_guard_clauses",
-            "commit_message": "refactor(core): apply guard clauses to tools and routing"
-        },
-        {
-            "id": 7,
-            "name": "Refactor Telegram Handler (Level 5)",
-            "description": "Split message handlers in `crates/cratos-channels/src/telegram/handler.rs`.",
-            "file": "crates/cratos-channels/src/telegram/handler.rs",
-            "action": "extract_handlers",
-            "commit_message": "refactor(channels): split telegram message handlers"
-        }
+    "goal": "Resolve Telegram Persona Info Response Issue by implementing a dynamic Persona information tool",
+    "priority": "High",
+    "constraints": [
+        "Avoid circular dependencies between cratos-tools and cratos-core",
+        "Minimize LLM token usage by not hardcoding all 14 personas' data into the system prompt",
+        "Ensure LLM understands when and how to call the new tool"
     ],
-    "review_criteria": {
-        "completeness": "All 8 items in Section 3 addressed",
-        "simplicity": "No over-engineering, pure refactoring",
-        "safety": "Existing tests must pass"
+    "assumptions": [
+        "Adding an application-level tool in src/tools/persona.rs is the most idiomatic approach because it uses cratos-core's loading facilities without creating circular deps",
+        "Updating the planner.rs system prompt to describe the persona tool will solve the problem"
+    ],
+    "alternatives": [
+        "Hardcode all 14 personas into the system prompt (rejected due to context bloat)",
+        "Move PersonaLoader to cratos-tools (rejected due to structural disruption and scope creep)"
+    ],
+    "tasks": [
+        "Step 5.1: Create `src/tools/persona.rs` implementing `cratos_tools::registry::Tool`",
+        "Step 5.2: Update `src/tools/mod.rs` to export the new tool",
+        "Step 5.3: Register `PersonaTool` in `src/server/init.rs` inside `ToolRegistry`",
+        "Step 5.4: Modify `DEFAULT_SYSTEM_PROMPT` in `crates/cratos-core/src/planner.rs` to inform the LLM about the `persona` tool"
+    ],
+    "reviews": {
+        "step2_completeness": {
+            "status": "passed",
+            "reviewer": "PM Agent (Self)",
+            "check": "All root causes from issue document mapped to the plan (tool missing, system prompt limited)."
+        },
+        "step3_meta": {
+            "status": "passed",
+            "reviewer": "PM Agent (Self)",
+            "check": "Review confirmed no constraints are violated, and API boundaries are respected."
+        },
+        "step4_simplicity": {
+            "status": "passed",
+            "reviewer": "PM Agent (Self)",
+            "check": "Selected the simplest solution (adding a tool at binary level) instead of heavy refactoring of cratos-tools/cratos-core dependency."
+        }
+    },
+    "gates": {
+        "PLAN_GATE": true,
+        "IMPL_GATE": false,
+        "VERIFY_GATE": false,
+        "REFINE_GATE": false,
+        "SHIP_GATE": false
     }
 }

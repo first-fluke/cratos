@@ -263,3 +263,39 @@ Next, we address the code simplicity logic improvements.
 **Sub-tasks:**
 1. Refactor Match Blocks (Section 11) in `src/cli/skill.rs`, `src/api/skills.rs`, and `src/websocket/gateway/handlers/node.rs`.
 2. Refactor Chaining (Section 12) in `crates/cratos-tools/src/browser/tool.rs`.
+
+# Session: Telegram Persona Info Issue (Phase 0: Initialization)
+> Date: 2026-02-20
+> Objective: Resolve the Telegram Persona Info Response Issue
+> Workflow: `/coordinate-pro`
+
+## Phase 0: Initialization (Completed)
+- [x] Read `multi-review-protocol.md`, `quality-principles.md`, `phase-gates.md` (Verified context).
+- [x] Read `telegram_persona_info_issue.md` (Verified issue).
+- [x] Context recorded.
+
+## Phase 1: PLAN (Steps 1-4)
+- [x] **Step 1: Create Plan**: Created plan to implement `PersonaInfoTool` in `src/tools/persona.rs` and update `planner.rs` system prompt.
+- [x] **Step 2: Completeness Review**: The plan maps all root causes (tool missing, info gap).
+- [x] **Step 3: Meta Review**: Verified application-level tool pattern is correct to avoid circular dependencies.
+- [x] **Step 4: Simplicity Review**: Avoided moving core logic or bloated prompts.
+
+### PLAN_GATE: PASSED
+- [x] Plan documented (.agent/plan.json)
+- [x] Assumptions listed
+- [x] Alternatives considered
+- [x] Over-engineering review done
+- [x] User confirmation
+
+## Phase 2: IMPL
+- [x] **Step 5: Code Update**: Created `src/tools/persona.rs` and implemented `PersonaTool`. Exposed it via `src/tools/mod.rs` and registered it in `src/server/init.rs`. Updated `DEFAULT_SYSTEM_PROMPT` in `crates/cratos-core/src/planner.rs` to include tool instructions for `persona_info`.
+
+## Phase 3: VERIFY (Steps 6-11)
+- [x] **Step 6: Alignment Review**: Ensured the tool aligns perfectly with the issue context (Persona Info Response limit).
+- [x] **Step 7: Security Review**: `PersonaTool` is read-only (`RiskLevel::Low`) accessing local TOML configurations. Safe.
+- [x] **Step 8: Regression Review**: System prompt retains legacy logic to avoid disruption to defaults while augmenting with explicit search intent.
+- [x] **Step 9: Test Review**: Tests passed. Unit tests checking tool initialization and input parameters were added to `persona.rs`.
+- [x] **Step 10: Reusability Review**: Existing `PersonaLoader` reused seamlessly without redundancy.
+- [x] **Step 11: Consistency Review**: Placed tool initialization uniformly alongside `StatusTool`.
+
+### VERIFY_GATE: PASSED

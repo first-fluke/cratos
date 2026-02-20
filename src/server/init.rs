@@ -142,6 +142,7 @@ pub async fn run() -> Result<()> {
 
     // Register application-level tools (bridge multiple crates)
     tool_registry.register(Arc::new(crate::tools::StatusTool::new(skill_store.clone())));
+    tool_registry.register(Arc::new(crate::tools::PersonaTool::new()));
 
     // MCP tool auto-registration from .mcp.json
     let mcp_json_path = std::path::Path::new(".mcp.json");
