@@ -259,17 +259,17 @@ impl OpenAiProvider {
         Ok(Self::new(config))
     }
 
-    fn convert_message(msg: &Message) -> Result<ChatCompletionRequestMessage> {
+    fn convert_message(msg: Message) -> Result<ChatCompletionRequestMessage> {
         let message = match msg.role {
             MessageRole::System => ChatCompletionRequestSystemMessage {
-                content: ChatCompletionRequestSystemMessageContent::Text(msg.content.clone()),
+                content: ChatCompletionRequestSystemMessageContent::Text(msg.content),
                 name: None,
             }
             .into(),
             MessageRole::User => {
                 if msg.images.is_empty() {
                     ChatCompletionRequestUserMessage {
-                        content: ChatCompletionRequestUserMessageContent::Text(msg.content.clone()),
+                        content: ChatCompletionRequestUserMessageContent::Text(msg.content),
                         name: None,
                     }
                     .into()
@@ -279,11 +279,11 @@ impl OpenAiProvider {
                     if !msg.content.is_empty() {
                         parts.push(ChatCompletionRequestUserMessageContentPart::Text(
                             ChatCompletionRequestMessageContentPartText {
-                                text: msg.content.clone(),
+                                text: msg.content,
                             },
                         ));
                     }
-                    for img in &msg.images {
+                    for img in msg.images {
                         parts.push(ChatCompletionRequestUserMessageContentPart::ImageUrl(
                             ChatCompletionRequestMessageContentPartImage {
                                 image_url: ImageUrl {
@@ -305,7 +305,7 @@ impl OpenAiProvider {
                 #[allow(deprecated)]
                 ChatCompletionRequestAssistantMessage {
                     content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                        msg.content.clone(),
+                        msg.content,
                     )),
                     name: None,
                     tool_calls: None,
@@ -316,12 +316,12 @@ impl OpenAiProvider {
                 .into()
             }
             MessageRole::Tool => {
-                let tool_call_id = msg.tool_call_id.as_ref().ok_or_else(|| {
+                let tool_call_id = msg.tool_call_id.ok_or_else(|| {
                     Error::InvalidResponse("Tool message missing tool_call_id".to_string())
                 })?;
                 ChatCompletionRequestToolMessage {
-                    content: ChatCompletionRequestToolMessageContent::Text(msg.content.clone()),
-                    tool_call_id: tool_call_id.clone(),
+                    content: ChatCompletionRequestToolMessageContent::Text(msg.content),
+                    tool_call_id,
                 }
                 .into()
             }
@@ -329,12 +329,12 @@ impl OpenAiProvider {
         Ok(message)
     }
 
-    fn convert_tool(tool: &ToolDefinition) -> ChatCompletionTool {
+    fn convert_tool(tool: ToolDefinition) -> ChatCompletionTool {
         ChatCompletionTool {
             function: FunctionObject {
-                name: tool.name.clone(),
-                description: Some(tool.description.clone()),
-                parameters: Some(tool.parameters.clone()),
+                name: tool.name,
+                description: Some(tool.description),
+                parameters: Some(tool.parameters),
                 strict: None,
             },
         }
@@ -373,19 +373,19 @@ impl LlmProvider for OpenAiProvider {
     #[instrument(skip(self, request), fields(model = %request.model))]
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse> {
         let model = if request.model.is_empty() {
-            &self.default_model
+            self.default_model.clone()
         } else {
-            &request.model
+            request.model
         };
 
         let messages: Vec<ChatCompletionRequestMessage> = request
             .messages
-            .iter()
+            .into_iter()
             .map(Self::convert_message)
             .collect::<Result<_>>()?;
 
         let openai_request = CreateChatCompletionRequest {
-            model: model.clone(),
+            model,
             messages,
             max_completion_tokens: request.max_tokens,
             temperature: request.temperature,
@@ -401,10 +401,11 @@ impl LlmProvider for OpenAiProvider {
 
         let choice = response
             .choices
-            .first()
+            .into_iter()
+            .next()
             .ok_or_else(|| Error::InvalidResponse("No choices in response".to_string()))?;
 
-        let content = choice.message.content.clone().unwrap_or_default();
+        let content = choice.message.content.unwrap_or_default();
 
         let usage = response.usage.map(|u| TokenUsage {
             prompt_tokens: u.prompt_tokens,
@@ -426,26 +427,26 @@ impl LlmProvider for OpenAiProvider {
         request: ToolCompletionRequest,
     ) -> Result<ToolCompletionResponse> {
         let model = if request.request.model.is_empty() {
-            &self.default_model
+            self.default_model.clone()
         } else {
-            &request.request.model
+            request.request.model
         };
 
         let messages: Vec<ChatCompletionRequestMessage> = request
             .request
             .messages
-            .iter()
+            .into_iter()
             .map(Self::convert_message)
             .collect::<Result<_>>()?;
 
         let tools: Vec<ChatCompletionTools> = request
             .tools
-            .iter()
+            .into_iter()
             .map(|tool| ChatCompletionTools::Function(Self::convert_tool(tool)))
             .collect();
 
         let openai_request = CreateChatCompletionRequest {
-            model: model.clone(),
+            model,
             messages,
             tools: Some(tools),
             tool_choice: Some(Self::convert_tool_choice(&request.tool_choice)),
@@ -462,23 +463,23 @@ impl LlmProvider for OpenAiProvider {
 
         let choice = response
             .choices
-            .first()
+            .into_iter()
+            .next()
             .ok_or_else(|| Error::InvalidResponse("No choices in response".to_string()))?;
 
-        let content = choice.message.content.clone();
+        let content = choice.message.content;
 
         let tool_calls: Vec<ToolCall> = choice
             .message
             .tool_calls
-            .as_ref()
             .map(|calls| {
                 calls
-                    .iter()
+                    .into_iter()
                     .filter_map(|tc| match tc {
                         ChatCompletionMessageToolCalls::Function(func_call) => Some(ToolCall {
-                            id: func_call.id.clone(),
-                            name: func_call.function.name.clone(),
-                            arguments: func_call.function.arguments.clone(),
+                            id: func_call.id,
+                            name: func_call.function.name,
+                            arguments: func_call.function.arguments,
                             thought_signature: None,
                         }),
                         _ => None,

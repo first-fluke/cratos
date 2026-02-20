@@ -280,7 +280,7 @@ impl GlmProvider {
     }
 
     /// Convert our message to GLM format
-    fn convert_message(msg: &Message) -> GlmMessage {
+    fn convert_message(msg: Message) -> GlmMessage {
         let role = match msg.role {
             MessageRole::System => "system",
             MessageRole::User => "user",
@@ -290,31 +290,31 @@ impl GlmProvider {
 
         GlmMessage {
             role: role.to_string(),
-            content: msg.content.clone(),
-            tool_call_id: msg.tool_call_id.clone(),
+            content: msg.content,
+            tool_call_id: msg.tool_call_id,
             tool_calls: None,
         }
     }
 
     /// Convert tool definition to GLM format
-    fn convert_tool(tool: &ToolDefinition) -> GlmTool {
+    fn convert_tool(tool: ToolDefinition) -> GlmTool {
         GlmTool {
             r#type: "function".to_string(),
             function: GlmFunction {
-                name: tool.name.clone(),
-                description: tool.description.clone(),
-                parameters: tool.parameters.clone(),
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
             },
         }
     }
 
     /// Convert tool choice to GLM format
-    fn convert_tool_choice(choice: &ToolChoice) -> Option<String> {
+    fn convert_tool_choice(choice: ToolChoice) -> Option<String> {
         match choice {
             ToolChoice::Auto => Some("auto".to_string()),
             ToolChoice::None => Some("none".to_string()),
             ToolChoice::Required => Some("required".to_string()),
-            ToolChoice::Tool(name) => Some(name.clone()),
+            ToolChoice::Tool(name) => Some(name),
         }
     }
 
@@ -376,31 +376,31 @@ impl LlmProvider for GlmProvider {
     #[instrument(skip(self, request), fields(model = %request.model))]
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse> {
         let model = if request.model.is_empty() {
-            &self.config.default_model
+            self.config.default_model.clone()
         } else {
-            &request.model
+            request.model
         };
 
         let messages: Vec<GlmMessage> =
-            request.messages.iter().map(Self::convert_message).collect();
+            request.messages.into_iter().map(Self::convert_message).collect();
 
         let glm_request = GlmRequest {
-            model: model.to_string(),
+            model,
             messages,
             max_tokens: request.max_tokens,
             temperature: request.temperature,
             tools: None,
             tool_choice: None,
-            stop: request.stop.clone(),
+            stop: request.stop,
         };
 
         debug!("Sending request to GLM API");
 
-        let response: GlmResponse = self.request(&glm_request).await?;
+        let mut response: GlmResponse = self.request(&glm_request).await?;
 
         let choice = response
             .choices
-            .first()
+            .pop() // Get the last (and usually only) choice
             .ok_or_else(|| Error::InvalidResponse("No choices in response".to_string()))?;
 
         let usage = response.usage.map(|u| TokenUsage {
@@ -410,9 +410,9 @@ impl LlmProvider for GlmProvider {
         });
 
         Ok(CompletionResponse {
-            content: choice.message.content.clone(),
+            content: choice.message.content,
             usage,
-            finish_reason: choice.finish_reason.clone(),
+            finish_reason: choice.finish_reason,
             model: response.model,
         })
     }
@@ -423,50 +423,49 @@ impl LlmProvider for GlmProvider {
         request: ToolCompletionRequest,
     ) -> Result<ToolCompletionResponse> {
         let model = if request.request.model.is_empty() {
-            &self.config.default_model
+            self.config.default_model.clone()
         } else {
-            &request.request.model
+            request.request.model
         };
 
         let messages: Vec<GlmMessage> = request
             .request
             .messages
-            .iter()
+            .into_iter()
             .map(Self::convert_message)
             .collect();
 
-        let tools: Vec<GlmTool> = request.tools.iter().map(Self::convert_tool).collect();
+        let tools: Vec<GlmTool> = request.tools.into_iter().map(Self::convert_tool).collect();
 
         let glm_request = GlmRequest {
-            model: model.to_string(),
+            model,
             messages,
             max_tokens: request.request.max_tokens,
             temperature: request.request.temperature,
             tools: Some(tools),
-            tool_choice: Self::convert_tool_choice(&request.tool_choice),
-            stop: request.request.stop.clone(),
+            tool_choice: Self::convert_tool_choice(request.tool_choice),
+            stop: request.request.stop,
         };
 
         debug!("Sending tool request to GLM API");
 
-        let response: GlmResponse = self.request(&glm_request).await?;
+        let mut response: GlmResponse = self.request(&glm_request).await?;
 
         let choice = response
             .choices
-            .first()
+            .pop()
             .ok_or_else(|| Error::InvalidResponse("No choices in response".to_string()))?;
 
         let tool_calls: Vec<ToolCall> = choice
             .message
             .tool_calls
-            .as_ref()
             .map(|calls| {
                 calls
-                    .iter()
+                    .into_iter()
                     .map(|tc| ToolCall {
-                        id: tc.id.clone(),
-                        name: tc.function.name.clone(),
-                        arguments: tc.function.arguments.clone(),
+                        id: tc.id,
+                        name: tc.function.name,
+                        arguments: tc.function.arguments,
                         thought_signature: None,
                     })
                     .collect()
@@ -483,74 +482,15 @@ impl LlmProvider for GlmProvider {
             content: if choice.message.content.is_empty() {
                 None
             } else {
-                Some(choice.message.content.clone())
+                Some(choice.message.content)
             },
             tool_calls,
             usage,
-            finish_reason: choice.finish_reason.clone(),
+            finish_reason: choice.finish_reason,
             model: response.model,
         })
     }
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::util::mask_api_key;
-
-    #[test]
-    fn test_config_builder() {
-        let config = GlmConfig::new("test-key")
-            .with_model("glm-4-plus")
-            .with_timeout(Duration::from_secs(30));
-
-        assert_eq!(config.api_key, "test-key");
-        assert_eq!(config.default_model, "glm-4-plus");
-        assert_eq!(config.timeout, Duration::from_secs(30));
-    }
-
-    #[test]
-    fn test_available_models() {
-        assert!(MODELS.contains(&"glm-4.7"));
-        assert!(MODELS.contains(&"glm-4.7-flash"));
-    }
-
-    #[test]
-    fn test_api_key_masking() {
-        let masked = mask_api_key("1234567890abcdefghij");
-        assert!(masked.starts_with("1234"));
-        assert!(masked.ends_with("ghij"));
-        assert!(masked.contains("..."));
-    }
-
-    #[test]
-    fn test_config_debug_masks_key() {
-        let config = GlmConfig::new("1234567890abcdefghij");
-        let debug_str = format!("{:?}", config);
-        assert!(!debug_str.contains("567890abcdef"));
-    }
-
-    #[test]
-    fn test_convert_message() {
-        let msg = Message::user("Hello");
-        let converted = GlmProvider::convert_message(&msg);
-        assert_eq!(converted.role, "user");
-        assert_eq!(converted.content, "Hello");
-    }
-
-    #[test]
-    fn test_convert_tool_choice() {
-        assert_eq!(
-            GlmProvider::convert_tool_choice(&ToolChoice::Auto),
-            Some("auto".to_string())
-        );
-        assert_eq!(
-            GlmProvider::convert_tool_choice(&ToolChoice::None),
-            Some("none".to_string())
-        );
-    }
-}
+mod tests;

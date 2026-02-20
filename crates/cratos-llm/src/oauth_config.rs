@@ -105,16 +105,23 @@ pub fn google_pro_client_secret() -> String {
 
 /// Build Google AI Pro OAuth2 configuration.
 pub fn google_pro_oauth_config() -> OAuthProviderConfig {
-    let client_id = google_pro_client_id();
-    let client_secret = google_pro_client_secret();
+    let env_id = std::env::var("CRATOS_GOOGLE_PRO_CLIENT_ID").ok();
+    let env_secret = std::env::var("CRATOS_GOOGLE_PRO_CLIENT_SECRET").ok();
 
-    let (client_id, client_secret) = if client_id.is_empty() {
+    let (client_id, client_secret) = if let (Some(id), Some(secret)) = (env_id, env_secret) {
+        if id.is_empty() || secret.is_empty() {
+            tracing::info!(
+                "CRATOS_GOOGLE_PRO_CLIENT_ID or secret is empty. Using public Google Cloud SDK client ID"
+            );
+            (default_google_client_id(), default_google_client_secret())
+        } else {
+            (id, secret)
+        }
+    } else {
         tracing::info!(
             "CRATOS_GOOGLE_PRO_CLIENT_ID not set. Using public Google Cloud SDK client ID"
         );
         (default_google_client_id(), default_google_client_secret())
-    } else {
-        (client_id, client_secret)
     };
 
     // Official Gemini CLI + Standard API scopes

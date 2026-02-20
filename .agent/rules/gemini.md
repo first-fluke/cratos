@@ -3,8 +3,8 @@ trigger: always_on
 ---
 
 1. MCP 활용 및 협업
-모든 작업은 serena, sequential_thinking MCP를 필수로 사용합니다.
-복잡한 문제 해결 시 sequential_thinking을 통해 사고 과정을 기록하고 검증합니다.
+모든 작업은 serena, context7 MCP를 필수로 사용합니다.
+복잡한 문제 해결 시 사고 과정을 기록하고 검증합니다.
 
 2. 코딩 스타일 및 네이밍 규칙 (Rust)
 언어 버전: Rust 1.88+ 환경을 준수합니다.

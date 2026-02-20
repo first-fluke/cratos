@@ -1,10 +1,12 @@
-//! Groq - Free tier LLM provider with ultra-fast inference
+//! Moonshot AI - Kimi Provider
 //!
-//! Groq provides free access to high-quality models with rate limits:
-//! - 30 requests per minute (free tier)
-//! - Llama-3.3-70B, Mixtral, and other models
+//! This module implements the Moonshot AI provider for Kimi models.
 //!
-//! Uses OpenAI-compatible API.
+//! Supported models:
+//! - kimi-k2-5 (Latest, recommended)
+//! - kimi-k2
+//!
+//! API Documentation: https://platform.moonshot.cn/docs
 
 use crate::error::{Error, Result};
 use crate::router::{
@@ -18,45 +20,21 @@ use std::fmt;
 use std::time::Duration;
 use tracing::{debug, instrument};
 
-/// Groq API base URL
-pub const GROQ_API_BASE: &str = "https://api.groq.com/openai/v1";
+/// Moonshot AI API base URL
+pub const BASE_URL: &str = "https://api.moonshot.cn/v1";
 
-/// Available Groq models (2026)
-///
-/// Groq provides ultra-fast inference with free tier (rate-limited) and paid tiers.
-/// Pricing per 1M tokens:
-/// - llama-3.1-8b-instant: $0.05/$0.08
-/// - openai/gpt-oss-20b: $0.075/$0.30 (tool use support!)
-/// - openai/gpt-oss-120b: $0.15/$0.60 (tool use support!)
-/// - qwen/qwen3-32b: $0.29/$0.59
-/// - llama-3.3-70b-versatile: $0.59/$0.79
-pub const MODELS: &[&str] = &[
-    // Production models
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
-    // Preview models
-    "qwen/qwen3-32b",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
-];
+/// Available Kimi models
+pub const MODELS: &[&str] = &["kimi-k2-5", "kimi-k2"];
 
-/// Default Groq model — Llama 3.3 70B (production, fast, capable)
-pub const DEFAULT_MODEL: &str = "llama-3.3-70b-versatile";
+/// Default model
+pub const DEFAULT_MODEL: &str = "kimi-k2-5";
 
-/// Models that reliably support OpenAI-compatible function calling on Groq
-const TOOL_CAPABLE_MODELS: &[&str] = &["openai/gpt-oss-20b", "openai/gpt-oss-120b"];
-
-/// Default fallback model when tool calling is needed
-const TOOL_FALLBACK_MODEL: &str = "openai/gpt-oss-120b";
-
-/// Groq provider configuration
+/// Moonshot AI provider configuration
 #[derive(Clone)]
-pub struct GroqConfig {
-    /// API key
+pub struct MoonshotConfig {
+    /// API key from Moonshot AI platform
     pub api_key: String,
-    /// Base URL (usually not needed)
+    /// Base URL (optional, defaults to official API)
     pub base_url: String,
     /// Default model
     pub default_model: String,
@@ -65,9 +43,9 @@ pub struct GroqConfig {
 }
 
 // SECURITY: Custom Debug implementation to mask API key
-impl fmt::Debug for GroqConfig {
+impl fmt::Debug for MoonshotConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("GroqConfig")
+        f.debug_struct("MoonshotConfig")
             .field("api_key", &mask_api_key(&self.api_key))
             .field("base_url", &self.base_url)
             .field("default_model", &self.default_model)
@@ -86,15 +64,15 @@ fn sanitize_api_error(error: &str) -> String {
         || lower.contains("unauthorized")
         || lower.contains("authentication")
     {
-        return "API authentication error. Please check your GROQ_API_KEY.".to_string();
+        return "API authentication error. Please check your MOONSHOT_API_KEY.".to_string();
     }
 
     if lower.contains("rate limit") || lower.contains("quota") {
-        return "Groq rate limit exceeded (30 req/min free tier). Please wait.".to_string();
+        return "API rate limit exceeded. Please try again later.".to_string();
     }
 
     if lower.contains("internal") || lower.contains("server error") {
-        return "Groq server error. Please try again later.".to_string();
+        return "API server error. Please try again later.".to_string();
     }
 
     // Truncate overly long messages but preserve useful error info
@@ -105,31 +83,31 @@ fn sanitize_api_error(error: &str) -> String {
     }
 }
 
-impl GroqConfig {
+impl MoonshotConfig {
     /// Create a new configuration with an API key
     #[must_use]
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
-            base_url: GROQ_API_BASE.to_string(),
+            base_url: BASE_URL.to_string(),
             default_model: DEFAULT_MODEL.to_string(),
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_secs(120),
         }
     }
 
     /// Create configuration from environment variables
     pub fn from_env() -> Result<Self> {
-        let api_key = std::env::var("GROQ_API_KEY")
-            .map_err(|_| Error::NotConfigured("GROQ_API_KEY not set".to_string()))?;
+        let api_key = std::env::var("MOONSHOT_API_KEY")
+            .map_err(|_| Error::NotConfigured("MOONSHOT_API_KEY not set".to_string()))?;
 
         let default_model =
-            std::env::var("GROQ_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+            std::env::var("MOONSHOT_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
         Ok(Self {
             api_key,
-            base_url: GROQ_API_BASE.to_string(),
+            base_url: BASE_URL.to_string(),
             default_model,
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_secs(120),
         })
     }
 
@@ -148,10 +126,10 @@ impl GroqConfig {
     }
 }
 
-/// Groq provider (OpenAI-compatible)
-pub struct GroqProvider {
+/// Moonshot AI LLM provider
+pub struct MoonshotProvider {
     client: Client,
-    config: GroqConfig,
+    config: MoonshotConfig,
 }
 
 // OpenAI-compatible request/response types
@@ -232,12 +210,12 @@ struct ChatUsage {
     total_tokens: u32,
 }
 
-impl GroqProvider {
-    /// Create a new Groq provider
+impl MoonshotProvider {
+    /// Create a new Moonshot AI provider
     ///
     /// # Errors
     /// Returns an error if the HTTP client cannot be created.
-    pub fn new(config: GroqConfig) -> Result<Self> {
+    pub fn new(config: MoonshotConfig) -> Result<Self> {
         let client = Client::builder()
             .timeout(config.timeout)
             .build()
@@ -248,7 +226,7 @@ impl GroqProvider {
 
     /// Create from environment variables
     pub fn from_env() -> Result<Self> {
-        let config = GroqConfig::from_env()?;
+        let config = MoonshotConfig::from_env()?;
         Self::new(config)
     }
 
@@ -272,11 +250,6 @@ impl GroqProvider {
         }
     }
 
-    /// Check if a specific model supports OpenAI-compatible tool calling
-    fn model_supports_tools(model: &str) -> bool {
-        TOOL_CAPABLE_MODELS.contains(&model)
-    }
-
     fn convert_tool_choice(choice: &ToolChoice) -> Option<serde_json::Value> {
         match choice {
             ToolChoice::Auto => Some(serde_json::json!("auto")),
@@ -291,9 +264,9 @@ impl GroqProvider {
 }
 
 #[async_trait::async_trait]
-impl LlmProvider for GroqProvider {
+impl LlmProvider for MoonshotProvider {
     fn name(&self) -> &str {
-        "groq"
+        "moonshot"
     }
 
     fn supports_tools(&self) -> bool {
@@ -329,7 +302,7 @@ impl LlmProvider for GroqProvider {
             tool_choice: None,
         };
 
-        debug!("Sending request to Groq");
+        debug!("Sending request to Moonshot AI");
 
         let response = self
             .client
@@ -343,7 +316,7 @@ impl LlmProvider for GroqProvider {
 
         // Capture rate limit headers before consuming the body
         crate::quota::global_quota_tracker()
-            .update_from_headers("groq", response.headers())
+            .update_from_headers("moonshot", response.headers())
             .await;
 
         if !response.status().is_success() {
@@ -388,18 +361,6 @@ impl LlmProvider for GroqProvider {
             &request.request.model
         };
 
-        // Auto-fallback to tool-capable model if the requested model doesn't support tools
-        let effective_model = if Self::model_supports_tools(model) {
-            model.to_string()
-        } else {
-            tracing::warn!(
-                original_model = %model,
-                fallback_model = %TOOL_FALLBACK_MODEL,
-                "Model does not support function calling, auto-switching to tool-capable model"
-            );
-            TOOL_FALLBACK_MODEL.to_string()
-        };
-
         let messages: Vec<ChatMessage> = request
             .request
             .messages
@@ -410,7 +371,7 @@ impl LlmProvider for GroqProvider {
         let tools: Vec<ChatTool> = request.tools.iter().map(Self::convert_tool).collect();
 
         let chat_request = ChatRequest {
-            model: effective_model,
+            model: model.to_string(),
             messages,
             max_tokens: request.request.max_tokens,
             temperature: request.request.temperature,
@@ -419,7 +380,7 @@ impl LlmProvider for GroqProvider {
             tool_choice: Self::convert_tool_choice(&request.tool_choice),
         };
 
-        debug!("Sending tool request to Groq");
+        debug!("Sending tool request to Moonshot AI");
 
         let response = self
             .client
@@ -433,7 +394,7 @@ impl LlmProvider for GroqProvider {
 
         // Capture rate limit headers before consuming the body
         crate::quota::global_quota_tracker()
-            .update_from_headers("groq", response.headers())
+            .update_from_headers("moonshot", response.headers())
             .await;
 
         if !response.status().is_success() {
@@ -487,62 +448,4 @@ impl LlmProvider for GroqProvider {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::util::mask_api_key;
-
-    #[test]
-    fn test_config_builder() {
-        let config = GroqConfig::new("test-key")
-            .with_model("llama-3.1-8b-instant")
-            .with_timeout(Duration::from_secs(30));
-
-        assert_eq!(config.api_key, "test-key");
-        assert_eq!(config.default_model, "llama-3.1-8b-instant");
-        assert_eq!(config.timeout, Duration::from_secs(30));
-    }
-
-    #[test]
-    fn test_available_models() {
-        assert!(MODELS.contains(&"llama-3.3-70b-versatile"));
-        assert!(MODELS.contains(&"openai/gpt-oss-20b"));
-        assert!(MODELS.contains(&"openai/gpt-oss-120b"));
-    }
-
-    #[test]
-    fn test_api_key_masking() {
-        let masked = mask_api_key("gsk_1234567890abcdefghijklmnop");
-        assert!(masked.starts_with("gsk_"));
-        assert!(masked.ends_with("mnop"));
-        assert!(masked.contains("..."));
-    }
-
-    #[test]
-    fn test_sanitize_api_error() {
-        let sanitized = sanitize_api_error("Invalid API key: gsk_1234567890");
-        assert!(!sanitized.contains("gsk_"));
-        assert!(sanitized.contains("GROQ_API_KEY"));
-
-        let sanitized = sanitize_api_error("Rate limit exceeded");
-        assert!(sanitized.contains("rate limit"));
-        assert!(sanitized.contains("30 req/min"));
-    }
-
-    #[test]
-    fn test_config_debug_masks_key() {
-        let config = GroqConfig::new("gsk_1234567890abcdefghijklmnop");
-        let debug_str = format!("{:?}", config);
-        assert!(!debug_str.contains("1234567890abcdefghijkl"));
-    }
-
-    #[test]
-    fn test_model_supports_tools() {
-        assert!(GroqProvider::model_supports_tools("openai/gpt-oss-20b"));
-        assert!(GroqProvider::model_supports_tools("openai/gpt-oss-120b"));
-        assert!(!GroqProvider::model_supports_tools(
-            "llama-3.3-70b-versatile"
-        ));
-        assert!(!GroqProvider::model_supports_tools("llama-3.1-8b-instant"));
-        assert!(!GroqProvider::model_supports_tools("qwen/qwen3-32b"));
-    }
-}
+mod tests;

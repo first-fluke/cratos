@@ -1,16 +1,45 @@
 {
-    "task": "Refactor DEFAULT_SYSTEM_PROMPT into separated markdown file",
-    "goal": "Extract the hardcoded system prompt from `crates/cratos-core/src/planner.rs` into `crates/cratos-core/src/prompts/default_system_prompt.md`, decouple personal local paths, remove redundant instruction layers, and use `include_str!` to load it at compile-time.",
-    "phases": {
-        "plan": "Done",
-        "impl": "Pending",
-        "verify": "Pending",
-        "refine": "Pending",
-        "ship": "Pending"
+  "project": "cratos-llm refactoring",
+  "assumptions": [
+    "No external API requirements change",
+    "Only internal code structuring and optimizations according to gemini module pattern"
+  ],
+  "alternatives_considered": [
+    "Alternative 1: Keep them as single large files but optimize internals (Rejected: Files exceed 600 lines, violating size constraints)",
+    "Alternative 2: Modularize each provider similar to gemini provider (Selected: Improves maintainability and testability)"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "agent": "backend-agent-1",
+      "description": "Split anthropic.rs into anthropic/ (mod.rs, types.rs, convert.rs, provider.rs, tests.rs)",
+      "priority": 1,
+      "status": "pending",
+      "workspace": "./"
     },
-    "review": {
-        "completeness": "Passed - Plan maps perfectly to removing Magic String & cleaning up redundancy while maintaining functionality.",
-        "meta": "Passed - PM Agent self-verified the scope is tightly focused on planner.rs prompt refactoring.",
-        "simplicity": "Passed - using `include_str!` remains a zero-cost compile-time static link."
+    {
+      "id": "T2",
+      "agent": "backend-agent-2",
+      "description": "Split openrouter.rs into openrouter/ (mod.rs, types.rs, provider.rs, tests.rs)",
+      "priority": 1,
+      "status": "pending",
+      "workspace": "./"
+    },
+    {
+      "id": "T3",
+      "agent": "backend-agent-3",
+      "description": "Split ollama.rs into ollama/ (mod.rs, types.rs, provider.rs, tests.rs)",
+      "priority": 1,
+      "status": "pending",
+      "workspace": "./"
+    },
+    {
+      "id": "T4",
+      "agent": "backend-agent-4",
+      "description": "Optimize .clone() in openai and glm, separate tests for other providers (groq, moonshot, deepseek, etc.)",
+      "priority": 2,
+      "status": "pending",
+      "workspace": "./"
     }
+  ]
 }
