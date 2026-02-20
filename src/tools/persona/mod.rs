@@ -67,17 +67,24 @@ impl Tool for PersonaTool {
             "list" => {
                 let presets = match self.loader.load_all() {
                     Ok(p) => p,
-                    Err(e) => return Ok(ToolResult::success(json!({"error": format!("Failed to load personas: {}", e)}), 0)),
+                    Err(e) => {
+                        return Ok(ToolResult::success(
+                            json!({"error": format!("Failed to load personas: {}", e)}),
+                            0,
+                        ))
+                    }
                 };
-                
+
                 let list: Vec<_> = presets
                     .into_iter()
-                    .map(|p| json!({
-                        "name": p.persona.name,
-                        "title": p.persona.title,
-                        "domain": p.persona.domain,
-                        "level": p.level.level
-                    }))
+                    .map(|p| {
+                        json!({
+                            "name": p.persona.name,
+                            "title": p.persona.title,
+                            "domain": p.persona.domain,
+                            "level": p.level.level
+                        })
+                    })
                     .collect();
 
                 let duration_ms = start.elapsed().as_millis() as u64;
@@ -92,12 +99,22 @@ impl Tool for PersonaTool {
             "info" => {
                 let name = match input.get("name").and_then(|v| v.as_str()) {
                     Some(n) => n,
-                    None => return Ok(ToolResult::success(json!({"error": "Missing 'name' argument for 'info' action"}), 0)),
+                    None => {
+                        return Ok(ToolResult::success(
+                            json!({"error": "Missing 'name' argument for 'info' action"}),
+                            0,
+                        ))
+                    }
                 };
 
                 let preset = match self.loader.load(name) {
                     Ok(p) => p,
-                    Err(e) => return Ok(ToolResult::success(json!({"error": format!("Failed to load persona '{}': {}", name, e)}), 0)),
+                    Err(e) => {
+                        return Ok(ToolResult::success(
+                            json!({"error": format!("Failed to load persona '{}': {}", name, e)}),
+                            0,
+                        ))
+                    }
                 };
 
                 let duration_ms = start.elapsed().as_millis() as u64;
@@ -113,31 +130,13 @@ impl Tool for PersonaTool {
                     duration_ms,
                 ))
             }
-            _ => Ok(ToolResult::success(json!({"error": format!("Invalid action '{}'", action)}), 0)),
+            _ => Ok(ToolResult::success(
+                json!({"error": format!("Invalid action '{}'", action)}),
+                0,
+            )),
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_persona_tool_definition() {
-        let tool = PersonaTool::new();
-        let def = tool.definition();
-        
-        assert_eq!(def.name, "persona_info");
-        assert_eq!(def.risk_level, RiskLevel::Low);
-        assert_eq!(def.category, ToolCategory::Utility);
-    }
-
-    #[tokio::test]
-    async fn test_persona_tool_execute_missing_name() {
-        let tool = PersonaTool::new();
-        let result = tool.execute(json!({"action": "info"})).await.unwrap();
-        
-        assert!(result.success);
-        assert!(result.output.get("error").unwrap().as_str().unwrap().contains("Missing 'name' argument"));
-    }
-}
+mod tests;

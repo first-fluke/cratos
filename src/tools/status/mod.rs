@@ -113,11 +113,14 @@ impl StatusTool {
         match name {
             Some(skill_name) => match self.skill_store.get_skill_by_name(skill_name).await {
                 Ok(Some(skill)) => {
-                    let (total, successes) = self
-                        .skill_store
-                        .get_skill_execution_count(skill.id)
-                        .await
-                        .unwrap_or((0, 0));
+                    let (total, successes) =
+                        match self.skill_store.get_skill_execution_count(skill.id).await {
+                            Ok(counts) => counts,
+                            Err(e) => {
+                                tracing::error!("Failed to get skill execution count: {}", e);
+                                (0, 0)
+                            }
+                        };
                     json!({
                         "name": skill.name,
                         "status": skill.status.as_str(),
@@ -181,8 +184,8 @@ impl Tool for StatusTool {
                 let personas = self.query_persona(None);
                 let skills = self.query_skill(None).await;
                 json!({
-                    "personas": personas.get("personas").cloned().unwrap_or(json!([])),
-                    "skills": skills.get("skills").cloned().unwrap_or(json!([])),
+                    "personas": personas.get("personas").cloned().unwrap_or_else(|| json!([])),
+                    "skills": skills.get("skills").cloned().unwrap_or_else(|| json!([])),
                 })
             }
             other => {
@@ -196,67 +199,4 @@ impl Tool for StatusTool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_status_tool_definition() {
-        let store = Arc::new(SkillStore::in_memory().await.unwrap());
-        let tool = StatusTool::new(store);
-
-        let def = tool.definition();
-        assert_eq!(def.name, "status");
-        assert_eq!(def.risk_level, RiskLevel::Low);
-        assert_eq!(def.category, ToolCategory::Utility);
-    }
-
-    #[tokio::test]
-    async fn test_status_tool_query_skill_empty() {
-        let store = Arc::new(SkillStore::in_memory().await.unwrap());
-        let tool = StatusTool::new(store);
-
-        let result = tool.execute(json!({"target": "skill"})).await.unwrap();
-
-        assert!(result.success);
-        let skills = result.output.get("skills").unwrap();
-        assert!(skills.is_array());
-        assert_eq!(skills.as_array().unwrap().len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_status_tool_query_skill_by_name_not_found() {
-        let store = Arc::new(SkillStore::in_memory().await.unwrap());
-        let tool = StatusTool::new(store);
-
-        let result = tool
-            .execute(json!({"target": "skill", "name": "nonexistent"}))
-            .await
-            .unwrap();
-
-        assert!(result.success);
-        assert!(result.output.get("error").is_some());
-    }
-
-    #[tokio::test]
-    async fn test_status_tool_query_all() {
-        let store = Arc::new(SkillStore::in_memory().await.unwrap());
-        let tool = StatusTool::new(store);
-
-        let result = tool.execute(json!({"target": "all"})).await.unwrap();
-
-        assert!(result.success);
-        assert!(result.output.get("personas").is_some());
-        assert!(result.output.get("skills").is_some());
-    }
-
-    #[tokio::test]
-    async fn test_status_tool_unknown_target() {
-        let store = Arc::new(SkillStore::in_memory().await.unwrap());
-        let tool = StatusTool::new(store);
-
-        let result = tool.execute(json!({"target": "unknown"})).await.unwrap();
-
-        assert!(result.success);
-        assert!(result.output.get("error").is_some());
-    }
-}
+mod tests;

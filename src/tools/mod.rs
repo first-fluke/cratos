@@ -4,9 +4,9 @@
 //! `cratos-skills` and `cratos-core`, which `cratos-tools` cannot depend on.
 
 pub mod memory;
-pub mod status;
 pub mod persona;
+pub mod status;
 
 pub use memory::MemoryTool;
-pub use status::StatusTool;
 pub use persona::PersonaTool;
+pub use status::StatusTool;
