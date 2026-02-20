@@ -41,7 +41,17 @@ impl BrowserTool {
         .with_category(ToolCategory::External)
         .with_risk_level(RiskLevel::Medium)
         .with_capability("browser")
-        .with_parameters(serde_json::json!({
+        .with_parameters(Self::build_parameters_schema());
+
+        Self {
+            definition,
+            config,
+            mcp_client: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    fn build_parameters_schema() -> serde_json::Value {
+        serde_json::json!({
             "type": "object",
             "properties": {
                 "action": {
@@ -105,13 +115,7 @@ impl BrowserTool {
                 }
             },
             "required": ["action"]
-        }));
-
-        Self {
-            definition,
-            config,
-            mcp_client: Arc::new(RwLock::new(None)),
-        }
+        })
     }
 
     /// Execute a browser action using the configured backend.

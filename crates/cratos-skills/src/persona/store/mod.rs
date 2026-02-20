@@ -40,7 +40,7 @@
 //! ```
 
 use crate::error::{Error, Result};
-use crate::persona_binding::{
+use crate::persona::{
     AutoAssignmentConfig, OwnershipType, PersonaSkillBinding, PersonaSkillExecution,
 };
 use chrono::{DateTime, Utc};

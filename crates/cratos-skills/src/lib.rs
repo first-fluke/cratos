@@ -133,15 +133,14 @@ pub mod ecosystem;
 pub mod error;
 pub mod executor;
 pub mod generator;
-pub mod persona_binding;
-pub mod persona_store;
+/// Persona skill bindings and ownership tracking
+pub mod persona;
 pub mod protocol;
 pub mod registry;
 #[cfg(feature = "remote")]
 pub mod remote;
-pub mod router;
-#[cfg(feature = "semantic")]
-pub mod semantic_router;
+/// Skill routing logic
+pub mod routing;
 pub mod skill;
 pub mod store;
 
@@ -151,7 +150,7 @@ pub use error::{Error, Result};
 pub use executor::{ExecutorConfig, SkillExecutionResult, SkillExecutor, StepResult, ToolExecutor};
 pub use generator::{GeneratorConfig, SkillGenerator};
 pub use registry::SkillRegistry;
-pub use router::{MatchReason, RouterConfig, RoutingResult, SkillRouter};
+pub use routing::{MatchReason, RouterConfig, RoutingResult, SkillRouter};
 pub use skill::{
     ErrorAction, Skill, SkillCategory, SkillMetadata, SkillOrigin, SkillStatus, SkillStep,
     SkillTrigger,
@@ -159,10 +158,10 @@ pub use skill::{
 pub use store::SkillStore;
 
 // Re-export persona binding types
-pub use persona_binding::{
+pub use persona::{
     AutoAssignmentConfig, OwnershipType, PersonaSkillBinding, PersonaSkillExecution,
+    PersonaSkillStore,
 };
-pub use persona_store::PersonaSkillStore;
 
 // Re-export ecosystem types for skill sharing
 pub use ecosystem::{
@@ -182,7 +181,7 @@ pub use remote::{RegistryEntry, RemoteRegistry};
 
 // Re-export semantic router when feature is enabled
 #[cfg(feature = "semantic")]
-pub use semantic_router::{
+pub use routing::semantic::{
     create_skill_index, SemanticMatchReason, SemanticRouterConfig, SemanticRoutingResult,
     SemanticSkillRouter, SkillEmbedder,
 };

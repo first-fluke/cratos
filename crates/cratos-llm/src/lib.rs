@@ -19,32 +19,35 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-pub mod anthropic;
+/// LLM API providers
+pub mod providers;
+
+pub use providers::anthropic;
 pub mod cli_auth;
 pub mod completion;
 pub mod cost;
-pub mod deepseek;
+pub use providers::deepseek;
 #[cfg(feature = "embeddings")]
 pub mod embeddings;
 pub mod error;
-pub mod fireworks;
-pub mod gemini;
+pub use providers::fireworks;
+pub use providers::gemini;
 /// Gemini CLI credential extraction module.
-pub mod gemini_auth;
-pub mod glm;
-pub mod groq;
+pub use providers::gemini_auth;
+pub use providers::glm;
+pub use providers::groq;
 pub mod message;
-pub mod moonshot;
-pub mod novita;
+pub use providers::moonshot;
+pub use providers::novita;
 pub mod oauth;
 pub mod oauth_config;
-pub mod ollama;
-pub mod openai;
-pub mod openrouter;
+pub use providers::ollama;
+pub use providers::openai;
+pub use providers::openrouter;
 pub mod quota;
-pub mod qwen;
+pub use providers::qwen;
 pub mod router;
-pub mod siliconflow;
+pub use providers::siliconflow;
 pub mod token;
 pub mod tools;
 pub mod util;
@@ -53,7 +56,7 @@ pub use cost::{
     global_tracker, CostReport, CostTracker, ModelPricing, SavingsPotential, UsageRecord,
     UsageStats,
 };
-pub mod gemini_quota;
+pub use providers::gemini_quota;
 pub use error::{Error, Result};
 pub use gemini_quota::start_gemini_quota_poller;
 pub use quota::{

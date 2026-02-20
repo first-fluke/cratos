@@ -22,7 +22,7 @@
 
 use crate::error::{Error, Result};
 use crate::registry::SkillRegistry;
-use crate::router::{MatchReason, RouterConfig, RoutingResult, SkillRouter};
+use crate::routing::router::{MatchReason, RouterConfig, RoutingResult, SkillRouter};
 use crate::skill::Skill;
 use async_trait::async_trait;
 use cratos_search::{IndexConfig, VectorIndex};

@@ -218,15 +218,48 @@
     *   Refactor `cratos-tools/src/browser/tool.rs`: Break down fluent chains into steps with intermediate variables.
 
 ### Step 2: Plan Review (Completeness)
-- [ ] Covers all sections? Yes.
-- [ ] `Section 13 (Tests)` strategy: Will prioritizing specific crates (LLM, Skills, Channels) cover the intent? Yes, "All" implies structural issues, starting with the ones being moved is most efficient.
+- [x] Covers all sections? Yes.
+- [x] `Section 13 (Tests)` strategy: Will prioritizing specific crates (LLM, Skills, Channels) cover the intent? Yes, "All" implies structural issues, starting with the ones being moved is most efficient.
 
 ### Step 3: Review Verification (Meta Review)
-- [ ] Breaking changes? Structure changes in `cratos-llm` and `cratos-skills` will require updating `lib.rs` and imports in other crates. *Low risk if re-exported correctly.*
+- [x] Breaking changes? Structure changes in `cratos-llm` and `cratos-skills` will require updating `lib.rs` and imports in other crates. *Low risk if re-exported correctly.*
 
 ### Step 4: Over-Engineering Review (Simplicity)
-- [ ] Are we over-abstracting? No, just moving files and extracting functions.
+- [x] Are we over-abstracting? No, just moving files and extracting functions.
 
-### PLAN_GATE: READY
-- [ ] User confirmation (Implicit in prompt).
+### PLAN_GATE: PASSED
+- [x] User confirmation (Implicit in prompt).
 
+## Phase 2: Implementation
+
+### Priority 1: Structure & Tests (Task: `cratos-llm` and `cratos-skills`)
+
+I will start by reorganizing `crates/cratos-llm` first, as it has the flattest structure with many providers.
+
+**Sub-tasks:**
+1.  Create `crates/cratos-llm/src/providers/`.
+2.  Move provider files (`openai.rs`, `anthropic.rs`, etc.) there.
+3.  Update `crates/cratos-llm/src/lib.rs` to re-export from `providers` module to maintain backward compatibility (if possible) or update usages.
+4.  Extract tests from moved files into `tests.rs` or keep them if they are small unit tests (but Section 13 says "separate"). Ideally, unit tests *can* stay in `tests` module within the file, but integration tests should move. The backlog says "separation needed", implies moving `#[cfg(test)]` blocks to a separate file or at least a cleaner structure. For now, moving to a subfolder structure is the primary win. I will convert inline tests to a `tests` submodule if they are large.
+
+### Implementation Progress (Sections 14, 13)
+- **`cratos-llm` Refactoring**:
+  - Moved provider files (`openai.rs`, etc.) to `crates/cratos-llm/src/providers/`.
+  - Re-exported them in `crates/cratos-llm/src/lib.rs`.
+  - Extracted inline tests from `openai.rs` into `crates/cratos-llm/src/providers/openai/tests.rs` as an example test separation.
+- **`cratos-skills` Refactoring**:
+  - Structured into `persona` and `routing` submodules.
+  - Moved inline integration tests in `router.rs` to `tests/router_tests.rs`.
+- **`cratos-canvas` Refactoring**:
+  - Moved `websocket_tests.rs` into `src/tests/websocket.rs` and properly linked it via `#[path = ...]`.
+- **VERIFICATION**: All crate tests pass `cargo test` successfully.
+
+---
+
+### Priority 2: Match Blocks & Priority 3: Chaining (Sections 11 & 12)
+
+Next, we address the code simplicity logic improvements.
+
+**Sub-tasks:**
+1. Refactor Match Blocks (Section 11) in `src/cli/skill.rs`, `src/api/skills.rs`, and `src/websocket/gateway/handlers/node.rs`.
+2. Refactor Chaining (Section 12) in `crates/cratos-tools/src/browser/tool.rs`.

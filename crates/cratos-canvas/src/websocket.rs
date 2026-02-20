@@ -579,8 +579,9 @@ async fn execute_sandboxed_code(source: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "websocket_tests.rs"]
-mod ws_tests;
+#[cfg(test)]
+#[path = "tests/websocket.rs"]
+mod component_tests;
 
 #[cfg(test)]
 mod tests {

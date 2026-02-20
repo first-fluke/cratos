@@ -79,60 +79,66 @@ impl GitHubApiTool {
         let definition = ToolDefinition::new("github_api", "Interact with GitHub API")
             .with_category(ToolCategory::Http)
             .with_risk_level(RiskLevel::Medium)
-            .with_parameters(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "action": {
-                        "type": "string",
-                        "enum": ["get_repo", "list_issues", "get_issue", "create_issue", "list_prs", "get_pr", "create_pr"],
-                        "description": "GitHub API action to perform"
-                    },
-                    "owner": {
-                        "type": "string",
-                        "description": "Repository owner"
-                    },
-                    "repo": {
-                        "type": "string",
-                        "description": "Repository name"
-                    },
-                    "number": {
-                        "type": "integer",
-                        "description": "Issue or PR number (for get_issue, get_pr)"
-                    },
-                    "title": {
-                        "type": "string",
-                        "description": "Title (for create_issue, create_pr)"
-                    },
-                    "body": {
-                        "type": "string",
-                        "description": "Body content (for create_issue, create_pr)"
-                    },
-                    "head": {
-                        "type": "string",
-                        "description": "Head branch (for create_pr)"
-                    },
-                    "base": {
-                        "type": "string",
-                        "description": "Base branch (for create_pr)",
-                        "default": "main"
-                    },
-                    "state": {
-                        "type": "string",
-                        "enum": ["open", "closed", "all"],
-                        "description": "Filter by state (for list_issues, list_prs)",
-                        "default": "open"
-                    },
-                    "token": {
-                        "type": "string",
-                        "description": "GitHub personal access token (or use GITHUB_TOKEN env var)"
-                    }
-                },
-                "required": ["action", "owner", "repo"]
-            }));
+            .with_parameters(build_parameters_schema());
 
         Self { definition, client }
     }
+}
 
+fn build_parameters_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["get_repo", "list_issues", "get_issue", "create_issue", "list_prs", "get_pr", "create_pr"],
+                "description": "GitHub API action to perform"
+            },
+            "owner": {
+                "type": "string",
+                "description": "Repository owner"
+            },
+            "repo": {
+                "type": "string",
+                "description": "Repository name"
+            },
+            "number": {
+                "type": "integer",
+                "description": "Issue or PR number (for get_issue, get_pr)"
+            },
+            "title": {
+                "type": "string",
+                "description": "Title (for create_issue, create_pr)"
+            },
+            "body": {
+                "type": "string",
+                "description": "Body content (for create_issue, create_pr)"
+            },
+            "head": {
+                "type": "string",
+                "description": "Head branch (for create_pr)"
+            },
+            "base": {
+                "type": "string",
+                "description": "Base branch (for create_pr)",
+                "default": "main"
+            },
+            "state": {
+                "type": "string",
+                "enum": ["open", "closed", "all"],
+                "description": "Filter by state (for list_issues, list_prs)",
+                "default": "open"
+            },
+            "token": {
+                "type": "string",
+                "description": "GitHub personal access token (or use GITHUB_TOKEN env var)"
+            }
+        },
+        "required": ["action", "owner", "repo"]
+    })
+}
+
+impl GitHubApiTool {
     fn get_token(&self, input: &serde_json::Value) -> Result<String> {
         input
             .get("token")

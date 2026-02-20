@@ -10,7 +10,7 @@ use crate::chronicles::ChronicleStore;
 use crate::decrees::{EnforcementAction, EnforcerConfig, LawEnforcer};
 use crate::error::Result;
 use crate::pantheon::ActivePersonaState;
-use cratos_skills::persona_binding::OwnershipType;
+use cratos_skills::persona::OwnershipType;
 use cratos_skills::PersonaSkillStore;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
