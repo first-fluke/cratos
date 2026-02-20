@@ -19,10 +19,26 @@ description: Thorough version of coordinate - high-quality development workflow 
 
 ## Phase 0: Initialization (DO NOT SKIP)
 
-1. Read `.cratos/skills/_shared/multi-review-protocol.md` (11 review guides)
-2. Read `.cratos/skills/_shared/quality-principles.md` (4 principles)
-3. Read `.cratos/skills/_shared/phase-gates.md` (gate definitions)
-4. Record session in memory: `session-coordinate-pro.md`
+1. Read `.cratos/skills/workflow-guide/SKILL.md` and confirm Core Rules.
+2. Read `.cratos/skills/_shared/context-loading.md` for resource loading strategy.
+3. Read `.cratos/skills/_shared/memory-protocol.md` for memory protocol.
+4. Read `.cratos/skills/_shared/multi-review-protocol.md` (11 review guides)
+5. Read `.cratos/skills/_shared/quality-principles.md` (4 principles)
+6. Read `.cratos/skills/_shared/phase-gates.md` (gate definitions)
+7. Use memory write tool to create session files:
+   - Create `orchestrator-session.md` with: session start time, user request summary, workflow version (pro)
+   - Create `task-board.md` with the following **table format** (required for dashboard sync):
+     ```markdown
+     # Task Board
+     ## Session: {session-id}
+     ## Status: RUNNING
+
+     | Agent        | Status  | Task               |
+     | ------------ | ------- | ------------------ |
+     | {agent-name} | pending | {task-description} |
+     ```
+   - Valid statuses: `pending`, `running`, `completed`, `failed`, `blocked`
+   - **WARNING**: Do NOT use checklist or bullet format. The dashboard parser (`IF()`) requires pipe-delimited table rows.
 
 ---
 
@@ -51,6 +67,8 @@ Command: `oh-my-ag agent:spawn pm-agent "Analyze requirements. Execute Step 1: C
 
 **Gate failure → Return to Step 1**
 
+> **On GATE pass**: Use memory edit tool to update `task-board.md` — set pm-agent status to `completed`. Update `orchestrator-session.md` with Phase 1 completion.
+
 ---
 
 ## Phase 2: IMPL (Step 5)
@@ -71,6 +89,16 @@ wait
 - [ ] Only planned files modified
 
 **Gate failure → Re-run Step 5**
+
+> **On GATE pass**: Use memory edit tool to update `task-board.md` — set impl agent(s) status to `completed`. Update `orchestrator-session.md` with Phase 2 completion.
+
+### Monitor Implementation Progress
+
+While agents are running:
+- Use memory read tool to poll `progress-{agent}.md` files for status updates.
+- Use memory edit tool to update `task-board.md` with agent status changes (`running`, `completed`, `failed`).
+- Use MCP code analysis tools to verify implementation alignment if needed.
+- Watch for: completion, failures, crashes. Re-spawn failed agents (max 2 retries).
 
 ---
 
@@ -97,6 +125,8 @@ Command: `oh-my-ag agent:spawn qa-agent "Execute Phase 3 Verification. Step 6: A
 - [ ] No regressions
 
 **Gate failure → Return to Step 5 (fix implementation)**
+
+> **On GATE pass**: Use memory edit tool to update `task-board.md` — set qa-agent status to `completed`. Update `orchestrator-session.md` with Phase 3 completion.
 
 ---
 
@@ -130,6 +160,8 @@ Command: `oh-my-ag agent:spawn debug-agent "Execute Phase 4 Refine. Step 9: Spli
 
 **Skip conditions**: Simple tasks < 50 lines
 
+> **On GATE pass**: Use memory edit tool to update `task-board.md` — set debug-agent status to `completed`. Update `orchestrator-session.md` with Phase 4 completion.
+
 ---
 
 ## Phase 5: SHIP (Steps 14-17)
@@ -157,6 +189,8 @@ Command: `oh-my-ag agent:spawn qa-agent "Execute Phase 5 Ship. Step 14: Quality 
 - [ ] Related issues resolved
 - [ ] Deployment checklist complete
 - [ ] **User final approval**
+
+> **On GATE pass**: Use memory edit tool to update `task-board.md` — set all agent statuses to `completed`, session status to `COMPLETED`. Update `orchestrator-session.md` with final completion.
 
 ---
 
