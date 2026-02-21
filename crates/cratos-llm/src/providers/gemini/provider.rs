@@ -265,11 +265,23 @@ impl GeminiProvider {
                         let gemini_delay = self
                             .last_retry_after
                             .load(std::sync::atomic::Ordering::Relaxed);
+                        
+                        // If delay is too long, return Error::RateLimit immediately so the caller 
+                        // can trigger provider fallback (e.g., to OpenAI).
+                        if gemini_delay >= 30 {
+                            tracing::warn!(
+                                gemini_hint_secs = gemini_delay,
+                                "Gemini rate limit retry_after is too long (>=30s), triggering fallback explicitly."
+                            );
+                            return Err(Error::RateLimit);
+                        }
+
                         let delay_secs = if gemini_delay > 0 {
-                            gemini_delay.clamp(1, 15)
+                            gemini_delay
                         } else {
                             2 + (attempt as u64) * 2 // exponential: 2, 4
                         };
+                        
                         tracing::info!(
                             attempt = attempt + 1,
                             model = %current_model,
@@ -279,7 +291,15 @@ impl GeminiProvider {
                         );
                         tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
                     }
-                    Err(Error::RateLimit) => break, // MAX_RETRIES exhausted, try downgrade
+                    Err(Error::RateLimit) => {
+                        // Max retries reached, we will now downgrade.
+                        // But if delay is still huge, it's better to just error.
+                        let gemini_delay = self.last_retry_after.load(std::sync::atomic::Ordering::Relaxed);
+                        if gemini_delay >= 30 {
+                            return Err(Error::RateLimit);
+                        }
+                        break;
+                    }
                     Err(Error::ServerError(ref msg)) if attempt < MAX_RETRIES => {
                         let delay_secs = 2 + (attempt as u64) * 3; // 2, 5
                         tracing::warn!(

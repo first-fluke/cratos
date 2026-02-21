@@ -199,10 +199,10 @@ impl Orchestrator {
         let plan_result = match &system_prompt {
             Some(sp) => {
                 self.planner
-                    .plan_step_with_system_prompt(&messages, &tools, sp)
+                    .plan_step_with_system_prompt(&messages, &tools, sp, None)
                     .await
             }
-            None => self.planner.plan_step(&messages, &tools).await,
+            None => self.planner.plan_step(&messages, &tools, None).await,
         };
 
         match plan_result {

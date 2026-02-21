@@ -120,6 +120,8 @@ impl Orchestrator {
                 || lower.contains("save this")
         };
 
+        let mut model_used: Option<String> = None;
+
         let (persona_system_prompt, effective_persona): (Option<String>, String) =
             if is_memory_request {
                 info!("Memory request detected, using cratos directly");
@@ -161,7 +163,7 @@ impl Orchestrator {
                     }
                     // No explicit persona: LLM semantic classification
                     _ => {
-                        let name = self.route_by_llm(&input.text).await;
+                        let (name, classify_model) = self.route_by_llm(&input.text).await;
                         info!(persona = %name, "LLM-routed persona");
                         let prompt = mapping.get_system_prompt(&name, &input.user_id).map(|p| {
                             format!(
@@ -170,6 +172,7 @@ impl Orchestrator {
                                 p
                             )
                         });
+                        model_used = classify_model; // Set initial model from classification
                         (prompt, name)
                     }
                 }
@@ -197,7 +200,6 @@ impl Orchestrator {
         let mut working_memory = WorkingMemory::with_execution_id(execution_id);
         let mut tool_call_records = Vec::new();
         let mut final_response = String::new();
-        let mut model_used = None;
         let mut iteration = 0;
         let mut consecutive_all_fail = 0_usize;
         let mut total_failure_count = 0_usize;
@@ -223,6 +225,7 @@ impl Orchestrator {
                     .try_final_summary(
                         &messages,
                         effective_system_prompt.as_deref(),
+                        model_used.as_deref(),
                         fallback_sticky,
                     )
                     .await;
@@ -322,6 +325,7 @@ impl Orchestrator {
                             .try_final_summary(
                                 &messages,
                                 effective_system_prompt.as_deref(),
+                                model_used.as_deref(),
                                 fallback_sticky,
                             )
                             .await;
@@ -374,6 +378,7 @@ impl Orchestrator {
                     &messages,
                     &tools,
                     effective_system_prompt.as_deref(),
+                    model_used.as_deref(),
                     &mut fallback_sticky,
                 )
                 .await
@@ -443,11 +448,12 @@ impl Orchestrator {
                              (file operations, shell commands, web requests, API calls)? \
                              Answer only 'yes' or 'no'.",
                             &input.text,
+                            None,
                         )
                         .await
                         .unwrap_or_default();
 
-                    if needs_tools.contains("yes") {
+                    if needs_tools.0.contains("yes") {
                         warn!(
                             execution_id = %execution_id,
                             "Model hallucinated tool use (tools_used=0, classify=yes), nudging retry"

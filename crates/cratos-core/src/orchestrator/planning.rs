@@ -23,15 +23,16 @@ impl Orchestrator {
         messages: &[Message],
         tools: &[ToolDefinition],
         system_prompt_override: Option<&str>,
+        override_model: Option<&str>,
     ) -> crate::error::Result<PlanResponse> {
         let fut = async move {
             match system_prompt_override {
                 Some(p) => {
                     planner
-                        .plan_step_with_system_prompt(messages, tools, p)
+                        .plan_step_with_system_prompt(messages, tools, p, override_model)
                         .await
                 }
-                None => planner.plan_step(messages, tools).await,
+                None => planner.plan_step(messages, tools, override_model).await,
             }
         };
         match tokio::time::timeout(std::time::Duration::from_secs(120), fut).await {
@@ -56,25 +57,26 @@ impl Orchestrator {
         messages: &[Message],
         tools: &[ToolDefinition],
         system_prompt_override: Option<&str>,
+        override_model: Option<&str>,
         fallback_sticky: &mut bool,
     ) -> crate::error::Result<PlanResponse> {
         // If a previous iteration already fell back, keep using the fallback
         // to avoid mixing thought_signature-bearing and bare function calls.
         if *fallback_sticky {
             if let Some(fb) = self.fallback_planner.as_ref() {
-                return Self::dispatch_plan(fb, messages, tools, system_prompt_override).await;
+                return Self::dispatch_plan(fb, messages, tools, system_prompt_override, None).await;
             }
         }
 
         let result =
-            Self::dispatch_plan(&self.planner, messages, tools, system_prompt_override).await;
+            Self::dispatch_plan(&self.planner, messages, tools, system_prompt_override, override_model).await;
         match result {
             Ok(resp) => Ok(resp),
             Err(ref e) if self.fallback_planner.is_some() && is_fallback_eligible(e) => {
                 warn!(error = %e, "Primary provider failed, trying fallback (sticky)");
                 *fallback_sticky = true;
                 let fb = self.fallback_planner.as_ref().unwrap();
-                Self::dispatch_plan(fb, messages, tools, system_prompt_override).await
+                Self::dispatch_plan(fb, messages, tools, system_prompt_override, None).await
             }
             Err(e) => Err(e),
         }
@@ -88,6 +90,7 @@ impl Orchestrator {
         &self,
         messages: &[Message],
         system_prompt_override: Option<&str>,
+        override_model: Option<&str>,
         fallback_sticky: bool,
     ) -> String {
         // Nothing useful to summarize if conversation is trivially short
@@ -113,6 +116,7 @@ impl Orchestrator {
             &summary_messages,
             &[], // empty tools → forces text-only response
             system_prompt_override,
+            override_model,
         )
         .await;
 
@@ -126,35 +130,35 @@ impl Orchestrator {
     }
 
     /// Route input to a persona via LLM classification.
-    /// Returns the persona name (not agent_id).
+    /// Returns a tuple of (persona_name, actual_model_used).
     /// Falls back to "cratos" on any error — NO keyword matching.
-    pub(crate) async fn route_by_llm(&self, input: &str) -> String {
+    pub(crate) async fn route_by_llm(&self, input: &str) -> (String, Option<String>) {
         // Short greetings/interjections → skip LLM call
         if input.split_whitespace().count() < 3 {
-            return "cratos".to_string();
+            return ("cratos".to_string(), None);
         }
 
         let start = std::time::Instant::now();
         match self
             .planner
-            .classify(PERSONA_CLASSIFICATION_PROMPT, input)
+            .classify(PERSONA_CLASSIFICATION_PROMPT, input, None)
             .await
         {
-            Ok(raw) => {
+            Ok((raw, model_used)) => {
                 let persona = raw.trim().trim_matches('"').to_lowercase();
                 let ms = start.elapsed().as_millis();
                 if let Some(mapping) = &self.persona_mapping {
                     if mapping.is_persona(&persona) {
                         debug!(persona = %persona, ms = %ms, "LLM persona classification");
-                        return persona;
+                        return (persona, Some(model_used));
                     }
                 }
                 warn!(raw = %raw, ms = %ms, "LLM returned unknown persona, defaulting to cratos");
-                "cratos".to_string()
+                ("cratos".to_string(), Some(model_used))
             }
             Err(e) => {
                 warn!(error = %e, "LLM classify failed, defaulting to cratos");
-                "cratos".to_string()
+                ("cratos".to_string(), None)
             }
         }
     }

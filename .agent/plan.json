@@ -1,46 +1,20 @@
 {
-  "phase": "Phase 1: Planning & Task Board Setup",
-  "status": "IN_PROGRESS",
+  "phase": 1,
   "tasks": [
     {
-      "id": "1_define_errors",
-      "description": "Define ChronicleError, SchedulerStoreError, and MemoryError in crates/cratos-core/src/error.rs or their respective modules.",
-      "status": "PENDING"
+      "id": "T1",
+      "description": "Parse and respect retry_after in provider retry logic",
+      "status": "completed"
     },
     {
-      "id": "2_refactor_chronicles",
-      "description": "Remove .unwrap() from crates/cratos-core/src/chronicles/store.rs and implement proper error handling.",
-      "status": "PENDING"
+      "id": "T2",
+      "description": "Propagate model downgrade across LLM calls within a single execution session",
+      "status": "completed"
     },
     {
-      "id": "3_refactor_scheduler",
-      "description": "Remove .unwrap() from crates/cratos-core/src/scheduler/store.rs and implement proper error handling.",
-      "status": "PENDING"
-    },
-    {
-      "id": "4_refactor_memory",
-      "description": "Remove .unwrap() from crates/cratos-core/src/memory/store.rs and crates/cratos-core/src/memory/sqlite_store.rs.",
-      "status": "PENDING"
-    },
-    {
-      "id": "5_split_scheduler",
-      "description": "Split crates/cratos-core/src/scheduler/store.rs into mod.rs, types.rs, queries.rs, and migrations.rs.",
-      "status": "PENDING"
-    },
-    {
-      "id": "6_split_memory",
-      "description": "Split crates/cratos-core/src/memory/store.rs into mod.rs, cache.rs, persistent.rs, and session.rs.",
-      "status": "PENDING"
-    },
-    {
-      "id": "7_extract_tests",
-      "description": "Extract inline tests to separate files for scheduler and memory modules.",
-      "status": "PENDING"
-    },
-    {
-      "id": "8_verify",
-      "description": "Run all-checks and ensure all tests pass.",
-      "status": "PENDING"
+      "id": "T3",
+      "description": "Immediate fallback stringency for long delays",
+      "status": "completed"
     }
   ]
 }

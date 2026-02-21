@@ -274,11 +274,10 @@ impl Planner {
     /// Uses 128 output tokens to accommodate Gemini 2.5's internal thinking
     /// overhead. The model only needs ~1-2 tokens for the persona name, but
     /// thinking tokens consume the same budget.
-    pub async fn classify(&self, system_prompt: &str, user_input: &str) -> Result<String> {
-        let model = self
-            .config
-            .default_model
-            .clone()
+    pub async fn classify(&self, system_prompt: &str, user_input: &str, override_model: Option<&str>) -> Result<(String, String)> {
+        let model = override_model
+            .map(|s| s.to_string())
+            .or_else(|| self.config.default_model.clone())
             .unwrap_or_else(|| self.provider.default_model().to_string());
         let request = CompletionRequest {
             model,
@@ -288,7 +287,7 @@ impl Planner {
             stop: None,
         };
         let response = self.provider.complete(request).await.map_err(Error::Llm)?;
-        Ok(response.content.trim().to_lowercase())
+        Ok((response.content.trim().to_lowercase(), response.model))
     }
 
     /// Plan a single step with the given messages and tools
@@ -297,10 +296,11 @@ impl Planner {
         &self,
         messages: &[Message],
         tools: &[ToolDefinition],
+        override_model: Option<&str>,
     ) -> Result<PlanResponse> {
         let mut full_messages = vec![Message::system(&self.config.system_prompt)];
         full_messages.extend(messages.iter().cloned());
-        self.plan_step_impl(full_messages, tools).await
+        self.plan_step_impl(full_messages, tools, override_model).await
     }
 
     /// Plan a single step with a custom system prompt override
@@ -310,10 +310,11 @@ impl Planner {
         messages: &[Message],
         tools: &[ToolDefinition],
         system_prompt: &str,
+        override_model: Option<&str>,
     ) -> Result<PlanResponse> {
         let mut full_messages = vec![Message::system(system_prompt)];
         full_messages.extend(messages.iter().cloned());
-        self.plan_step_impl(full_messages, tools).await
+        self.plan_step_impl(full_messages, tools, override_model).await
     }
 
     /// Common planning implementation
@@ -321,11 +322,11 @@ impl Planner {
         &self,
         full_messages: Vec<Message>,
         tools: &[ToolDefinition],
+        override_model: Option<&str>,
     ) -> Result<PlanResponse> {
-        let model = self
-            .config
-            .default_model
-            .clone()
+        let model = override_model
+            .map(|s| s.to_string())
+            .or_else(|| self.config.default_model.clone())
             .unwrap_or_else(|| self.provider.default_model().to_string());
 
         if tools.is_empty() || !self.config.include_tools {
