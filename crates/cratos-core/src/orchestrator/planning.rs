@@ -4,14 +4,13 @@
 //! - `dispatch_plan`: Dispatches a plan step to a planner
 //! - `plan_with_fallback`: Plans with automatic fallback on transient errors
 //! - `try_final_summary`: Generates final summary when limits are reached
-//! - `route_by_llm`: Routes input to a persona via LLM classification
 
 use crate::planner::{PlanResponse, Planner};
 use cratos_llm::{Message, ToolDefinition};
-use tracing::{debug, warn};
+use tracing::warn;
 
 use super::core::Orchestrator;
-use super::sanitize::{is_fallback_eligible, PERSONA_CLASSIFICATION_PROMPT};
+use super::sanitize::is_fallback_eligible;
 
 impl Orchestrator {
     /// Dispatch a plan step to the given planner with an optional system prompt override.
@@ -129,37 +128,4 @@ impl Orchestrator {
         }
     }
 
-    /// Route input to a persona via LLM classification.
-    /// Returns a tuple of (persona_name, actual_model_used).
-    /// Falls back to "cratos" on any error — NO keyword matching.
-    pub(crate) async fn route_by_llm(&self, input: &str) -> (String, Option<String>) {
-        // Short greetings/interjections → skip LLM call
-        if input.split_whitespace().count() < 3 {
-            return ("cratos".to_string(), None);
-        }
-
-        let start = std::time::Instant::now();
-        match self
-            .planner
-            .classify(PERSONA_CLASSIFICATION_PROMPT, input, None)
-            .await
-        {
-            Ok((raw, model_used)) => {
-                let persona = raw.trim().trim_matches('"').to_lowercase();
-                let ms = start.elapsed().as_millis();
-                if let Some(mapping) = &self.persona_mapping {
-                    if mapping.is_persona(&persona) {
-                        debug!(persona = %persona, ms = %ms, "LLM persona classification");
-                        return (persona, Some(model_used));
-                    }
-                }
-                warn!(raw = %raw, ms = %ms, "LLM returned unknown persona, defaulting to cratos");
-                ("cratos".to_string(), Some(model_used))
-            }
-            Err(e) => {
-                warn!(error = %e, "LLM classify failed, defaulting to cratos");
-                ("cratos".to_string(), None)
-            }
-        }
-    }
 }

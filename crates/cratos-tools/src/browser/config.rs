@@ -98,7 +98,7 @@ impl Default for BrowserConfig {
 }
 
 fn default_server_url() -> String {
-    "http://127.0.0.1:8090".to_string()
+    "http://127.0.0.1:19527".to_string()
 }
 
 /// Playwright-specific configuration

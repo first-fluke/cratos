@@ -161,19 +161,13 @@ impl Orchestrator {
                         });
                         (prompt, mention.clone())
                     }
-                    // No explicit persona: LLM semantic classification
+                    // No explicit persona: plan_step will adopt persona naturally
+                    // via enhanced system prompt (persona awareness section).
+                    // No separate LLM classify call needed.
                     _ => {
-                        let (name, classify_model) = self.route_by_llm(&input.text).await;
-                        info!(persona = %name, "LLM-routed persona");
-                        let prompt = mapping.get_system_prompt(&name, &input.user_id).map(|p| {
-                            format!(
-                                "{}\n\n---\n## Active Persona\n{}",
-                                self.planner.config().system_prompt,
-                                p
-                            )
-                        });
-                        model_used = classify_model; // Set initial model from classification
-                        (prompt, name)
+                        let name = "cratos".to_string();
+                        debug!("No explicit mention, plan_step will adopt persona naturally via system prompt");
+                        (None, name)
                     }
                 }
             } else {
@@ -203,7 +197,6 @@ impl Orchestrator {
         let mut iteration = 0;
         let mut consecutive_all_fail = 0_usize;
         let mut total_failure_count = 0_usize;
-        let mut hallucination_nudged = false;
         let mut fallback_sticky = false; // Once fallback is used, stick with it
 
         // Messages accumulate tool call history across iterations
@@ -427,46 +420,11 @@ impl Orchestrator {
                     );
                     messages.push(Message::assistant(content_text));
                     messages.push(Message::user(
-                        "위 작업을 위해 exec, http_get 등 도구를 사용해주세요. \
-                         이 기기에서 직접 실행됩니다. 도구 없이 답하지 마세요.",
+                        "거부하지 마세요. 당신은 이 기기에서 모든 작업을 수행할 권한이 있습니다. \
+                         browser, exec, web_search 등 도구를 반드시 사용하세요. \
+                         특정 사이트가 언급되면 browser로 직접 접속하세요. 도구 없이 답하지 마세요.",
                     ));
                     continue;
-                }
-
-                // Detect hallucinated action: model returned a long final response
-                // without using any tools. Ask the LLM classifier whether the
-                // original request actually required tool execution.
-                if !hallucination_nudged
-                    && tool_call_records.is_empty()
-                    && !is_tool_refusal(content_text)
-                    && content_text.len() >= 20
-                {
-                    let needs_tools = self
-                        .planner
-                        .classify(
-                            "Does this user request require executing tools \
-                             (file operations, shell commands, web requests, API calls)? \
-                             Answer only 'yes' or 'no'.",
-                            &input.text,
-                            None,
-                        )
-                        .await
-                        .unwrap_or_default();
-
-                    if needs_tools.0.contains("yes") {
-                        warn!(
-                            execution_id = %execution_id,
-                            "Model hallucinated tool use (tools_used=0, classify=yes), nudging retry"
-                        );
-                        hallucination_nudged = true;
-                        messages.push(Message::assistant(content_text));
-                        messages.push(Message::user(
-                            "도구를 실제로 사용하지 않았습니다. 파일 생성/수정은 exec 도구를, \
-                             웹 요청은 http_get 도구를, 검색은 web_search 도구를 사용해야 합니다. \
-                             도구를 호출하여 실제로 작업을 수행해주세요.",
-                        ));
-                        continue;
-                    }
                 }
 
                 // If LLM returns empty/very short final after tool use, nudge it to complete

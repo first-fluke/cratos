@@ -128,38 +128,27 @@ mod tests {
     }
 
     // ── Tool refusal detection ───────────────────────────────────────
+    //
+    // `is_tool_refusal` is now structural: always returns true.
+    // On the first iteration, any text-only response (no tool calls)
+    // is treated as a refusal regardless of content or language.
+    // The caller guards with `iteration == 1`.
 
     #[test]
-    fn test_tool_refusal_empty() {
+    fn test_tool_refusal_always_true() {
+        // Structural detection: any text on first iteration = refusal
         assert!(is_tool_refusal(""));
         assert!(is_tool_refusal("   "));
-    }
-
-    #[test]
-    fn test_tool_refusal_short_without_substance() {
-        // Short generic statements with no content markers → refusal
         assert!(is_tool_refusal("I cannot access the filesystem."));
         assert!(is_tool_refusal("할 수 없습니다."));
-    }
-
-    #[test]
-    fn test_tool_refusal_allows_short_knowledge_answer() {
-        // Short but contains code backtick → legitimate answer
-        assert!(!is_tool_refusal(
-            "`gcloud config set project ID`를 실행하세요."
-        ));
-        // Contains URL → legitimate answer
-        assert!(!is_tool_refusal(
-            "https://cloud.google.com/docs 참고하세요."
-        ));
-        // Contains list marker → legitimate answer
-        assert!(!is_tool_refusal("1. 환경변수 설정\n2. 재시작"));
-    }
-
-    #[test]
-    fn test_tool_refusal_allows_long_response() {
-        let long = "a".repeat(100);
-        assert!(!is_tool_refusal(&long));
+        assert!(is_tool_refusal("`gcloud config set project ID`를 실행하세요."));
+        assert!(is_tool_refusal("https://cloud.google.com/docs 참고하세요."));
+        assert!(is_tool_refusal("1. 환경변수 설정\n2. 재시작"));
+        let long = "a".repeat(1000);
+        assert!(is_tool_refusal(&long));
+        // Language-independent: Korean, English, any content
+        assert!(is_tool_refusal("네이버 쇼핑에서 검색 결과를 가져왔습니다."));
+        assert!(is_tool_refusal("I'm unable to access external websites directly."));
     }
 
     // ── Fallback eligibility ─────────────────────────────────────────

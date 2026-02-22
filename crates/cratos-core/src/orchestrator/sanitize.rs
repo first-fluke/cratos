@@ -7,31 +7,6 @@
 //! - Response sanitization
 //! - Fallback eligibility checking
 
-/// System prompt for lightweight persona classification via LLM.
-pub(crate) const PERSONA_CLASSIFICATION_PROMPT: &str = r#"Classify the user message into the most appropriate persona. Output ONLY the persona name, nothing else.
-
-Personas:
-- sindri: software development, coding, API, database, architecture, debugging, implementation
-- brok: software development (secondary dev persona, use sindri by default)
-- athena: project management, planning, requirements, roadmap, sprint, schedule
-- heimdall: QA, testing, security, code review, bug analysis, vulnerability
-- mimir: research, investigation, analysis, comparison, documentation, study
-- thor: DevOps, deployment, CI/CD, Docker, Kubernetes, infrastructure, server ops
-- apollo: UX/UI design, user experience, prototyping, accessibility, wireframe
-- odin: product ownership, vision, prioritization, OKR, stakeholder management
-- nike: marketing, SNS, social media, growth hacking, SEO, content, campaign, automation, bot, like, comment, tweet
-- freya: customer support, CS, help desk, user complaints, FAQ
-- hestia: HR, hiring, team management, organization, onboarding
-- norns: business analysis, data analysis, metrics, KPI, reporting, forecasting
-- tyr: legal, compliance, regulation, privacy, GDPR, terms of service
-- cratos: general tasks, greetings, unclear domain, multi-domain, status, weather, casual
-
-Rules:
-- Output ONLY the persona name, nothing else
-- If the user explicitly names a persona (e.g. "니케", "nike", "아폴로"), use that persona
-- If uncertain or multi-domain, output "cratos"
-- Understand intent regardless of language (Korean, English, Japanese, etc.)"#;
-
 /// H6: Strip absolute paths from error messages shown to users.
 /// Security keywords (blocked, denied, etc.) are preserved.
 pub fn sanitize_error_for_user(error: &str) -> String {
@@ -83,20 +58,20 @@ pub fn is_fallback_eligible(e: &crate::error::Error) -> bool {
 /// The previous 200-char threshold was too aggressive and incorrectly
 /// flagged legitimate short knowledge answers, forcing unnecessary tool
 /// calls that wasted iterations and caused timeouts.
-pub fn is_tool_refusal(content: &str) -> bool {
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        return true;
-    }
-    // Substantive content markers: code, URLs, lists → genuine answer
-    if trimmed.contains('`')
-        || trimmed.contains("http")
-        || trimmed.contains("1.")
-        || trimmed.contains("- ")
-    {
-        return false;
-    }
-    trimmed.len() < 60
+/// Structural refusal detection — language-independent.
+///
+/// On the first iteration the system prompt mandates tool use.
+/// Any text-only response without tool calls is treated as a refusal
+/// and will be nudged once. If the model still responds without tools
+/// on the second try, that response is accepted as-is (knowledge answer).
+///
+/// This function is intentionally kept trivial: the real gate is
+/// `iteration == 1` in the process loop. We only exempt truly empty
+/// responses here (which are handled by a separate empty-response path).
+pub fn is_tool_refusal(_content: &str) -> bool {
+    // Always true — first-iteration text-only = refusal by definition.
+    // The caller already guards with `iteration == 1`.
+    true
 }
 
 /// Sanitize LLM response before sending to users.

@@ -67,7 +67,7 @@ pub fn build_env(
     c.push_str("# Server\n");
     c.push_str("# ===================\n");
     c.push_str("HOST=127.0.0.1\n");
-    c.push_str("PORT=8090\n");
+    c.push_str("PORT=19527\n");
 
     // Logging
     c.push_str("\n# ===================\n");

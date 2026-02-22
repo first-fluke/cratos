@@ -108,6 +108,23 @@ impl EventStore {
         .await
         .map_err(|e| Error::Database(e.to_string()))?;
 
+        // Migrate: add session_id column if missing (pre-v0.1.4 databases)
+        let has_session_id: bool = sqlx::query_scalar::<_, i32>(
+            "SELECT COUNT(*) FROM pragma_table_info('executions') WHERE name = 'session_id'",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(0)
+            > 0;
+
+        if !has_session_id {
+            debug!("Migrating: adding session_id column to executions");
+            sqlx::query("ALTER TABLE executions ADD COLUMN session_id TEXT")
+                .execute(&self.pool)
+                .await
+                .map_err(|e| Error::Database(e.to_string()))?;
+        }
+
         // Create indexes
         sqlx::query(
             r#"
