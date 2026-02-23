@@ -50,12 +50,15 @@ default_provider = "auto"
 # Cost comparison per 1M tokens (Feb 2026):
 # | Provider   | Model                    | Input    | Output   |
 # |------------|--------------------------|----------|----------|
+# | ZhipuAI    | glm-4.7-flash            | FREE     | FREE     |
 # | Groq       | llama-3.1-8b-instant     | $0.05    | $0.08    |
-# | GPT-5 nano | gpt-5-nano               | $0.05    | $0.40    |
-# | DeepSeek   | deepseek-chat            | $0.14    | $0.28    |
-# | GPT-5      | gpt-5                    | $1.25    | $10.00   |
-# | Anthropic  | claude-sonnet-4-5        | $3.00    | $15.00   |
-# | Anthropic  | claude-opus-4-5          | $5.00    | $25.00   |
+# | DeepSeek   | deepseek-chat (V3)       | $0.14    | $0.28    |
+# | Gemini     | gemini-2.0-flash         | FREE     | FREE     |
+# | Moonshot   | kimi-k2.5                | $0.60    | $2.50    |
+# | OpenAI     | gpt-5                    | $1.25    | $10.00   |
+# | Gemini     | gemini-2.5-pro           | $1.25    | $15.00   |
+# | Anthropic  | claude-sonnet-4.5        | $3.00    | $15.00   |
+# | Anthropic  | claude-opus-4.5          | $5.00    | $25.00   |
 
 [llm.model_routing]
 # Simple tasks (classification, extraction): Ultra-low-cost
@@ -65,7 +68,7 @@ general = { provider = "deepseek", model = "deepseek-chat" }
 # Complex tasks (planning, code generation): Premium
 complex = { provider = "anthropic", model = "claude-sonnet-4-5-20250929" }
 # Fallback when primary provider fails
-fallback = { provider = "openai", model = "gpt-5-nano" }
+fallback = { provider = "glm", model = "glm-4.7-flash" }
 # Automatically downgrade on rate limits
 auto_downgrade = true
 
@@ -101,7 +104,7 @@ timeout_ms = 120000
 [llm.gemini]
 # API key loaded from GOOGLE_API_KEY environment variable.
 # Also supports Google AI Pro OAuth (cratos init -> google_pro).
-default_model = "gemini-2.5-flash"
+default_model = "gemini-2.0-flash"
 timeout_ms = 60000
 
 [llm.ollama]
@@ -113,7 +116,7 @@ timeout_ms = 300000
 
 [llm.glm]
 # ZhipuAI GLM API - API key from ZHIPU_API_KEY env var
-base_url = "https://open.bigmodel.cn/api/paas/v4"
+base_url = "https://api.z.ai/api/paas/v4"
 default_model = "glm-4-9b"
 timeout_ms = 60000
 
@@ -254,6 +257,28 @@ block_threshold = "medium"
 # Maximum input/output lengths (characters)
 max_input_length = 100000
 max_output_length = 1000000
+
+# ============================================================================
+# Orchestrator Configuration (AI Agent Loop)
+# ============================================================================
+
+[orchestrator]
+# Maximum LLM iterations per request (tool-calling loop).
+# Higher = more complex tasks possible, but costs more tokens.
+# Each iteration = 1 LLM call + tool executions.
+max_iterations = 20
+
+# Maximum total execution time in seconds (0 = no limit)
+max_execution_secs = 180
+
+# Bail out after this many consecutive iterations where ALL tool calls failed
+max_consecutive_failures = 3
+
+# Bail out after this many total tool failures across all iterations
+max_total_failures = 6
+
+# Enable automatic skill pattern detection after execution
+auto_skill_detection = true
 
 [approval]
 # Approval mode: always | risky_only | never

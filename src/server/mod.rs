@@ -30,5 +30,5 @@ mod validation;
 // Re-export public API
 pub use cli::build_orchestrator_for_cli;
 pub use init::run;
-pub use loader::load_config;
+pub use loader::{load_config, DEFAULT_CONFIG};
 pub use providers::resolve_llm_provider;

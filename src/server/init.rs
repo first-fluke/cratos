@@ -185,9 +185,14 @@ pub async fn run() -> Result<()> {
     let allow_high_risk = config.approval.default_mode == "never";
     let exec_timeout = std::time::Duration::from_secs(exec_timeout_secs);
     let runner_config = RunnerConfig::new(exec_timeout).with_high_risk(allow_high_risk);
-    let orchestrator_config = OrchestratorConfig::new()
-        .with_max_iterations(10)
-        .with_logging(true)
+    let mut orchestrator_config = OrchestratorConfig::new()
+        .with_max_iterations(config.orchestrator.max_iterations)
+        .with_auto_skill_detection(config.orchestrator.auto_skill_detection)
+        .with_logging(true);
+    orchestrator_config.max_execution_secs = config.orchestrator.max_execution_secs;
+    orchestrator_config.max_consecutive_failures = config.orchestrator.max_consecutive_failures;
+    orchestrator_config.max_total_failures = config.orchestrator.max_total_failures;
+    let orchestrator_config = orchestrator_config
         .with_planner_config({
             // Resolve actual provider name (not "router")
             let (prov_name, model_name) = if llm_provider.name() == "router" {
@@ -243,23 +248,46 @@ pub async fn run() -> Result<()> {
         orchestrator = orchestrator.with_graph_memory(gm);
     }
 
-    // Phase 4: Auto-detect fallback provider
+    // Phase 4: Configure fallback provider
+    // Priority: explicit model_routing.fallback config > auto-detect from candidates
     {
         let primary = config.llm.default_provider.clone();
-        let fallback_candidates = [
-            "groq",
-            "openai",
-            "novita",
-            "deepseek",
-            "anthropic",
-            "openrouter",
-            "ollama",
-        ];
-        if let Some(fb) = fallback_candidates
-            .iter()
-            .filter(|n| **n != primary.as_str())
-            .find_map(|n| llm_router.get(n))
-        {
+
+        // 1) Check explicit fallback from [llm.model_routing] in TOML/env
+        let explicit_fb = config
+            .llm
+            .model_routing
+            .as_ref()
+            .and_then(|r| r.fallback.as_ref())
+            .map(|f| f.provider.as_str());
+
+        let fb_provider = if let Some(fb_name) = explicit_fb {
+            if fb_name != primary {
+                llm_router.get(fb_name)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // 2) If no explicit fallback or unavailable, auto-detect from free/low-cost candidates
+        let fb_provider = fb_provider.or_else(|| {
+            let candidates = [
+                "groq",
+                "glm",
+                "novita",
+                "deepseek",
+                "openrouter",
+                "ollama",
+            ];
+            candidates
+                .iter()
+                .filter(|n| **n != primary.as_str())
+                .find_map(|n| llm_router.get(n))
+        });
+
+        if let Some(fb) = fb_provider {
             info!(fallback = %fb.name(), "Fallback LLM provider configured");
             orchestrator = orchestrator.with_fallback_provider(fb);
         }
