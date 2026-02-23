@@ -11,6 +11,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use super::app::{App, AppMode, Focus, Role};
+use super::settings::draw_settings;
 
 const SPINNER_FRAMES: &[&str] = &["   ", ".  ", ".. ", "..."];
 
@@ -33,6 +34,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // Layout constraints are fixed, so we just draw blank if empty.
     draw_suggestions(frame, app, outer[2]);
     draw_input(frame, app, outer[3]);
+
+    // Settings modal overlay (renders on top of everything)
+    if let Some(ref mut settings) = app.settings_state {
+        draw_settings(frame, settings);
+    }
 }
 
 // ── status bar ──────────────────────────────────────────────────────────

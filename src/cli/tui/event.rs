@@ -31,6 +31,22 @@ pub fn handle_events(app: &mut App, timeout: Duration) -> Result<()> {
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) {
+    // F5 toggles settings modal from any mode
+    if key.code == KeyCode::F(5) {
+        if app.ui_state.focus == Focus::Settings {
+            app.close_settings();
+        } else {
+            app.open_settings();
+        }
+        return;
+    }
+
+    // If settings modal is open, handle settings keys
+    if app.ui_state.focus == Focus::Settings {
+        handle_settings_mode(app, key);
+        return;
+    }
+
     match app.ui_state.mode {
         AppMode::Insert => handle_insert_mode(app, key),
         AppMode::Normal => handle_normal_mode(app, key),
@@ -195,6 +211,50 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         }
 
         _ => {}
+    }
+}
+
+fn handle_settings_mode(app: &mut App, key: KeyEvent) {
+    let Some(ref mut state) = app.settings_state else {
+        return;
+    };
+
+    if state.editing {
+        // Editing a field value
+        match key.code {
+            KeyCode::Esc => state.cancel_edit(),
+            KeyCode::Enter => {
+                if let Some((key, value)) = state.confirm_edit() {
+                    // Save to config/local.toml
+                    if let Err(e) = crate::cli::config::run(
+                        crate::cli::config::ConfigCommands::Set {
+                            key: key.to_string(),
+                            value,
+                        },
+                    ) {
+                        app.push_system(format!("Failed to save setting: {}", e));
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                state.edit_buffer.pop();
+            }
+            KeyCode::Char(c) => {
+                state.edit_buffer.push(c);
+            }
+            _ => {}
+        }
+    } else {
+        // Navigating settings
+        match key.code {
+            KeyCode::Esc => app.close_settings(),
+            KeyCode::Char('j') | KeyCode::Down => state.move_field(1),
+            KeyCode::Char('k') | KeyCode::Up => state.move_field(-1),
+            KeyCode::Char('h') | KeyCode::Left => state.move_category(-1),
+            KeyCode::Char('l') | KeyCode::Right => state.move_category(1),
+            KeyCode::Enter => state.start_edit(),
+            _ => {}
+        }
     }
 }
 

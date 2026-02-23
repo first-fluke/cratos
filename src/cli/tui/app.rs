@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 use tui_textarea::TextArea;
 
 use super::command::CommandRegistry;
+use super::settings::SettingsState;
 
 /// Application mode (Vim-style)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub enum Focus {
     Chat,
     Input,
     Sidebar,
+    Settings,
 }
 
 /// A single chat message displayed in the TUI.
@@ -122,6 +124,8 @@ pub struct App {
 
     response_tx: mpsc::UnboundedSender<AppEvent>,
     pub response_rx: mpsc::UnboundedReceiver<AppEvent>,
+
+    pub settings_state: Option<SettingsState>,
 }
 
 impl App {
@@ -151,6 +155,7 @@ impl App {
             current_execution_id: None,
             response_tx: tx,
             response_rx: rx,
+            settings_state: None,
         };
 
         app.push_system(format!(
@@ -186,6 +191,17 @@ impl App {
         self.ui_state.scroll_offset = 0;
         // Also reset list state selection if we were browsing
         self.ui_state.list_state.select(None);
+    }
+
+    pub fn open_settings(&mut self) {
+        self.settings_state = Some(SettingsState::load());
+        self.ui_state.focus = Focus::Settings;
+    }
+
+    pub fn close_settings(&mut self) {
+        self.settings_state = None;
+        self.ui_state.focus = Focus::Input;
+        self.ui_state.mode = AppMode::Insert;
     }
 
     pub fn toggle_sidebar(&mut self) {

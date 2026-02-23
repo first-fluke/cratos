@@ -6,6 +6,7 @@
 pub mod app;
 pub mod command;
 pub mod event;
+pub mod settings;
 pub mod ui;
 
 use anyhow::{Context, Result};
