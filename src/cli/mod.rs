@@ -14,6 +14,7 @@ pub const ENV_FILE_PATH: &str = ".env";
 
 pub mod browser_ext;
 pub mod chronicle;
+pub mod config;
 pub mod data;
 pub mod decrees;
 pub mod develop;
@@ -65,6 +66,9 @@ pub enum Commands {
         #[arg(long)]
         watch: bool,
     },
+    /// View and modify configuration
+    #[command(subcommand)]
+    Config(config::ConfigCommands),
     /// Start the server (default)
     Serve,
     /// Launch interactive TUI chat
@@ -371,6 +375,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Some(Commands::Decrees(cmd)) => decrees::run(cmd).await,
         Some(Commands::Chronicle(cmd)) => chronicle::run(cmd).await,
         Some(Commands::Quota { json, watch }) => quota::run(json, watch).await,
+        Some(Commands::Config(cmd)) => config::run(cmd),
         Some(Commands::Serve) => {
             if !std::path::Path::new(ENV_FILE_PATH).exists() {
                 setup::run(None).await?;
