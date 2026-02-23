@@ -154,7 +154,7 @@ pub fn openai_oauth_config() -> OAuthProviderConfig {
         client_secret: String::new(), // Public client — PKCE only
         auth_url: "https://auth.openai.com/oauth/authorize".to_string(),
         token_url: "https://auth.openai.com/oauth/token".to_string(),
-        scopes: "openid profile email offline_access".to_string(),
+        scopes: "openid profile email offline_access model.request".to_string(),
         redirect_path: "/auth/callback".to_string(),
         extra_auth_params: vec![
             ("id_token_add_organizations".to_string(), "true".to_string()),

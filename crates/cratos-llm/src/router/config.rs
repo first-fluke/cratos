@@ -121,13 +121,13 @@ impl Default for ModelRoutingConfig {
             // UltraBudget - DeepSeek R1 Distill ($0.03/1M input, $0.09/1M output)
             trivial: ModelConfig::new("deepseek", "deepseek-r1-distill-llama-70b"),
             // Fast - Gemini 2.5 Flash ($0.075/1M input, free tier available)
-            simple: ModelConfig::new("gemini", "gemini-2.5-flash"),
+            simple: ModelConfig::new("gemini", "gemini-2.0-flash"),
             // Standard - Claude Sonnet 4.5 ($3/1M, balanced)
             general: ModelConfig::new("anthropic", "claude-sonnet-4-5-20250929"),
             // Premium - Claude Opus 4.5 ($5/$25, 67% cheaper than Opus 4!)
             complex: ModelConfig::new("anthropic", "claude-opus-4-5-20250514"),
-            // Fallback to GPT-5-nano ($0.05/$0.40 — cheaper than GPT-4o-mini)
-            fallback: Some(ModelConfig::new("openai", "gpt-5-nano")),
+            // Fallback to GLM-4.7-Flash (completely FREE, no daily quota limit)
+            fallback: Some(ModelConfig::new("glm", "glm-4.7-flash")),
             auto_downgrade: true,
         }
     }
@@ -263,9 +263,11 @@ impl ModelRoutingConfig {
             ("gemini" | "google_pro", ModelTier::Fast) => 0.175,
             ("gemini" | "google_pro", ModelTier::Standard) => 1.25, // Pro avg
             ("gemini" | "google_pro", ModelTier::Premium) => 1.25,
-            // GLM
-            ("glm", ModelTier::UltraBudget) => 0.086,
-            ("glm", _) => 0.20,
+            // GLM - Flash models are FREE, paid models low-cost
+            ("glm", ModelTier::UltraBudget) => 0.0, // glm-4.7-flash (FREE)
+            ("glm", ModelTier::Fast) => 0.0,        // glm-4.5-flash (FREE)
+            ("glm", ModelTier::Standard) => 0.14,   // glm-4-plus
+            ("glm", ModelTier::Premium) => 1.40,    // glm-4.7 ($0.60/$2.20)
             // Qwen
             ("qwen", ModelTier::UltraBudget) => 0.075,
             ("qwen", _) => 0.50,

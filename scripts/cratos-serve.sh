@@ -5,8 +5,12 @@
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 export RUST_LOG=info
 
-CRATOS_BIN="/Volumes/gahyun_ex/projects/cratos/target/release/cratos"
-CRATOS_DIR="/Volumes/gahyun_ex/projects/cratos"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CRATOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+CRATOS_BIN="${CRATOS_DIR}/target/release/cratos"
+
+# Allow override via environment
+CRATOS_BIN="${CRATOS_BIN_OVERRIDE:-$CRATOS_BIN}"
 LOG_FILE="/tmp/cratos_serve.log"
 
 cd "$CRATOS_DIR" || exit 1

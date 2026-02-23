@@ -25,28 +25,29 @@ use tracing::{debug, instrument};
 // ============================================================================
 
 /// GLM API base URL
-pub const BASE_URL: &str = "https://open.bigmodel.cn/api/paas/v4";
+pub const BASE_URL: &str = "https://api.z.ai/api/paas/v4";
 
 /// Available GLM models (2026)
 ///
 /// GLM pricing (ZhipuAI):
-/// - glm-4-9b: $0.086 per 1M tokens (cheapest, local deployable)
-/// - glm-4-flash: $0.01/$0.01 per 1M tokens (fast)
+/// - glm-4.7-flash: Free tier (fast, lightweight)
+/// - glm-4.5-flash: Free tier (balanced)
 /// - glm-4-plus: $0.14/$0.14 per 1M tokens (balanced)
+/// - glm-4.7: Premium coding model
 pub const MODELS: &[&str] = &[
-    // GLM-4 family (2026)
-    "glm-4-plus",
-    "glm-4-flash",
-    "glm-4-9b",
     // GLM-4.7 (latest, 2026)
     "glm-4.7",
     "glm-4.7-flash",
+    // GLM-4.5
+    "glm-4.5-flash",
+    // GLM-4 family
+    "glm-4-plus",
     // GLM-Z1 (reasoning)
     "glm-z1-9b",
 ];
 
-/// Default model (GLM-4 Flash - fast and cheap)
-pub const DEFAULT_MODEL: &str = "glm-4-flash";
+/// Default model (GLM-4.7 Flash - free tier, fast)
+pub const DEFAULT_MODEL: &str = "glm-4.7-flash";
 
 // ============================================================================
 // Security Utilities

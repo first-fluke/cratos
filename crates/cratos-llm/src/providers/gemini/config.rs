@@ -31,7 +31,7 @@ pub const MODELS: &[&str] = &[
 ];
 
 /// Default Gemini model
-pub const DEFAULT_MODEL: &str = "gemini-2.5-flash";
+pub const DEFAULT_MODEL: &str = "gemini-2.0-flash";
 
 /// 429 시 한 단계 저렴한 모델로 다운그레이드
 pub(crate) fn downgrade_model(model: &str) -> Option<&'static str> {

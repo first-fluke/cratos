@@ -179,9 +179,9 @@ impl ModelTier {
             // ================================================================
             // GLM (ZhipuAI) - Chinese models
             // ================================================================
-            (ModelTier::UltraBudget, "glm") => "glm-4-9b",
-            (ModelTier::Fast, "glm") => "glm-4-flash",
-            (ModelTier::Standard, "glm") => "glm-4-plus",
+            (ModelTier::UltraBudget, "glm") => "glm-4.7-flash",
+            (ModelTier::Fast, "glm") => "glm-4.7-flash",
+            (ModelTier::Standard, "glm") => "glm-4.7",
             (ModelTier::Premium, "glm") => "glm-4-plus",
 
             // ================================================================

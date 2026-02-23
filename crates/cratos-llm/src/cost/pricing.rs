@@ -499,12 +499,24 @@ pub fn default_pricing() -> HashMap<String, ModelPricing> {
     );
 
     pricing.insert(
-        "glm-4-flash".to_string(),
+        "glm-4.7-flash".to_string(),
         ModelPricing {
-            model: "glm-4-flash".to_string(),
+            model: "glm-4.7-flash".to_string(),
             provider: "glm".to_string(),
-            input_cost_per_million: 0.01,
-            output_cost_per_million: 0.01,
+            input_cost_per_million: 0.0,
+            output_cost_per_million: 0.0,
+            context_window: 128_000,
+            updated_at: now,
+        },
+    );
+
+    pricing.insert(
+        "glm-4.7".to_string(),
+        ModelPricing {
+            model: "glm-4.7".to_string(),
+            provider: "glm".to_string(),
+            input_cost_per_million: 0.14,
+            output_cost_per_million: 0.14,
             context_window: 128_000,
             updated_at: now,
         },
