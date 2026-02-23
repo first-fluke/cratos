@@ -67,16 +67,21 @@ pub struct Texts {
     pub telegram_instructions: &'static str,
     pub telegram_help_link: &'static str,
     pub telegram_prompt: &'static str,
-    pub telegram_skip: &'static str,
-    pub telegram_skip_note: &'static str,
+
+    // Channel selection (multi-select)
+    pub channel_title: &'static str,
+    pub channel_desc: &'static str,
+    pub channel_prompt: &'static str,
+    pub channel_telegram_desc: &'static str,
+    pub channel_slack_desc: &'static str,
+    pub channel_discord_desc: &'static str,
+    pub channel_later_note: &'static str,
 
     // Slack
     pub slack_title: &'static str,
     pub slack_desc: &'static str,
     pub slack_instructions: &'static str,
     pub slack_help_link: &'static str,
-    pub slack_skip: &'static str,
-    pub slack_skip_note: &'static str,
     pub slack_token_prompt: &'static str,
     pub slack_secret_prompt: &'static str,
 
@@ -87,6 +92,18 @@ pub struct Texts {
     pub provider_paid_header: &'static str,
     pub provider_local_header: &'static str,
     pub provider_prompt: &'static str,
+
+    // Discord
+    pub discord_title: &'static str,
+    pub discord_instructions: &'static str,
+    pub discord_prompt: &'static str,
+
+    // Fallback provider
+    pub fallback_title: &'static str,
+    pub fallback_desc: &'static str,
+    pub fallback_prompt: &'static str,
+    pub fallback_note: &'static str,
+    pub fallback_select: &'static str,
 
     // API Key
     pub apikey_title: &'static str,
@@ -128,6 +145,9 @@ pub struct Texts {
     pub test_failed: &'static str,
     pub test_continue: &'static str,
 
+    // Test (Discord)
+    pub test_discord: &'static str,
+
     // Complete
     pub complete_title: &'static str,
     pub complete_saved: &'static str,
@@ -135,6 +155,7 @@ pub struct Texts {
     pub complete_next_steps: &'static str,
     pub complete_tips: &'static str,
     pub complete_problems: &'static str,
+    pub complete_advanced: &'static str,
 
     // Browser OAuth
     pub oauth_detected: &'static str,
@@ -169,11 +190,10 @@ pub const TEXTS_EN: Texts = Texts {
     welcome_subtitle: "Let's set up your AI assistant in just a few minutes.",
     welcome_steps: r#"
 Setup steps:
-  1. Connect Telegram Bot (optional)
-  2. Connect Slack Bot (optional)
-  3. Choose AI Model
-  4. Select Persona
-  5. Test Connection
+  1. Select Channels (Telegram / Slack / Discord)
+  2. Choose AI Model + Fallback
+  3. Select Persona
+  4. Test Connections
 "#,
     welcome_time: "Total time: ~5 minutes",
 
@@ -187,6 +207,14 @@ Setup steps:
     TELEGRAM_BOT_TOKEN, OPENAI_API_KEY, etc."#,
 
     env_overwrite: ".env file already exists. Overwrite?",
+
+    channel_title: "Channel Setup",
+    channel_desc: "Select the messaging channels you want to connect.",
+    channel_prompt: "Which channels do you want to set up?",
+    channel_telegram_desc: "Most popular, easy setup",
+    channel_slack_desc: "Workspace integration",
+    channel_discord_desc: "Server bot",
+    channel_later_note: "(You can add more channels later in .env)",
 
     telegram_title: "Telegram Bot Setup",
     telegram_desc: "You need a Telegram bot to chat with Cratos.",
@@ -205,8 +233,6 @@ How to create:
 "#,
     telegram_help_link: "Help: https://core.telegram.org/bots#how-do-i-create-a-bot",
     telegram_prompt: "Paste your Telegram bot token:",
-    telegram_skip: "Skip Telegram setup?",
-    telegram_skip_note: "(You can set this up later)",
 
     slack_title: "Slack Bot Setup",
     slack_desc: "You need a Slack app to use Cratos in your workspace.",
@@ -226,10 +252,35 @@ How to create:
      and Signing Secret (from "Basic Information")
 "#,
     slack_help_link: "Help: https://api.slack.com/start/quickstart",
-    slack_skip: "Skip Slack setup?",
-    slack_skip_note: "(You can set this up later)",
     slack_token_prompt: "Enter Slack bot token (xoxb-...):",
     slack_secret_prompt: "Enter Slack signing secret:",
+
+    discord_title: "Discord Bot Setup",
+    discord_instructions: r#"
+How to create:
+  1. Go to Discord Developer Portal:
+     https://discord.com/developers/applications
+
+  2. Click "New Application" and give it a name
+
+  3. Go to "Bot" section and click "Add Bot"
+
+  4. Copy the bot token
+
+  5. Under "Privileged Gateway Intents", enable:
+     Message Content Intent
+
+  6. Go to "OAuth2" → "URL Generator"
+     Select: bot, applications.commands
+     Permissions: Send Messages, Read Message History
+"#,
+    discord_prompt: "Paste your Discord bot token:",
+
+    fallback_title: "Fallback Provider",
+    fallback_desc: "A fallback provider is used when your main provider hits rate limits.",
+    fallback_prompt: "Set up a fallback provider?",
+    fallback_note: "(Recommended for reliability)",
+    fallback_select: "Select fallback provider:",
 
     provider_title: "Choose AI Model",
     provider_desc: "Choose which AI to use.\nIf you're new, we recommend a free option!",
@@ -291,14 +342,16 @@ How to get:
     test_failed: "Failed. Please verify your credentials.",
     test_continue: "Continue anyway?",
 
+    test_discord: "Testing Discord connection...",
+
     complete_title: "Setup Complete!",
     complete_saved: "Configuration saved to .env",
     complete_summary: "Summary:",
     complete_next_steps: r#"
 Next steps:
   1. Start Cratos:       cratos serve
-  2. Open Telegram and search for your bot
-  3. Start chatting:     /start
+  2. Open your messaging app and find your bot
+  3. Start chatting!
 "#,
     complete_tips: r#"
 Tips:
@@ -307,6 +360,15 @@ Tips:
   - View help:           cratos --help
 "#,
     complete_problems: "Having problems? Run: cratos doctor",
+    complete_advanced: r#"
+Advanced settings (edit .env or config/default.toml):
+  - Additional LLM providers    Add more API keys for routing
+  - Matrix / WhatsApp channels  See .env.example for variables
+  - Server port / host          HOST, PORT
+  - Sandbox (Docker)            CRATOS_EXEC__SANDBOX_IMAGE
+  - Scheduler                   CRATOS_SCHEDULER__ENABLED
+  - See: docs/SETUP_GUIDE.md for full reference
+"#,
 
     oauth_detected: "Cratos OAuth token found.",
     oauth_token_valid: "Token is valid!",
@@ -343,11 +405,10 @@ pub const TEXTS_KO: Texts = Texts {
     welcome_subtitle: "몇 분만에 AI 어시스턴트를 설정해 보세요.",
     welcome_steps: r#"
 설정 단계:
-  1. Telegram 봇 연결 (선택)
-  2. Slack 봇 연결 (선택)
-  3. AI 모델 선택
-  4. 페르소나 선택
-  5. 연결 테스트
+  1. 채널 선택 (Telegram / Slack / Discord)
+  2. AI 모델 + 폴백 선택
+  3. 페르소나 선택
+  4. 연결 테스트
 "#,
     welcome_time: "총 소요 시간: 약 5분",
 
@@ -361,6 +422,14 @@ pub const TEXTS_KO: Texts = Texts {
     TELEGRAM_BOT_TOKEN, OPENAI_API_KEY 등"#,
 
     env_overwrite: ".env 파일이 이미 존재합니다. 덮어쓸까요?",
+
+    channel_title: "채널 설정",
+    channel_desc: "연결할 메시징 채널을 선택하세요.",
+    channel_prompt: "어떤 채널을 설정할까요?",
+    channel_telegram_desc: "가장 인기, 쉬운 설정",
+    channel_slack_desc: "워크스페이스 연동",
+    channel_discord_desc: "서버 봇",
+    channel_later_note: "(나중에 .env에서 더 추가할 수 있어요)",
 
     telegram_title: "Telegram 봇 설정",
     telegram_desc: "Telegram 봇을 만들어야 Cratos와 대화할 수 있어요.",
@@ -379,8 +448,6 @@ pub const TEXTS_KO: Texts = Texts {
 "#,
     telegram_help_link: "도움말: https://core.telegram.org/bots#how-do-i-create-a-bot",
     telegram_prompt: "Telegram 봇 토큰을 붙여넣기 하세요:",
-    telegram_skip: "Telegram 설정 건너뛰기?",
-    telegram_skip_note: "(나중에 설정할 수 있어요)",
 
     slack_title: "Slack 봇 설정",
     slack_desc: "Slack 워크스페이스에서 Cratos를 사용하려면 Slack 앱이 필요해요.",
@@ -400,10 +467,35 @@ pub const TEXTS_KO: Texts = Texts {
      + Signing Secret ("Basic Information"에서 확인)
 "#,
     slack_help_link: "도움말: https://api.slack.com/start/quickstart",
-    slack_skip: "Slack 설정 건너뛰기?",
-    slack_skip_note: "(나중에 설정할 수 있어요)",
     slack_token_prompt: "Slack 봇 토큰 입력 (xoxb-...):",
     slack_secret_prompt: "Slack signing secret 입력:",
+
+    discord_title: "Discord 봇 설정",
+    discord_instructions: r#"
+따라하기:
+  1. Discord 개발자 포털 접속:
+     https://discord.com/developers/applications
+
+  2. "New Application" 클릭 후 이름 입력
+
+  3. "Bot" 섹션에서 "Add Bot" 클릭
+
+  4. 봇 토큰 복사
+
+  5. "Privileged Gateway Intents"에서 활성화:
+     Message Content Intent
+
+  6. "OAuth2" → "URL Generator"
+     선택: bot, applications.commands
+     권한: Send Messages, Read Message History
+"#,
+    discord_prompt: "Discord 봇 토큰을 붙여넣기 하세요:",
+
+    fallback_title: "폴백 프로바이더",
+    fallback_desc: "메인 프로바이더가 rate limit에 걸릴 때 자동으로 전환됩니다.",
+    fallback_prompt: "폴백 프로바이더를 설정할까요?",
+    fallback_note: "(안정성을 위해 추천)",
+    fallback_select: "폴백 프로바이더 선택:",
 
     provider_title: "AI 모델 선택",
     provider_desc: "어떤 AI를 사용할지 선택하세요.\n처음이라면 무료 옵션을 추천해요!",
@@ -465,14 +557,16 @@ pub const TEXTS_KO: Texts = Texts {
     test_failed: "실패. 인증 정보를 확인해 주세요.",
     test_continue: "그래도 계속할까요?",
 
+    test_discord: "Discord 연결 확인 중...",
+
     complete_title: "설정 완료!",
     complete_saved: "설정이 .env 파일에 저장되었습니다",
     complete_summary: "요약:",
     complete_next_steps: r#"
 다음 단계:
   1. Cratos 실행:        cratos serve
-  2. Telegram에서 내 봇 검색
-  3. 대화 시작:          /start
+  2. 메시징 앱에서 봇 찾기
+  3. 대화 시작!
 "#,
     complete_tips: r#"
 팁:
@@ -481,6 +575,15 @@ pub const TEXTS_KO: Texts = Texts {
   - 도움말 보기:         cratos --help
 "#,
     complete_problems: "문제가 있으면 실행: cratos doctor",
+    complete_advanced: r#"
+고급 설정 (.env 또는 config/default.toml 편집):
+  - 추가 LLM 프로바이더    API 키 추가로 라우팅 확장
+  - Matrix / WhatsApp      .env.example 참조
+  - 서버 포트 / 호스트     HOST, PORT
+  - 샌드박스 (Docker)      CRATOS_EXEC__SANDBOX_IMAGE
+  - 스케줄러               CRATOS_SCHEDULER__ENABLED
+  - 전체 가이드: docs/SETUP_GUIDE.md
+"#,
 
     oauth_detected: "Cratos OAuth 토큰 발견.",
     oauth_token_valid: "토큰이 유효합니다!",

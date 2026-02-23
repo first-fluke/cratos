@@ -123,7 +123,7 @@ cat .env
 **확인 항목:**
 - [ ] 선택한 LLM 프로바이더 키가 저장되었는가?
 - [ ] Telegram 토큰이 저장되었는가? (입력한 경우)
-- [ ] `CRATOS_DEFAULT_PROVIDER` 값이 올바른가?
+- [ ] `CRATOS_LLM__DEFAULT_PROVIDER` 값이 올바른가?
 
 ---
 

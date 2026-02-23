@@ -169,17 +169,17 @@ Cratos가 AI 기능을 사용하려면 LLM API 키가 필요합니다.
 3. "Create Key" 클릭
 4. 키 복사 (예: `sk-ant-api03-xxxx...`)
 
-#### ZhipuAI (GLM)
-1. https://open.bigmodel.cn 접속
-2. 계정 생성 후 API 키 발급
-3. 키 복사
-
 #### Alibaba (Qwen)
 1. https://dashscope.console.aliyun.com 접속
 2. 계정 생성 후 API 키 발급
 3. 키 복사
 
 ### 🆓 무료 옵션
+
+#### Z.AI / GLM (추천! 무료 Flash 모델, 일일 제한 없음)
+1. https://z.ai 접속
+2. 계정 생성 후 API 키 발급
+3. **무료 모델**: GLM-4.7 Flash (일일 제한 없음, tool calling 지원)
 
 #### OpenRouter (추천!)
 1. https://openrouter.ai 접속
@@ -191,7 +191,12 @@ Cratos가 AI 기능을 사용하려면 LLM API 키가 필요합니다.
 1. https://novita.ai 접속
 2. 무료 가입
 3. API Keys 발급
-4. **무료 모델**: Llama 3.2, Qwen2.5-7B, GLM-4-9B
+4. **무료 모델**: Llama 3.2, Qwen2.5-7B, GLM-4.7-9B
+
+#### Groq (무료 티어 제공)
+1. https://console.groq.com 접속
+2. 계정 생성 후 API 키 발급
+3. **무료 티어**: Llama, Gemma 등 고속 추론 (일일 요청 제한 있음)
 
 #### Ollama (완전 무료, 로컬)
 별도 API 키 없이 로컬에서 무료로 사용:
@@ -256,7 +261,7 @@ ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 # 유료: Google Gemini (GEMINI_API_KEY 권장)
 GEMINI_API_KEY=your-gemini-key-here
 
-# 유료: ZhipuAI GLM
+# 무료/유료: Z.AI GLM (무료 Flash 모델, 일일 제한 없음)
 ZHIPU_API_KEY=your-bigmodel-key-here
 
 # 유료: Alibaba Qwen
@@ -267,6 +272,9 @@ OPENROUTER_API_KEY=sk-or-your-key-here
 
 # 무료: Novita AI
 NOVITA_API_KEY=your-novita-key-here
+
+# 무료: Groq (무료 티어 제공)
+GROQ_API_KEY=your-groq-key-here
 
 # 무료: Ollama (키 불필요, 아래 주석 해제)
 # OLLAMA_BASE_URL=http://host.docker.internal:11434
@@ -290,9 +298,10 @@ RUST_LOG=cratos=info,tower_http=info
 ### 💡 비용 절감 팁
 
 무료로 시작하려면:
-1. **OpenRouter** 키만 발급 (GitHub 로그인으로 1분 완료)
-2. `.env`에 `OPENROUTER_API_KEY`만 설정
-3. 하루 1000회 무료 사용!
+1. **Z.AI (GLM)** 키 발급 (무료 Flash 모델, 일일 제한 없음!) 또는
+   **OpenRouter** 키 발급 (GitHub 로그인으로 1분 완료, 하루 1000회)
+2. `.env`에 `ZHIPU_API_KEY` 또는 `OPENROUTER_API_KEY` 설정
+3. 바로 무료 사용 시작!
 
 ---
 
@@ -318,7 +327,7 @@ SQLite event store initialized at /Users/yourname/.cratos/cratos.db
 LLM provider initialized: anthropic
 Tool registry initialized with 20 tools
 Telegram adapter started
-HTTP server listening on http://127.0.0.1:8090
+HTTP server listening on http://127.0.0.1:19527
 ```
 
 > **참고**: 데이터베이스 파일(`~/.cratos/cratos.db`)은 자동으로 생성됩니다.
@@ -330,7 +339,7 @@ HTTP server listening on http://127.0.0.1:8090
 ### 7.1 헬스체크
 
 ```bash
-curl http://localhost:8090/health
+curl http://localhost:19527/health
 ```
 
 응답:
@@ -417,7 +426,7 @@ RUST_LOG=cratos=debug cargo run --release 2>&1 | tail -50
 ps aux | grep cratos
 
 # 3. 헬스체크
-curl http://localhost:8090/health
+curl http://localhost:19527/health
 
 # 4. Gemini 인증 확인 (OAuth 사용자)
 # Gemini CLI OAuth는 Standard API로 안전하게 라우팅됩니다.
@@ -439,7 +448,7 @@ pkill -f cratos && cargo run --release
 
 ```toml
 [server]
-port = 9999  # 8090 대신 다른 포트
+port = 9999  # 19527 대신 다른 포트
 ```
 
 ### 데이터베이스 오류

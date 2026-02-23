@@ -1,18 +1,19 @@
 //! Unified interactive setup for Cratos.
 //!
-//! Replaces both `init.rs` and `wizard.rs` with a single flow:
+//! Flow:
 //!   1. Non-interactive detection → print instructions and exit
 //!   2. Language detection (or --lang flag)
 //!   3. Welcome
 //!   4. .env overwrite check
-//!   5. Telegram setup (skippable)
-//!   6. Slack setup (skippable)
+//!   5. Channel multi-select (Telegram / Slack / Discord)
+//!   6. Channel token input (selected channels only)
 //!   7. LLM provider selection (FREE / PAID / LOCAL)
 //!   8. API key input
-//!   9. Persona selection
-//!  10. Connection tests (Telegram getMe + LLM)
-//!  11. Save .env
-//!  12. Summary
+//!   9. Fallback provider (optional)
+//!  10. Persona selection
+//!  11. Connection tests (channels + LLM)
+//!  12. Save .env
+//!  13. Summary + advanced settings guide
 
 mod env_builder;
 mod i18n;
@@ -103,37 +104,48 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
         }
     }
 
-    // ── 5. Telegram ──
-    print_header(t.telegram_title);
-    println!("  {}", t.telegram_desc);
-    println!("{}", t.telegram_instructions);
-    println!("  {}", t.telegram_help_link);
+    // ── 5. Channel Selection (multi-select) ──
+    print_header(t.channel_title);
+    println!("  {}", t.channel_desc);
     println!();
 
-    let skip_telegram = prompts::confirm(t.telegram_skip, true, Some(t.telegram_skip_note))?;
+    let channel_options = vec![
+        format!("Telegram — {}", t.channel_telegram_desc),
+        format!("Slack — {}", t.channel_slack_desc),
+        format!("Discord — {}", t.channel_discord_desc),
+    ];
+    let selected_channels = prompts::multi_select(t.channel_prompt, &channel_options)?;
+    println!("  {}", t.channel_later_note);
 
-    let telegram_token = if skip_telegram {
-        String::new()
-    } else {
-        prompts::password(t.telegram_prompt)?
-    };
+    // ── 6. Channel Token Input ──
+    let mut telegram_token = String::new();
+    let mut slack_token = String::new();
+    let mut slack_secret = String::new();
+    let mut discord_token = String::new();
 
-    // ── 6. Slack ──
-    print_header(t.slack_title);
-    println!("  {}", t.slack_desc);
-    println!("{}", t.slack_instructions);
-    println!("  {}", t.slack_help_link);
-    println!();
-
-    let skip_slack = prompts::confirm(t.slack_skip, true, Some(t.slack_skip_note))?;
-
-    let (slack_token, slack_secret) = if skip_slack {
-        (String::new(), String::new())
-    } else {
-        let token = prompts::password(t.slack_token_prompt)?;
-        let secret = prompts::password(t.slack_secret_prompt)?;
-        (token, secret)
-    };
+    for ch in &selected_channels {
+        if ch.starts_with("Telegram") {
+            print_header(t.telegram_title);
+            println!("  {}", t.telegram_desc);
+            println!("{}", t.telegram_instructions);
+            println!("  {}", t.telegram_help_link);
+            println!();
+            telegram_token = prompts::password(t.telegram_prompt)?;
+        } else if ch.starts_with("Slack") {
+            print_header(t.slack_title);
+            println!("  {}", t.slack_desc);
+            println!("{}", t.slack_instructions);
+            println!("  {}", t.slack_help_link);
+            println!();
+            slack_token = prompts::password(t.slack_token_prompt)?;
+            slack_secret = prompts::password(t.slack_secret_prompt)?;
+        } else if ch.starts_with("Discord") {
+            print_header(t.discord_title);
+            println!("{}", t.discord_instructions);
+            println!();
+            discord_token = prompts::password(t.discord_prompt)?;
+        }
+    }
 
     // ── 7. LLM Provider ──
     print_header(t.provider_title);
@@ -273,7 +285,59 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
         }
     };
 
-    // ── 9. Persona ──
+    // ── 9. Fallback Provider ──
+    let mut fallback_provider_idx: Option<usize> = None;
+    let mut fallback_key = String::new();
+
+    print_header(t.fallback_title);
+    println!("  {}", t.fallback_desc);
+    println!();
+
+    let setup_fallback = prompts::confirm(t.fallback_prompt, true, Some(t.fallback_note))?;
+
+    if setup_fallback {
+        // Build fallback options: FREE providers only, excluding the main provider
+        let mut fb_options: Vec<String> = Vec::new();
+        let mut fb_indices: Vec<usize> = Vec::new();
+
+        for (idx, p) in PROVIDERS.iter().enumerate() {
+            if p.category == ProviderCategory::Free && p.name != provider.name {
+                fb_options.push(format!("{} ({})", p.display(lang), p.cost(lang)));
+                fb_indices.push(idx);
+            }
+        }
+
+        if !fb_options.is_empty() {
+            let fb_selected = prompts::select(t.fallback_select, &fb_options)?;
+
+            if let Some(pos) = fb_options.iter().position(|o| *o == fb_selected) {
+                let fb_idx = fb_indices[pos];
+                let fb = &PROVIDERS[fb_idx];
+                fallback_provider_idx = Some(fb_idx);
+
+                // Get API key for fallback if needed
+                if fb.name != "ollama" && !fb.env_var.is_empty() {
+                    let existing = std::env::var(fb.env_var).unwrap_or_default();
+                    if !existing.is_empty() {
+                        let reuse = prompts::confirm(
+                            &format!("{} is already set. Use it?", fb.env_var),
+                            true,
+                            None,
+                        )?;
+                        if reuse {
+                            fallback_key = existing;
+                        } else {
+                            fallback_key = prompt_api_key(fb, lang, t)?;
+                        }
+                    } else {
+                        fallback_key = prompt_api_key(fb, lang, t)?;
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 10. Persona ──
     print_header(t.persona_title);
     println!("  {}\n", t.persona_help);
 
@@ -291,7 +355,7 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
 
     println!("\n  Selected: {} ({})\n", persona.name, persona.domain);
 
-    // ── 10. Connection tests ──
+    // ── 11. Connection tests ──
     print_header(t.test_title);
 
     let mut all_ok = true;
@@ -299,6 +363,16 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
     if !telegram_token.is_empty() {
         print!("  {} ", t.test_telegram);
         if testing::test_telegram(&telegram_token).await {
+            println!("{}", t.test_success);
+        } else {
+            println!("{}", t.test_failed);
+            all_ok = false;
+        }
+    }
+
+    if !discord_token.is_empty() {
+        print!("  {} ", t.test_discord);
+        if testing::test_discord(&discord_token).await {
             println!("{}", t.test_success);
         } else {
             println!("{}", t.test_failed);
@@ -344,23 +418,30 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
         }
     }
 
-    // ── 11. Save .env ──
-    let env_content = env_builder::build_env(
+    // ── 12. Save .env ──
+    let fallback_prov = fallback_provider_idx.map(|idx| &PROVIDERS[idx]);
+    let env_content = env_builder::build_env(&env_builder::EnvParams {
         provider,
-        &api_key,
-        &telegram_token,
-        &slack_token,
-        &slack_secret,
-        persona.name,
-    );
+        api_key: &api_key,
+        fallback_provider: fallback_prov,
+        fallback_key: &fallback_key,
+        telegram_token: &telegram_token,
+        slack_token: &slack_token,
+        slack_secret: &slack_secret,
+        discord_token: &discord_token,
+        persona: persona.name,
+    });
     std::fs::write(env_path, env_content)?;
 
-    // ── 12. Summary ──
+    // ── 13. Summary ──
     print_box(t.complete_title, "");
     println!("  {}", t.complete_saved);
     println!();
     println!("  {}", t.complete_summary);
     println!("    LLM: {}", provider.display(lang));
+    if let Some(fb) = fallback_prov {
+        println!("    LLM (fallback): {}", fb.display(lang));
+    }
     println!("    Persona: {} ({})", persona.name, persona.domain);
     println!(
         "    Telegram: {}",
@@ -378,9 +459,18 @@ pub async fn run(lang_override: Option<&str>) -> anyhow::Result<()> {
             t.enabled
         }
     );
+    println!(
+        "    Discord: {}",
+        if discord_token.is_empty() {
+            t.disabled
+        } else {
+            t.enabled
+        }
+    );
     println!("{}", t.complete_next_steps);
     println!("{}", t.complete_tips);
     println!("  {}", t.complete_problems);
+    println!("{}", t.complete_advanced);
     println!();
 
     Ok(())

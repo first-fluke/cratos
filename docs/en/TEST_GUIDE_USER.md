@@ -123,7 +123,7 @@ cat .env
 **Checklist:**
 - [ ] Is the selected LLM provider key saved?
 - [ ] Is the Telegram token saved? (if entered)
-- [ ] Is `CRATOS_DEFAULT_PROVIDER` set correctly?
+- [ ] Is `CRATOS_LLM__DEFAULT_PROVIDER` set correctly?
 
 ---
 

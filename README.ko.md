@@ -25,7 +25,7 @@ irm https://raw.githubusercontent.com/first-fluke/cratos/main/scripts/install.ps
 - **자동 스킬 생성**: 사용 패턴을 학습하여 자동으로 워크플로우 스킬 생성
 - **멀티 LLM 지원**: OpenAI, Anthropic, Gemini, DeepSeek, Groq, Fireworks, SiliconFlow, GLM, Qwen, Moonshot, Novita, OpenRouter, Ollama (13개 프로바이더)
 - **스마트 라우팅**: 작업 유형별 자동 모델 선택으로 비용 70% 절감
-- **무료 모델 지원**: OpenRouter, Novita를 통한 무료 LLM 사용 (Llama, Qwen, GLM)
+- **무료 모델 지원**: Z.AI GLM (완전 무료, 일일 제한 없음), Gemini Flash, Groq, Novita, SiliconFlow, Ollama
 - **리플레이 엔진**: 모든 실행 기록을 이벤트로 저장, 타임라인 조회 및 재실행
 - **도구 시스템**: 파일, HTTP, Git, GitHub, 명령 실행, PTY bash, 브라우저, 웹 검색, 에이전트 CLI, WoL, 설정 등 20개 빌트인 도구 + MCP 확장
 - **채널 어댑터**: Telegram, Slack, Discord, Matrix, WhatsApp — 슬래시 명령어, DM 정책, EventBus 알림
@@ -107,7 +107,7 @@ cargo build --release
 cargo run --release
 
 # 헬스체크
-curl http://localhost:8090/health
+curl http://localhost:19527/health
 ```
 
 데이터는 자동으로 `~/.cratos/cratos.db`에 저장됩니다.
@@ -176,10 +176,13 @@ cratos/
 | `ANTHROPIC_API_KEY` | Anthropic API 키 | |
 | `GEMINI_API_KEY` | Google Gemini API 키 (권장) | |
 | `GOOGLE_API_KEY` | Google Gemini API 키 (별칭) | |
-| `ZHIPU_API_KEY` | ZhipuAI GLM API 키 | |
+| `ZHIPU_API_KEY` | Z.AI GLM API 키 (Flash 모델 무료) | |
 | `DASHSCOPE_API_KEY` | Alibaba Qwen API 키 | |
 | `OPENROUTER_API_KEY` | OpenRouter API 키 | |
 | `NOVITA_API_KEY` | Novita AI API 키 (무료) | |
+| `ELEVENLABS_API_KEY` | ElevenLabs TTS API 키 (선택) | |
+| **설정 오버라이드** | | |
+| `CRATOS_LLM__DEFAULT_PROVIDER` | 기본 LLM 프로바이더 설정 | |
 
 > **참고**: `DATABASE_URL`은 더 이상 필요 없습니다. 내장 SQLite를 사용합니다.
 
@@ -193,10 +196,10 @@ cratos/
 
 | 프로바이더 | 모델 | 특징 |
 |-----------|------|------|
-| **OpenAI** | GPT-5.2, GPT-5.1, GPT-5 | 최신 세대, 코딩 |
+| **OpenAI** | GPT-5, GPT-5.2, GPT-5-nano | 최신 세대, 코딩 |
 | **Anthropic** | Claude Sonnet 4.5, Claude Haiku 4.5, Claude Opus 4.5 | 코드 생성 우수 |
 | **Gemini** | Gemini 3 Pro, Gemini 3 Flash, Gemini 2.5 Pro | 긴 컨텍스트, 멀티모달, Standard API only (안전) |
-| **GLM** | GLM-4.7, GLM-4-Flash | ZhipuAI 모델 |
+| **GLM** | GLM-4.7, GLM-4.7-Flash (무료), GLM-5 | ZhipuAI 모델 |
 | **Qwen** | Qwen3-Max, Qwen3-Plus, Qwen3-Flash, Qwen3-Coder | 다국어, 코딩, 추론 |
 | **DeepSeek** | DeepSeek-V3.2, DeepSeek-R1 | 초저가, 추론 |
 
@@ -204,10 +207,12 @@ cratos/
 
 | 프로바이더 | 모델 | 제한 |
 |-----------|------|------|
-| **OpenRouter** | Qwen3-Max, Llama 3.3 70B, Gemma 3 27B | 1000회/일 |
-| **Novita** | Qwen3-Plus, GLM-4-9B, Llama 3.3 70B | 무료 가입 |
-| **Groq** | Llama 3.3 70B, Mixtral 8x7B | 무료, 초고속 추론 |
-| **Ollama** | 모든 로컬 모델 | 무제한 (하드웨어 의존) |
+| **Z.AI (GLM)** | GLM-4.7-Flash, GLM-4.5-Flash | 완전 무료, 일일 제한 없음 |
+| **Gemini** | Gemini 2.0 Flash | 무료 (일 1,500회) |
+| **Groq** | Llama 3.1 8B, GPT-OSS 20B | 무료 가능 |
+| **Novita** | Qwen2.5-7B, GLM-4-9B | 무료 가입 |
+| **SiliconFlow** | Qwen2.5-7B | 무료 모델 제공 |
+| **Ollama** | 모든 로컬 모델 | 무제한 (로컬) |
 
 ### 모델 라우팅
 
@@ -215,11 +220,11 @@ cratos/
 
 | 작업 유형 | 모델 티어 | 예시 모델 |
 |----------|-----------|-----------|
-| Classification | Fast | GPT-5.2-mini, Claude Haiku 4.5 |
-| Summarization | Fast | GPT-5.2-mini, Gemini 3 Flash |
-| Conversation | Standard | GPT-5.2, Claude Sonnet 4.5 |
-| CodeGeneration | Standard | GPT-5.2, Claude Sonnet 4.5 |
-| Planning | Premium | GPT-5.2-turbo, Claude Opus 4.6 |
+| Classification | Fast | GPT-5-nano, Claude Haiku 4.5 |
+| Summarization | Fast | GPT-5-nano, Gemini 2.0 Flash |
+| Conversation | Standard | GPT-5, Claude Sonnet 4.5 |
+| CodeGeneration | Standard | GPT-5, Claude Sonnet 4.5 |
+| Planning | Premium | GPT-5.2, Claude Opus 4.5 |
 
 ## 올림푸스 OS (에이전트 조직 체계)
 

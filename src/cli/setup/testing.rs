@@ -43,6 +43,27 @@ pub async fn check_ollama() -> OllamaStatus {
     }
 }
 
+/// Test Discord bot token by calling the /users/@me API.
+pub async fn test_discord(token: &str) -> bool {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    match client
+        .get("https://discord.com/api/v10/users/@me")
+        .header("Authorization", format!("Bot {}", token))
+        .send()
+        .await
+    {
+        Ok(resp) => resp.status().is_success(),
+        Err(_) => false,
+    }
+}
+
 /// Test Telegram token by calling the getMe API.
 pub async fn test_telegram(token: &str) -> bool {
     let client = match reqwest::Client::builder()
@@ -108,12 +129,37 @@ pub async fn test_llm(provider: &Provider, api_key: &str) -> bool {
         ),
         "openai" => (
             "https://api.openai.com/v1/chat/completions",
-            "gpt-4o-mini",
+            "gpt-5-nano",
             format!("Bearer {}", api_key),
         ),
         "anthropic" => {
             return test_anthropic(api_key).await;
         }
+        "zhipu" => (
+            "https://api.z.ai/api/paas/v4/chat/completions",
+            "glm-4.7-flash",
+            format!("Bearer {}", api_key),
+        ),
+        "siliconflow" => (
+            "https://api.siliconflow.cn/v1/chat/completions",
+            "Qwen/Qwen2.5-7B-Instruct",
+            format!("Bearer {}", api_key),
+        ),
+        "fireworks" => (
+            "https://api.fireworks.ai/inference/v1/chat/completions",
+            "accounts/fireworks/models/qwen3-8b",
+            format!("Bearer {}", api_key),
+        ),
+        "moonshot" => (
+            "https://api.moonshot.ai/v1/chat/completions",
+            "moonshot-v1-8k",
+            format!("Bearer {}", api_key),
+        ),
+        "qwen" => (
+            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            "qwen-turbo",
+            format!("Bearer {}", api_key),
+        ),
         _ => return true, // Unknown provider, skip real test
     };
 

@@ -201,7 +201,7 @@ cat .env
 
 # Expected structure:
 # - LLM Provider section
-# - CRATOS_DEFAULT_PROVIDER setting
+# - CRATOS_LLM__DEFAULT_PROVIDER setting
 # - Telegram section
 # - Server section (HOST, PORT)
 # - Logging section (RUST_LOG)

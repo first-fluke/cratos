@@ -23,9 +23,9 @@ The installer automatically:
 
 - **Lightweight**: Runs immediately with embedded SQLite (`~/.cratos/cratos.db`)
 - **Automatic Skill Generation**: Learns usage patterns to automatically create workflow skills
-- **Multi-LLM Support**: OpenAI, Anthropic, Gemini, DeepSeek, Groq, Fireworks, SiliconFlow, GLM, Qwen, Moonshot, Novita, OpenRouter, Ollama (13 providers)
+- **Multi-LLM Support**: OpenAI, Anthropic, Gemini, DeepSeek, Groq, Fireworks, SiliconFlow, GLM, Qwen, Moonshot, Novita, OpenRouter, Ollama (13 providers, 6 free)
 - **Smart Routing**: Automatic model selection by task type reduces costs by 70%
-- **Free Model Support**: Free LLMs via OpenRouter, Novita (Llama, Qwen, GLM)
+- **Free Model Support**: Free LLMs: Z.AI GLM-4.7-Flash (unlimited), Gemini Flash, Groq, Novita, SiliconFlow
 - **Replay Engine**: All executions stored as events, timeline view and replay
 - **Tool System**: 20 built-in tools (file, HTTP, Git, GitHub, shell exec, PTY bash, browser, web search, agent CLI, WoL, config) + MCP extensibility
 - **Channel Adapters**: Telegram, Slack, Discord, Matrix, WhatsApp — with slash commands, DM policy, EventBus notifications
@@ -112,7 +112,7 @@ cargo build --release
 cargo run --release
 
 # Health check
-curl http://localhost:8090/health
+curl http://localhost:19527/health
 ```
 
 Data is automatically stored in `~/.cratos/cratos.db`.
@@ -172,12 +172,15 @@ cratos/
 | **LLM API Keys (at least one)** | | |
 | `OPENAI_API_KEY` | OpenAI API key | |
 | `ANTHROPIC_API_KEY` | Anthropic API key | |
-| `GEMINI_API_KEY` | Google Gemini API key (recommended) | |
+| `GEMINI_API_KEY` | Google Gemini API key (or GOOGLE_API_KEY) (recommended) | |
 | `GOOGLE_API_KEY` | Google Gemini API key (alias) | |
-| `ZHIPU_API_KEY` | ZhipuAI GLM API key | |
+| `ZHIPU_API_KEY` | Z.AI GLM API key (free Flash models) | |
 | `DASHSCOPE_API_KEY` | Alibaba Qwen API key | |
 | `OPENROUTER_API_KEY` | OpenRouter API key | |
 | `NOVITA_API_KEY` | Novita AI API key (free) | |
+| `ELEVENLABS_API_KEY` | ElevenLabs TTS API key (optional) | |
+| **Configuration Overrides** | | |
+| `CRATOS_LLM__DEFAULT_PROVIDER` | Override default LLM provider (double underscore) | |
 
 > **Note**: `DATABASE_URL` is no longer needed. Uses embedded SQLite.
 
@@ -191,10 +194,10 @@ Default settings are in `config/default.toml`. Create `config/local.toml` to cus
 
 | Provider | Models | Features |
 |----------|--------|----------|
-| **OpenAI** | GPT-5.2, GPT-5.1, GPT-5 | Latest generation, coding |
+| **OpenAI** | GPT-5, GPT-5.2, GPT-5-nano | Latest generation, coding |
 | **Anthropic** | Claude Sonnet 4.5, Claude Haiku 4.5, Claude Opus 4.5 | Excellent code generation |
 | **Gemini** | Gemini 3 Pro, Gemini 3 Flash, Gemini 2.5 Pro | Long context, multimodal, Standard API only (safe) |
-| **GLM** | GLM-4.7, GLM-4-Flash | ZhipuAI models |
+| **GLM** | GLM-4.7, GLM-4.7-Flash (free), GLM-5 | ZhipuAI models |
 | **Qwen** | Qwen3-Max, Qwen3-Plus, Qwen3-Flash, Qwen3-Coder | Multilingual, coding, reasoning |
 | **DeepSeek** | DeepSeek-V3.2, DeepSeek-R1 | Ultra low cost, reasoning |
 
@@ -202,10 +205,12 @@ Default settings are in `config/default.toml`. Create `config/local.toml` to cus
 
 | Provider | Models | Limits |
 |----------|--------|--------|
-| **OpenRouter** | Qwen3-Max, Llama 3.3 70B, Gemma 3 27B | 1000/day |
-| **Novita** | Qwen3-Plus, GLM-4-9B, Llama 3.3 70B | Free signup |
-| **Groq** | Llama 3.3 70B, Mixtral 8x7B | Free, ultra-fast inference |
-| **Ollama** | All local models | Unlimited (hardware dependent) |
+| **Z.AI (GLM)** | GLM-4.7-Flash, GLM-4.5-Flash | Free, no daily limit |
+| **Gemini** | Gemini 2.0 Flash | Free (1,500 RPD) |
+| **Groq** | Llama 3.1 8B, GPT-OSS 20B | Free tier available |
+| **Novita** | Qwen2.5-7B, GLM-4-9B | Free signup |
+| **SiliconFlow** | Qwen2.5-7B | Free models available |
+| **Ollama** | All local models | Unlimited (local) |
 
 ### Model Routing
 
@@ -213,11 +218,11 @@ Automatic model selection based on task type:
 
 | Task Type | Model Tier | Example Models |
 |-----------|------------|----------------|
-| Classification | Fast | GPT-5.2-mini, Claude Haiku 4.5 |
-| Summarization | Fast | GPT-5.2-mini, Gemini 3 Flash |
-| Conversation | Standard | GPT-5.2, Claude Sonnet 4.5 |
-| CodeGeneration | Standard | GPT-5.2, Claude Sonnet 4.5 |
-| Planning | Premium | GPT-5.2-turbo, Claude Opus 4.6 |
+| Classification | Fast | GPT-5-nano, Claude Haiku 4.5 |
+| Summarization | Fast | GPT-5-nano, Gemini 2.0 Flash |
+| Conversation | Standard | GPT-5, Claude Sonnet 4.5 |
+| CodeGeneration | Standard | GPT-5, Claude Sonnet 4.5 |
+| Planning | Premium | GPT-5.2, Claude Opus 4.5 |
 
 ## Olympus OS (Agent Organization)
 

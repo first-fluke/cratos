@@ -371,10 +371,10 @@ Cratos는 13개 LLM 프로바이더를 지원합니다.
 
 | 작업 유형 | 선택 모델 |
 |----------|-----------|
-| 간단한 질문 | GPT-5.2-mini, Claude Haiku 4.5 |
+| 간단한 질문 | GPT-5-nano, Claude Haiku 4.5 |
 | 대화 | GPT-5.2, Claude Sonnet 4.5 |
-| 코드 작성 | Claude Sonnet 4.5, Gemini 3 Flash |
-| 복잡한 계획 | GPT-5.2-turbo, Claude Opus 4.6 |
+| 코드 작성 | Claude Sonnet 4.5, Gemini 2.0 Flash |
+| 복잡한 계획 | GPT-5.2, Claude Opus 4.5 |
 
 ### 특정 모델 지정
 
@@ -386,7 +386,7 @@ Cratos는 13개 LLM 프로바이더를 지원합니다.
 봇: (GPT-5.2 사용하여 설명)
 
 나: 무료 모델로 요약해줘
-봇: (OpenRouter/Novita 무료 모델 사용)
+봇: (Z.AI/OpenRouter/Novita 무료 모델 사용)
 ```
 
 ### 비용 확인
@@ -414,12 +414,12 @@ Cratos 설정을 자연어로 변경할 수 있습니다.
 나: 모델을 Claude로 바꿔줘
 봇: LLM Model → claude-sonnet-4
 
-나: GPT-4o로 설정해줘
-봇: LLM Model → gpt-4o
+나: GPT-5로 설정해줘
+봇: LLM Model → gpt-5
 
 나: 현재 모델 뭐야?
 봇: LLM Model: claude-sonnet-4
-    사용 가능: gpt-5.2, claude-sonnet-4.5, deepseek-v3.2, llama-3.3-70b, gemini-3-flash-preview
+    사용 가능: gpt-5.2, claude-sonnet-4.5, deepseek-v3.2, llama-3.3-70b, gemini-2.0-flash
 ```
 
 ### 언어 설정
@@ -588,7 +588,7 @@ API 키, 비밀번호 등 민감 정보 노출을 방지합니다:
 
 ### 비용 절감 팁
 
-- **무료 모델 활용**: OpenRouter, Novita 무료 티어 사용
+- **무료 모델 활용**: Z.AI (GLM-4.7-Flash 무료), OpenRouter, Novita 무료 티어 사용
 - **Ollama 사용**: 로컬에서 무제한 무료
 - **간단한 질문은 짧게**: 토큰 사용량 감소
 - **자동 라우팅 활용**: 간단한 작업은 저렴한 모델 사용
@@ -947,22 +947,22 @@ Model Context Protocol (MCP)을 통해 외부 도구를 자동 연동할 수 있
 
 ```bash
 # 헬스체크
-curl http://localhost:8090/health
+curl http://localhost:19527/health
 
 # 도구 목록
-curl http://localhost:8090/api/v1/tools
+curl http://localhost:19527/api/v1/tools
 
 # 실행 기록 조회
-curl http://localhost:8090/api/v1/executions
+curl http://localhost:19527/api/v1/executions
 
 # 스케줄러 작업 목록
-curl http://localhost:8090/api/v1/scheduler/tasks
+curl http://localhost:19527/api/v1/scheduler/tasks
 
 # 프로바이더 할당량
-curl http://localhost:8090/api/v1/quota
+curl http://localhost:19527/api/v1/quota
 
 # 설정 변경
-curl -X PUT http://localhost:8090/api/v1/config \
+curl -X PUT http://localhost:19527/api/v1/config \
   -H "Content-Type: application/json" \
   -d '{"llm": {"default_provider": "anthropic"}}'
 ```

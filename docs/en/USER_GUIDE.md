@@ -371,10 +371,10 @@ Automatically selects appropriate model based on task:
 
 | Task Type | Selected Model |
 |-----------|----------------|
-| Simple questions | GPT-5.2-mini, Claude Haiku 4.5 |
+| Simple questions | GPT-5-nano, Claude Haiku 4.5 |
 | Conversation | GPT-5.2, Claude Sonnet 4.5 |
-| Code writing | Claude Sonnet 4.5, Gemini 3 Flash |
-| Complex planning | GPT-5.2-turbo, Claude Opus 4.6 |
+| Code writing | Claude Sonnet 4.5, Gemini 2.0 Flash |
+| Complex planning | GPT-5.2, Claude Opus 4.5 |
 
 ### Specify Model
 
@@ -386,7 +386,7 @@ You: Explain with GPT-5.2
 Bot: (explains using GPT-5.2)
 
 You: Summarize with free model
-Bot: (uses OpenRouter/Novita free model)
+Bot: (uses OpenRouter/Novita/Z.AI free model)
 ```
 
 ### Check Costs
@@ -412,14 +412,14 @@ Change Cratos settings using natural language.
 
 ```
 You: Change the model to Claude
-Bot: LLM Model → claude-sonnet-4
+Bot: LLM Model → claude-sonnet-4-5
 
-You: Set it to GPT-4o
-Bot: LLM Model → gpt-4o
+You: Set it to GPT-5
+Bot: LLM Model → gpt-5
 
 You: What's the current model?
-Bot: LLM Model: claude-sonnet-4
-    Available: gpt-5.2, claude-sonnet-4.5, deepseek-v3.2, llama-3.3-70b, gemini-3-flash-preview
+Bot: LLM Model: claude-sonnet-4-5
+    Available: gpt-5.2, claude-sonnet-4.5, deepseek-v3.2, llama-3.3-70b, gemini-2.0-flash
 ```
 
 ### Language Settings
@@ -588,7 +588,7 @@ Bot: File created.
 
 ### Cost-Saving Tips
 
-- **Use free models**: OpenRouter, Novita free tier
+- **Use free models**: OpenRouter, Novita, Z.AI (GLM-4.7-Flash) free tier
 - **Use Ollama**: Unlimited free locally
 - **Keep simple questions short**: Reduces token usage
 - **Use auto routing**: Uses cheaper models for simple tasks
@@ -946,22 +946,22 @@ Control Cratos from external programs or scripts.
 
 ```bash
 # Health check
-curl http://localhost:8090/health
+curl http://localhost:19527/health
 
 # List tools
-curl http://localhost:8090/api/v1/tools
+curl http://localhost:19527/api/v1/tools
 
 # Execution history
-curl http://localhost:8090/api/v1/executions
+curl http://localhost:19527/api/v1/executions
 
 # Scheduler tasks
-curl http://localhost:8090/api/v1/scheduler/tasks
+curl http://localhost:19527/api/v1/scheduler/tasks
 
 # Provider quota
-curl http://localhost:8090/api/v1/quota
+curl http://localhost:19527/api/v1/quota
 
 # Update config
-curl -X PUT http://localhost:8090/api/v1/config \
+curl -X PUT http://localhost:19527/api/v1/config \
   -H "Content-Type: application/json" \
   -d '{"llm": {"default_provider": "anthropic"}}'
 ```

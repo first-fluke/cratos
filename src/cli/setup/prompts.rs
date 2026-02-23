@@ -3,7 +3,7 @@
 //! Every prompt gracefully degrades: if `inquire` fails (e.g. not a real TTY),
 //! we fall back to plain stdin prompts.
 
-use inquire::{Confirm, Password, Select};
+use inquire::{Confirm, MultiSelect, Password, Select};
 use std::io::{self, BufRead, Write};
 
 /// Read a trimmed line from stdin.
@@ -88,6 +88,50 @@ pub fn password_required(message: &str) -> anyhow::Result<String> {
             }
             println!("  (required)");
         },
+    }
+}
+
+/// Multi-selection prompt with fallback to comma-separated numbers.
+pub fn multi_select(message: &str, options: &[String]) -> anyhow::Result<Vec<String>> {
+    match MultiSelect::new(message, options.to_vec()).prompt() {
+        Ok(v) => Ok(v),
+        Err(
+            inquire::InquireError::OperationCanceled | inquire::InquireError::OperationInterrupted,
+        ) => {
+            anyhow::bail!("Cancelled");
+        }
+        Err(_) => {
+            println!();
+            for (i, opt) in options.iter().enumerate() {
+                println!("  [{}] {}", i, opt);
+            }
+            println!();
+            loop {
+                print!("  {} (comma-separated, e.g. 0,2): ", message);
+                io::stdout().flush()?;
+                let input = read_line()?;
+                if input.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let mut selected = Vec::new();
+                let mut valid = true;
+                for part in input.split(',') {
+                    match part.trim().parse::<usize>() {
+                        Ok(idx) if idx < options.len() => {
+                            selected.push(options[idx].clone());
+                        }
+                        _ => {
+                            valid = false;
+                            break;
+                        }
+                    }
+                }
+                if valid {
+                    return Ok(selected);
+                }
+                println!("  (enter valid numbers separated by commas, or press Enter to skip)");
+            }
+        }
     }
 }
 

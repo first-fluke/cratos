@@ -201,7 +201,7 @@ cat .env
 
 # 예상 구조:
 # - LLM Provider 섹션
-# - CRATOS_DEFAULT_PROVIDER 설정
+# - CRATOS_LLM__DEFAULT_PROVIDER 설정
 # - Telegram 섹션
 # - Server 섹션 (HOST, PORT)
 # - Logging 섹션 (RUST_LOG)

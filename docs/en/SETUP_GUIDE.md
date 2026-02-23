@@ -169,8 +169,8 @@ Cratos needs LLM API keys for AI functionality.
 3. Click "Create Key"
 4. Copy key (e.g., `sk-ant-api03-xxxx...`)
 
-#### ZhipuAI (GLM)
-1. Visit https://open.bigmodel.cn
+#### Z.AI (GLM)
+1. Visit https://z.ai
 2. Create account and get API key
 3. Copy key
 
@@ -191,7 +191,13 @@ Cratos needs LLM API keys for AI functionality.
 1. Visit https://novita.ai
 2. Free signup
 3. Get API key
-4. **Free models**: Llama 3.2, Qwen2.5-7B, GLM-4-9B
+4. **Free models**: Llama 3.2, Qwen2.5-7B, GLM-4.7-9B
+
+#### Z.AI (Free tier available)
+1. Visit https://z.ai
+2. Free signup
+3. Get API key
+4. **Free models**: GLM-4.7-Flash (generous free tier)
 
 #### Ollama (Completely free, local)
 Use locally for free without API key:
@@ -268,6 +274,9 @@ OPENROUTER_API_KEY=sk-or-your-key-here
 # Free: Novita AI
 NOVITA_API_KEY=your-novita-key-here
 
+# Free: Z.AI (GLM-4.7-Flash free tier)
+ZHIPU_API_KEY=your-zhipu-key-here
+
 # Free: Ollama (no key needed, uncomment below)
 # OLLAMA_BASE_URL=http://host.docker.internal:11434
 
@@ -318,7 +327,7 @@ SQLite event store initialized at /Users/yourname/.cratos/cratos.db
 LLM provider initialized: anthropic
 Tool registry initialized with 20 tools
 Telegram adapter started
-HTTP server listening on http://127.0.0.1:8090
+HTTP server listening on http://127.0.0.1:19527
 ```
 
 > **Note**: Database file (`~/.cratos/cratos.db`) is created automatically.
@@ -330,7 +339,7 @@ HTTP server listening on http://127.0.0.1:8090
 ### 7.1 Health Check
 
 ```bash
-curl http://localhost:8090/health
+curl http://localhost:19527/health
 ```
 
 Response:
@@ -417,7 +426,7 @@ RUST_LOG=cratos=debug cargo run --release 2>&1 | tail -50
 ps aux | grep cratos
 
 # 3. Health check
-curl http://localhost:8090/health
+curl http://localhost:19527/health
 
 # 4. Gemini auth check (for OAuth users)
 # Gemini CLI OAuth is safely routed to Standard API.
@@ -439,7 +448,7 @@ If port conflicts with another program, create `config/local.toml`:
 
 ```toml
 [server]
-port = 9999  # Use different port instead of 8090
+port = 9999  # Use different port instead of 19527
 ```
 
 ### Database Errors
