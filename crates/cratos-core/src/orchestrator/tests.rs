@@ -4,7 +4,8 @@
 mod tests {
     use super::super::config::{OrchestratorConfig, OrchestratorInput};
     use super::super::sanitize::{
-        is_fallback_eligible, is_tool_refusal, sanitize_error_for_user, sanitize_for_session_memory,
+        is_fake_tool_use_text, is_fallback_eligible, is_tool_refusal, sanitize_error_for_user,
+        sanitize_for_session_memory,
     };
     use super::super::types::ExecutionStatus;
 
@@ -169,6 +170,35 @@ mod tests {
     fn test_fallback_not_eligible_generic_api() {
         let err = crate::error::Error::Llm(cratos_llm::Error::Api("bad request".into()));
         assert!(!is_fallback_eligible(&err));
+    }
+
+    // ── Fake tool-use text detection ────────────────────────────────
+
+    #[test]
+    fn test_fake_tool_use_detection() {
+        // Should detect fake tool-use patterns
+        assert!(is_fake_tool_use_text("[Used 1 tool: browser:OK]"));
+        assert!(is_fake_tool_use_text(
+            "[Used 3 tools: browser:OK, exec:OK, web_search:OK]"
+        ));
+        assert!(is_fake_tool_use_text("[Tool browser executed]"));
+        assert!(is_fake_tool_use_text("[도구 실행 완료]"));
+        assert!(is_fake_tool_use_text("  [Used 1 tool: browser:OK]  ")); // trimmed
+
+        // Short text with :OK] pattern
+        assert!(is_fake_tool_use_text("browser:OK]"));
+
+        // Should NOT detect normal responses
+        assert!(!is_fake_tool_use_text("네이버 쇼핑에서 검색 결과를 가져왔습니다."));
+        assert!(!is_fake_tool_use_text("요청을 처리했습니다."));
+        assert!(!is_fake_tool_use_text("")); // empty is not fake
+        assert!(!is_fake_tool_use_text(
+            "The file has been [updated] with the new configuration."
+        )); // brackets in normal text, long
+
+        // Long text with :OK] should not match (likely real content)
+        let long = format!("Here is a very long response that happens to mention browser:OK] but it's actually a real response with lots of content. {}", "x".repeat(100));
+        assert!(!is_fake_tool_use_text(&long));
     }
 
     // ── Config defaults ──────────────────────────────────────────────

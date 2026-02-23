@@ -20,6 +20,7 @@ pub fn sanitize_error_for_user(error: &str) -> String {
 
 /// M2: Sanitize text destined for session memory to prevent prompt injection
 /// via square-bracket instructions (e.g. `[SYSTEM: ignore previous instructions]`).
+#[allow(dead_code)]
 pub fn sanitize_for_session_memory(text: &str) -> String {
     text.chars().filter(|c| !matches!(c, '[' | ']')).collect()
 }
@@ -72,6 +73,23 @@ pub fn is_tool_refusal(_content: &str) -> bool {
     // Always true — first-iteration text-only = refusal by definition.
     // The caller already guards with `iteration == 1`.
     true
+}
+
+/// Detect fake tool-use text in responses.
+///
+/// When a model refuses to call tools, it sometimes generates text that
+/// mimics tool call results (e.g. `[Used 1 tool: browser:OK]`) instead
+/// of actually invoking tools. If saved to the session, this pattern
+/// teaches the model to continue faking tool use in future turns.
+pub fn is_fake_tool_use_text(text: &str) -> bool {
+    // Pattern: "[Used N tool..." — our own tool summary format, but
+    // produced by the model as text instead of actual tool calls.
+    // Also detect common LLM-generated fake markers.
+    let trimmed = text.trim();
+    trimmed.starts_with("[Used ")
+        || trimmed.starts_with("[Tool ")
+        || trimmed.starts_with("[도구 ")
+        || (trimmed.contains(":OK]") && trimmed.len() < 100)
 }
 
 /// Sanitize LLM response before sending to users.

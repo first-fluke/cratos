@@ -123,13 +123,26 @@ impl Orchestrator {
     }
 
     /// Inject explicit memories into session
+    ///
+    /// Deduplicates by removing previous memory injection system messages
+    /// before inserting fresh ones, preventing unbounded accumulation.
+    /// Uses a minimum relevance score threshold to prevent injecting
+    /// unrelated memories (e.g., SNS tips into a shopping query).
     async fn inject_explicit_memories(
         &self,
         session: &mut SessionContext,
         query: &str,
         gm: &Arc<GraphMemory>,
     ) {
-        match gm.recall_memories(query, 3).await {
+        // Remove previous memory injections to prevent accumulation
+        session.remove_system_messages_with_prefix("Relevant saved memories");
+
+        // Use filtered recall with minimum relevance threshold (0.6)
+        // to avoid polluting context with unrelated memories.
+        // Score reference: exact name match = 10.0, vector similarity ~0.3-0.9,
+        // entity link = 0.5, LIKE match = 0.3. Threshold 0.6 requires at least
+        // a decent vector similarity or multiple weak signal sources.
+        match gm.recall_memories_filtered(query, 3, 0.6).await {
             Ok(memories) if !memories.is_empty() => {
                 let memory_names: Vec<&str> = memories.iter().map(|m| m.name.as_str()).collect();
                 let memory_context = memories
@@ -147,7 +160,7 @@ impl Orchestrator {
                 );
             }
             Ok(_) => {
-                debug!(query = %query, "No explicit memories matched");
+                debug!(query = %query, "No explicit memories above relevance threshold");
             }
             Err(e) => warn!(error = %e, "Explicit memory recall failed"),
         }

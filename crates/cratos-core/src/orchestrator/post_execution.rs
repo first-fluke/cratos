@@ -4,7 +4,7 @@
 //! metrics recording, and auto-skill detection.
 
 use super::core::Orchestrator;
-use super::sanitize::sanitize_for_session_memory;
+use super::sanitize::is_fake_tool_use_text;
 use super::types::ToolCallRecord;
 use cratos_llm::Message;
 use std::sync::Arc;
@@ -12,6 +12,10 @@ use tracing::{debug, warn};
 
 impl Orchestrator {
     /// Save session with execution summary
+    ///
+    /// Sanitizes session output to prevent pollution:
+    /// - Tool failure details are NOT saved (prevents model learning failure patterns)
+    /// - Fake tool-use text (from tool refusal) is replaced with a generic message
     pub(super) async fn save_session_with_summary(
         &self,
         session_key: &str,
@@ -20,23 +24,16 @@ impl Orchestrator {
     ) {
         if let Ok(Some(mut session)) = self.memory.get(session_key).await {
             if !tool_call_records.is_empty() {
+                // Only include tool names and OK/FAIL status — no error details.
+                // Error details in session teach the model that tools fail, causing
+                // it to avoid tool use or repeat the same failed patterns.
                 let tool_summary: Vec<String> = tool_call_records
                     .iter()
                     .map(|r| {
                         if r.success {
                             format!("{}:OK", r.tool_name)
                         } else {
-                            let err_hint = r
-                                .output
-                                .get("stderr")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("failed");
-                            let err_short: String = err_hint.chars().take(60).collect();
-                            format!(
-                                "{}:FAIL({})",
-                                r.tool_name,
-                                sanitize_for_session_memory(&err_short)
-                            )
+                            format!("{}:FAIL", r.tool_name)
                         }
                     })
                     .collect();
@@ -48,7 +45,18 @@ impl Orchestrator {
                 );
                 session.add_assistant_message(&summary);
             } else {
-                session.add_assistant_message(final_response);
+                // No tools used: check if the response is a fake tool-use pattern
+                // (model wrote "[Used 1 tool: browser:OK]" as text instead of calling tools)
+                let response = if is_fake_tool_use_text(final_response) {
+                    debug!(
+                        session_key = %session_key,
+                        "Suppressing fake tool-use text from session"
+                    );
+                    "요청을 처리했습니다."
+                } else {
+                    final_response
+                };
+                session.add_assistant_message(response);
             }
             match self.memory.save(&session).await {
                 Ok(()) => {

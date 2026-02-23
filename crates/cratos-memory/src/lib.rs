@@ -378,6 +378,80 @@ impl GraphMemory {
         Ok(results.into_iter().map(|(m, _)| m).collect())
     }
 
+    /// Recall explicit memories with a minimum relevance score threshold.
+    ///
+    /// Same as `recall_memories` but filters out results below `min_score`.
+    /// Use this for automatic context injection where irrelevant memories
+    /// would pollute the LLM context.
+    pub async fn recall_memories_filtered(
+        &self,
+        query: &str,
+        max_results: usize,
+        min_score: f32,
+    ) -> Result<Vec<ExplicitMemory>> {
+        let mut scored: HashMap<String, (ExplicitMemory, f32)> = HashMap::new();
+
+        // 1. Exact name match (highest score)
+        if let Some(mem) = self.store.get_explicit_by_name(query).await? {
+            scored.insert(mem.id.clone(), (mem, 10.0));
+        }
+
+        // 2. Vector search
+        if let Some(vs) = &self.explicit_search {
+            match vs.search(query, max_results * 2).await {
+                Ok(results) => {
+                    for (mem_id, sim) in results {
+                        if let Some(mem) = self.store.get_explicit_by_id(&mem_id).await? {
+                            scored
+                                .entry(mem.id.clone())
+                                .and_modify(|(_, s)| *s += sim)
+                                .or_insert((mem, sim));
+                        }
+                    }
+                }
+                Err(e) => warn!(error = %e, "Explicit memory vector search failed (filtered)"),
+            }
+        }
+
+        // 3. Entity graph
+        let extraction = extractor::extract(query);
+        for ext in &extraction.entities {
+            if let Some(entity) = self.store.get_entity_by_name(&ext.name).await? {
+                match self.store.get_explicit_by_entity(&entity.id).await {
+                    Ok(mems) => {
+                        for mem in mems {
+                            scored
+                                .entry(mem.id.clone())
+                                .and_modify(|(_, s)| *s += 0.5)
+                                .or_insert((mem, 0.5));
+                        }
+                    }
+                    Err(e) => warn!(error = %e, "Entity-based memory lookup failed (filtered)"),
+                }
+            }
+        }
+
+        // 4. Sort by score, filter by min_score, take top results
+        let mut results: Vec<(ExplicitMemory, f32)> = scored
+            .into_values()
+            .filter(|(_, score)| *score >= min_score)
+            .collect();
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(max_results);
+
+        for (mem, _) in &results {
+            let _ = self.store.increment_access_count(&mem.id).await;
+        }
+
+        debug!(
+            query,
+            results = results.len(),
+            min_score,
+            "Explicit memory recall (filtered) complete"
+        );
+        Ok(results.into_iter().map(|(m, _)| m).collect())
+    }
+
     /// List explicit memories, optionally filtered by category.
     pub async fn list_memories(
         &self,

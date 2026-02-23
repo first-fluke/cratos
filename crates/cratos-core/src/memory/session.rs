@@ -215,6 +215,10 @@ impl SessionContext {
     }
 
     /// Token-aware trimming with importance weighting
+    ///
+    /// Only the FIRST system message (original system prompt) is sacred and never trimmed.
+    /// Supplementary system messages (memory injections, RAG context) are trimmable
+    /// at the same priority as user messages.
     fn trim_by_tokens(&mut self) {
         // Recalculate current token count
         self.current_tokens = count_message_tokens(&self.messages);
@@ -230,37 +234,51 @@ impl SessionContext {
             "Trimming session context by tokens"
         );
 
-        // Separate system messages (always kept) from others
-        let mut system_messages = Vec::new();
-        let mut other_messages: Vec<(usize, Message)> = Vec::new();
+        // Only the FIRST system message is sacred (never trimmed).
+        // All other messages (including supplementary system messages) are trimmable.
+        let mut sacred_system: Option<Message> = None;
+        let mut trimmable: Vec<(usize, Message)> = Vec::new();
+        let mut seen_first_system = false;
 
         for (idx, msg) in self.messages.drain(..).enumerate() {
-            if msg.role == MessageRole::System {
-                system_messages.push(msg);
+            if msg.role == MessageRole::System && !seen_first_system {
+                sacred_system = Some(msg);
+                seen_first_system = true;
             } else {
-                other_messages.push((idx, msg));
+                trimmable.push((idx, msg));
             }
         }
 
-        // Sort non-system messages by importance (ascending) then by age (oldest first)
-        other_messages.sort_by(|(idx_a, msg_a), (idx_b, msg_b)| {
-            let imp_a = MessageImportance::from_role(msg_a.role);
-            let imp_b = MessageImportance::from_role(msg_b.role);
+        // Sort by importance (ascending) then by age (oldest first).
+        // Supplementary system messages get User-level importance (trimmable).
+        trimmable.sort_by(|(idx_a, msg_a), (idx_b, msg_b)| {
+            let imp_a = if msg_a.role == MessageRole::System {
+                MessageImportance::User // supplementary system = same priority as user
+            } else {
+                MessageImportance::from_role(msg_a.role)
+            };
+            let imp_b = if msg_b.role == MessageRole::System {
+                MessageImportance::User
+            } else {
+                MessageImportance::from_role(msg_b.role)
+            };
 
-            // Lower importance = trim first, older = trim first
             imp_a.cmp(&imp_b).then_with(|| idx_a.cmp(idx_b))
         });
 
-        // Calculate system message tokens (always kept)
-        let system_tokens = count_message_tokens(&system_messages);
-        let available_tokens = self.max_tokens.saturating_sub(system_tokens);
+        // Calculate sacred tokens (first system message only)
+        let sacred_tokens = sacred_system
+            .as_ref()
+            .map(|m| count_message_tokens(std::slice::from_ref(m)))
+            .unwrap_or(0);
+        let available_tokens = self.max_tokens.saturating_sub(sacred_tokens);
 
         // Keep messages until we hit the token budget
         let mut kept_messages: Vec<(usize, Message)> = Vec::new();
         let mut kept_tokens = 0usize;
 
         // Iterate from highest importance (end) to lowest (start)
-        for (idx, msg) in other_messages.into_iter().rev() {
+        for (idx, msg) in trimmable.into_iter().rev() {
             let msg_tokens = count_message_tokens(std::slice::from_ref(&msg));
 
             if kept_tokens + msg_tokens <= available_tokens {
@@ -278,8 +296,11 @@ impl SessionContext {
         // Restore original order
         kept_messages.sort_by_key(|(idx, _)| *idx);
 
-        // Rebuild messages: system first, then others in order
-        self.messages = system_messages;
+        // Rebuild messages: sacred system first, then others in order
+        self.messages = Vec::new();
+        if let Some(sys) = sacred_system {
+            self.messages.push(sys);
+        }
         self.messages
             .extend(kept_messages.into_iter().map(|(_, msg)| msg));
 
@@ -360,6 +381,7 @@ impl SessionContext {
     ///
     /// Used by Graph RAG to add relevant past turns at the beginning of
     /// a conversation without replacing existing messages.
+    /// Triggers trimming after insertion to prevent unbounded growth.
     pub fn insert_supplementary_context(&mut self, context_messages: Vec<Message>) {
         if context_messages.is_empty() {
             return;
@@ -373,6 +395,28 @@ impl SessionContext {
             self.messages.insert(insert_pos + i, msg);
         }
         self.current_tokens = count_message_tokens(&self.messages);
+        self.trim_if_needed();
+    }
+
+    /// Remove system messages whose content starts with the given prefix.
+    ///
+    /// Used to deduplicate memory injections: before adding new memory
+    /// system messages, remove old ones with the same marker prefix.
+    pub fn remove_system_messages_with_prefix(&mut self, prefix: &str) {
+        let before = self.messages.len();
+        self.messages.retain(|m| {
+            !(m.role == MessageRole::System && m.content.starts_with(prefix))
+        });
+        let removed = before - self.messages.len();
+        if removed > 0 {
+            self.current_tokens = count_message_tokens(&self.messages);
+            debug!(
+                session_id = %self.id,
+                removed = removed,
+                prefix = %prefix,
+                "Removed duplicate supplementary system messages"
+            );
+        }
     }
 
     /// Get message count
