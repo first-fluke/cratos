@@ -36,7 +36,7 @@ impl BrowserTool {
     pub fn with_config(config: BrowserConfig) -> Self {
         let definition = ToolDefinition::new(
             "browser",
-            "Control the user's real web browser. Capabilities: list open tabs (get_tabs), navigate to URLs, click elements, fill forms, take screenshots, read page text/HTML, execute JavaScript, and more. Use this when the user asks about their browser, open tabs, or needs real browser interaction.",
+            "Control the user's real web browser. Capabilities: search sites (search), click by visible text (click_text — preferred over click when you don't know CSS selectors), list open tabs (get_tabs), navigate, click by CSS selector, fill forms, take screenshots, read page text/HTML, execute JavaScript. Use click_text when you can see text on the page but don't know the CSS selector.",
         )
         .with_category(ToolCategory::External)
         .with_risk_level(RiskLevel::Medium)
@@ -56,8 +56,9 @@ impl BrowserTool {
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "Action to perform",
+                    "description": "Action to perform. Use 'search' to search on a known site. Use 'click_text' to click an element by its visible text (no CSS selector needed).",
                     "enum": [
+                        "search", "click_text",
                         "get_tabs", "navigate", "click", "type", "fill", "screenshot",
                         "get_text", "get_html", "get_attribute",
                         "wait_for_selector", "wait_for_navigation",
@@ -65,17 +66,29 @@ impl BrowserTool {
                         "get_url", "get_title", "go_back", "go_forward", "reload", "close"
                     ]
                 },
+                "site": {
+                    "type": "string",
+                    "description": "Site to search on (for search action): naver_shopping, naver, coupang, google, youtube, amazon, google_maps"
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Search query text (for search action)"
+                },
                 "url": {
                     "type": "string",
                     "description": "URL to navigate to (for navigate action)"
                 },
                 "selector": {
                     "type": "string",
-                    "description": "CSS selector for element actions (required for click, type, fill, screenshot, get_text)"
+                    "description": "CSS selector for element actions (required for click, type, fill; optional for get_text — omit to read entire page)"
                 },
                 "text": {
                     "type": "string",
-                    "description": "Text to type (for type action)"
+                    "description": "Text to type (for type action), or visible text to find and click (for click_text action)"
+                },
+                "index": {
+                    "type": "integer",
+                    "description": "Which match to click for click_text (0=first match, default: 0)"
                 },
                 "value": {
                     "type": "string",
@@ -120,16 +133,48 @@ impl BrowserTool {
 
     /// Execute a browser action using the configured backend.
     async fn execute_action(&self, action: BrowserAction) -> Result<BrowserActionResult> {
+        // Detect search action before resolving
+        let is_search = matches!(action, BrowserAction::Search { .. });
+
+        // Resolve Search → Navigate with the correct search URL
+        let action = action.resolve_search();
+
         // GetTabs is extension-only (Chrome tabs API has no MCP equivalent)
         if matches!(action, BrowserAction::GetTabs) {
             return self.execute_get_tabs().await;
         }
 
-        match self.config.backend {
-            BrowserBackend::Mcp => self.execute_via_mcp(action).await,
-            BrowserBackend::Extension => self.execute_via_extension(action).await,
-            BrowserBackend::Auto => self.execute_with_fallback(action).await,
+        let result = match self.config.backend {
+            BrowserBackend::Mcp => self.execute_via_mcp(action).await?,
+            BrowserBackend::Extension => self.execute_via_extension(action).await?,
+            BrowserBackend::Auto => self.execute_with_fallback(action).await?,
+        };
+
+        // After a successful search navigate, auto-read page text so the LLM
+        // can see the search results without a separate get_text call.
+        if is_search && result.success {
+            // Small delay for page JS to render search results
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
+            let text_action = BrowserAction::GetText { selector: None };
+            let text_result = match self.config.backend {
+                BrowserBackend::Mcp => self.execute_via_mcp(text_action).await,
+                BrowserBackend::Extension => self.execute_via_extension(text_action).await,
+                BrowserBackend::Auto => self.execute_with_fallback(text_action).await,
+            };
+
+            if let Ok(tr) = text_result {
+                if tr.success {
+                    info!("Search auto-read: got page text");
+                    return Ok(BrowserActionResult::success(serde_json::json!({
+                        "navigated": result.data,
+                        "page_text": tr.data
+                    })));
+                }
+            }
         }
+
+        Ok(result)
     }
 
     /// Execute a browser action with automatic fallback (Extension -> MCP).

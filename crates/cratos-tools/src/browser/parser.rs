@@ -83,17 +83,12 @@ impl BrowserTool {
                     .and_then(|v| v.as_str())
                     .map(String::from),
             }),
-            "get_text" => {
-                let selector = input
+            "get_text" => Ok(BrowserAction::GetText {
+                selector: input
                     .get("selector")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        Error::InvalidInput("Missing 'selector' for get_text".to_string())
-                    })?;
-                Ok(BrowserAction::GetText {
-                    selector: selector.to_string(),
-                })
-            }
+                    .map(String::from),
+            }),
             "get_html" => Ok(BrowserAction::GetHtml {
                 selector: input
                     .get("selector")
@@ -225,6 +220,39 @@ impl BrowserTool {
                 width: input.get("width").and_then(|v| v.as_u64()).unwrap_or(1280) as u32,
                 height: input.get("height").and_then(|v| v.as_u64()).unwrap_or(720) as u32,
             }),
+            "search" => {
+                let site = input
+                    .get("site")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'site' for search".to_string())
+                    })?;
+                let query = input
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'query' for search".to_string())
+                    })?;
+                Ok(BrowserAction::Search {
+                    site: site.to_string(),
+                    query: query.to_string(),
+                })
+            }
+            "click_text" => {
+                let text = input
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        Error::InvalidInput("Missing 'text' for click_text".to_string())
+                    })?;
+                Ok(BrowserAction::ClickText {
+                    text: text.to_string(),
+                    index: input
+                        .get("index")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u32,
+                })
+            }
             "get_tabs" => Ok(BrowserAction::GetTabs),
             "close" => Ok(BrowserAction::Close),
             _ => Err(Error::InvalidInput(format!(

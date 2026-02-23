@@ -58,10 +58,11 @@ pub enum BrowserAction {
         selector: Option<String>,
     },
 
-    /// Get text content of an element
+    /// Get text content of an element (or the whole page if no selector)
     GetText {
-        /// CSS selector for the element
-        selector: String,
+        /// CSS selector for the element (optional, defaults to body)
+        #[serde(default)]
+        selector: Option<String>,
     },
 
     /// Get HTML content of an element
@@ -175,6 +176,24 @@ pub enum BrowserAction {
         height: u32,
     },
 
+    /// Click an element by its visible text content
+    ClickText {
+        /// Text to find and click (partial match, case-insensitive)
+        text: String,
+        /// Which match to click (0-indexed, default: 0 = first match)
+        #[serde(default)]
+        index: u32,
+    },
+
+    /// Search on a known site (auto-constructs the search URL)
+    Search {
+        /// Site identifier: "naver_shopping", "naver", "coupang", "google",
+        /// "youtube", "amazon", "google_maps"
+        site: String,
+        /// Search query
+        query: String,
+    },
+
     /// List all open browser tabs (extension relay only)
     GetTabs,
 
@@ -209,8 +228,55 @@ impl BrowserAction {
             Self::GoForward => "go_forward",
             Self::Reload => "reload",
             Self::Resize { .. } => "resize",
+            Self::ClickText { .. } => "click_text",
+            Self::Search { .. } => "search",
             Self::GetTabs => "get_tabs",
             Self::Close => "close",
+        }
+    }
+
+    /// Build search URL from site identifier and query.
+    /// Returns the fully constructed URL, or None if the site is unknown.
+    fn build_search_url(site: &str, query: &str) -> Option<String> {
+        let q = urlencoding::encode(query);
+        match site {
+            "naver_shopping" | "naver-shopping" | "네이버쇼핑" => {
+                Some(format!("https://search.shopping.naver.com/search/all?query={q}"))
+            }
+            "naver" | "네이버" => {
+                Some(format!("https://search.naver.com/search.naver?query={q}"))
+            }
+            "coupang" | "쿠팡" => {
+                Some(format!("https://www.coupang.com/np/search?q={q}"))
+            }
+            "google" | "구글" => Some(format!("https://www.google.com/search?q={q}")),
+            "youtube" | "유튜브" => {
+                Some(format!("https://www.youtube.com/results?search_query={q}"))
+            }
+            "amazon" | "아마존" => Some(format!("https://www.amazon.com/s?k={q}")),
+            "google_maps" | "google-maps" | "구글맵" => {
+                Some(format!("https://www.google.com/maps/search/{q}"))
+            }
+            _ => None,
+        }
+    }
+
+    /// Resolve Search action into Navigate, falling back to Google search for unknown sites.
+    #[must_use]
+    pub fn resolve_search(self) -> Self {
+        match self {
+            Self::Search { ref site, ref query } => {
+                let url = Self::build_search_url(site, query).unwrap_or_else(|| {
+                    let q = urlencoding::encode(query);
+                    let s = urlencoding::encode(site);
+                    format!("https://www.google.com/search?q={q}+site:{s}")
+                });
+                Self::Navigate {
+                    url,
+                    wait_until_loaded: true,
+                }
+            }
+            other => other,
         }
     }
 
@@ -237,7 +303,8 @@ impl BrowserAction {
                 v
             }
             Self::GetText { selector } => {
-                serde_json::json!({ "action": "get_text", "selector": selector })
+                let sel = selector.as_deref().unwrap_or("body");
+                serde_json::json!({ "action": "get_text", "selector": sel })
             }
             Self::GetHtml { selector, outer } => {
                 serde_json::json!({ "action": "get_html", "selector": selector, "outer": outer })
@@ -271,6 +338,10 @@ impl BrowserAction {
                     v["selector"] = serde_json::Value::String(s.clone());
                 }
                 v
+            }
+            Self::ClickText { .. } => {
+                // ClickText is executed via JS evaluate on the extension side
+                serde_json::json!({ "action": "evaluate", "script": self.to_js_function() })
             }
             Self::GetUrl => serde_json::json!({ "action": "get_url" }),
             Self::GetTitle => serde_json::json!({ "action": "get_title" }),
@@ -393,8 +464,15 @@ impl BrowserAction {
                 )
             }
             Self::GetText { selector } => {
-                let sel = serde_json::to_string(selector).expect("serialization failed");
-                format!("() => {{ const el = document.querySelector({}); return el ? el.innerText : null; }}", sel)
+                let sel_str = selector.as_deref().unwrap_or("body");
+                let sel = serde_json::to_string(sel_str).expect("serialization failed");
+                // Truncate text to ~8000 chars to avoid token overflow
+                format!(
+                    "() => {{ const el = document.querySelector({sel}); \
+                     if (!el) return null; \
+                     const t = el.innerText; \
+                     return t.length > 8000 ? t.substring(0, 8000) + '\\n... (truncated)' : t; }}"
+                )
             }
             Self::GetHtml { selector, outer } => {
                 let selector = selector.as_deref().unwrap_or("html");
@@ -488,6 +566,38 @@ impl BrowserAction {
                 } else {
                     format!("() => {{ window.scrollBy({}, {}); }}", x, y)
                 }
+            }
+            Self::ClickText { text, index } => {
+                let txt = serde_json::to_string(text).expect("serialization failed");
+                let idx = index;
+                // Walk clickable elements, find by visible text (partial, case-insensitive)
+                format!(
+                    r#"() => {{
+  const query = {txt}.toLowerCase();
+  const clickable = document.querySelectorAll('a, button, [role="button"], [role="link"], [onclick], input[type="submit"], input[type="button"], [tabindex]');
+  const matches = [];
+  for (const el of clickable) {{
+    const t = (el.innerText || el.textContent || el.value || el.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (t.includes(query)) matches.push(el);
+  }}
+  if (matches.length === 0) {{
+    // Fallback: search ALL elements (some sites use divs/spans as clickable)
+    const all = document.querySelectorAll('*');
+    for (const el of all) {{
+      if (el.children.length > 3) continue;
+      const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+      if (t.includes(query) && t.length < 200) matches.push(el);
+    }}
+  }}
+  if (matches.length === 0) throw new Error('No element found with text: ' + {txt});
+  const target = matches[Math.min({idx}, matches.length - 1)];
+  target.scrollIntoView({{ block: 'center' }});
+  target.click();
+  return 'Clicked: ' + (target.innerText || target.textContent || '').trim().substring(0, 100) + ' (match ' + (Math.min({idx}, matches.length - 1) + 1) + '/' + matches.length + ')';
+}}"#,
+                    txt = txt,
+                    idx = idx
+                )
             }
             Self::GetUrl => "() => window.location.href".to_string(),
             Self::GetTitle => "() => document.title".to_string(),
