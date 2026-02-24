@@ -580,13 +580,48 @@ impl Orchestrator {
                     consecutive_all_fail = 0;
                 }
 
-                // Build tool result messages
-                let tool_messages = Planner::build_tool_result_messages(&filtered_calls, &results);
+                // Extract screenshots from browser tool results before building
+                // text messages. This prevents base64 data from being truncated by
+                // the 4000-char limit in build_tool_result_messages.
+                let mut browser_screenshots: Vec<(usize, Vec<u8>, bool)> = Vec::new();
+                let results_for_text: Vec<serde_json::Value> = results
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| {
+                        let mut v = r.clone();
+                        if let Some(bytes) = extract_and_remove_screenshot(&mut v) {
+                            let is_failure = r
+                                .get("error")
+                                .map(|e| !e.is_null())
+                                .unwrap_or(false);
+                            browser_screenshots.push((i, bytes, is_failure));
+                        }
+                        v
+                    })
+                    .collect();
+
+                // Build tool result messages (screenshots stripped)
+                let tool_messages =
+                    Planner::build_tool_result_messages(&filtered_calls, &results_for_text);
 
                 // Add tool result messages to conversation history for next iteration
                 // NOTE: Only added to the local `messages` vec (for the current execution loop).
                 // NOT persisted to session store individually — see post-loop summary below.
                 messages.extend(tool_messages);
+
+                // Inject browser screenshots as vision messages so the LLM can
+                // "see" the page and make better navigation decisions.
+                for (_idx, bytes, is_failure) in browser_screenshots {
+                    let context = if is_failure {
+                        "Browser action failed. Here is a screenshot of the current page. \
+                         Analyze it visually to identify the correct element to interact with."
+                    } else {
+                        "Here is a screenshot of the current page after the browser action."
+                    };
+                    let img = cratos_llm::ImageContent::new("image/png", bytes);
+                    messages.push(cratos_llm::Message::user_with_images(context, vec![img]));
+                    info!("Injected browser screenshot as vision message (failure={})", is_failure);
+                }
 
                 // Add steering messages (user interventions)
                 for msg in steering_messages {
@@ -698,4 +733,28 @@ impl Orchestrator {
             model: model_used,
         })
     }
+}
+
+/// Extract and remove a base64-encoded screenshot from a tool result JSON value.
+///
+/// Looks for a `"screenshot"` field at the top level or nested under `"data"`.
+/// If found, removes it from the JSON (to prevent 4000-char truncation in
+/// `build_tool_result_messages`) and returns the decoded bytes.
+fn extract_and_remove_screenshot(v: &mut serde_json::Value) -> Option<Vec<u8>> {
+    use base64::Engine;
+
+    let b64 = v.as_object_mut().and_then(|obj| {
+        // Try top-level "screenshot" field
+        obj.remove("screenshot")
+            .and_then(|s| s.as_str().map(String::from))
+            .or_else(|| {
+                // Try nested "data" -> "screenshot"
+                obj.get_mut("data")
+                    .and_then(|d| d.as_object_mut())
+                    .and_then(|d| d.remove("screenshot"))
+                    .and_then(|s| s.as_str().map(String::from))
+            })
+    })?;
+
+    base64::engine::general_purpose::STANDARD.decode(&b64).ok()
 }

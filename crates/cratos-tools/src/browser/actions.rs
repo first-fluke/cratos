@@ -235,6 +235,27 @@ impl BrowserAction {
         }
     }
 
+    /// Whether this action is an interactive page mutation (click, navigate, fill, etc.)
+    /// as opposed to a read-only query (get_text, get_url, screenshot).
+    /// Used to decide whether to auto-capture a screenshot on failure.
+    #[must_use]
+    pub fn is_interactive(&self) -> bool {
+        matches!(
+            self,
+            Self::Navigate { .. }
+                | Self::Click { .. }
+                | Self::ClickText { .. }
+                | Self::Type { .. }
+                | Self::Fill { .. }
+                | Self::Search { .. }
+                | Self::Select { .. }
+                | Self::Check { .. }
+                | Self::Hover { .. }
+                | Self::Press { .. }
+                | Self::Scroll { .. }
+        )
+    }
+
     /// Build search URL from site identifier and query.
     /// Returns the fully constructed URL, or None if the site is unknown.
     fn build_search_url(site: &str, query: &str) -> Option<String> {

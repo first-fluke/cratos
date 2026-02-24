@@ -421,10 +421,30 @@ impl Tool for BrowserTool {
 
         // Parse the action
         let action = self.parse_action(&input)?;
+        let is_interactive = action.is_interactive();
         debug!(action = ?action.name(), "Executing browser action");
 
         // Execute the action
-        let result = self.execute_action(action).await?;
+        let mut result = self.execute_action(action).await?;
+
+        // Auto-capture screenshot on interactive action failure so the LLM can
+        // visually inspect the page and decide the correct next step.
+        if !result.success && is_interactive && result.screenshot.is_none() {
+            if let Ok(ss_result) = self
+                .dispatch(BrowserAction::Screenshot {
+                    path: None,
+                    full_page: false,
+                    selector: None,
+                })
+                .await
+            {
+                if let Some(ss) = ss_result.screenshot {
+                    info!("Auto-captured screenshot for failed browser action");
+                    result = result.with_screenshot(ss);
+                }
+            }
+        }
+
         let duration = start.elapsed().as_millis() as u64;
 
         if result.success {
@@ -439,7 +459,8 @@ impl Tool for BrowserTool {
             Ok(ToolResult {
                 success: false,
                 output: serde_json::json!({
-                    "error": result.error
+                    "error": result.error,
+                    "screenshot": result.screenshot
                 }),
                 error: result.error,
                 duration_ms: duration,
