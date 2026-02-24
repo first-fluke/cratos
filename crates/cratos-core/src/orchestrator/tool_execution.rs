@@ -161,6 +161,7 @@ impl Orchestrator {
                         }
                     }
                     // Tool Doctor: diagnose soft failures (success=false from tool)
+                    // Inject diagnosis into the output so the LLM can see alternatives
                     if !success {
                         let err_msg = error.as_deref().unwrap_or("unknown tool error");
                         let diagnosis = self.doctor.diagnose(&call.name, err_msg);
@@ -171,6 +172,22 @@ impl Orchestrator {
                                 confidence = %format!("{:.0}%", diagnosis.confidence * 100.0),
                                 "Tool Doctor soft-failure diagnosis"
                             );
+                            // Build hint with alternatives for the LLM
+                            let alternatives: Vec<&str> = diagnosis.alternatives
+                                .iter().filter_map(|a| a.tool_name.as_deref()).collect();
+                            let hint = format!(
+                                "\n[diagnosis: {} ({:.0}%)] {}{}",
+                                diagnosis.category.display_name(),
+                                diagnosis.confidence * 100.0,
+                                diagnosis.checklist.first()
+                                    .map(|c| c.instruction.as_str()).unwrap_or(""),
+                                if alternatives.is_empty() { String::new() }
+                                else { format!(" | alternatives: {}", alternatives.join(", ")) }
+                            );
+                            // Append hint to output so the LLM can read it
+                            if let Some(obj) = output.as_object_mut() {
+                                obj.insert("_diagnosis".to_string(), serde_json::json!(hint));
+                            }
                         }
                     }
                     (output, success, error)

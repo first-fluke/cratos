@@ -51,27 +51,28 @@ pub fn is_fallback_eligible(e: &crate::error::Error) -> bool {
 
 /// Detect if the model's first response is a refusal to use tools.
 ///
-/// A response is classified as a refusal when it is either:
-/// - empty, or
-/// - very short (<60 chars) and lacks substantive content markers
-///   (code backticks, URLs, lists) that would indicate a genuine answer.
+/// Called only on the first iteration when the model responds with text
+/// instead of tool calls. Returns true to nudge the model into using tools,
+/// false to accept the response as a valid knowledge answer.
 ///
-/// The previous 200-char threshold was too aggressive and incorrectly
-/// flagged legitimate short knowledge answers, forcing unnecessary tool
-/// calls that wasted iterations and caused timeouts.
-/// Structural refusal detection — language-independent.
-///
-/// On the first iteration the system prompt mandates tool use.
-/// Any text-only response without tool calls is treated as a refusal
-/// and will be nudged once. If the model still responds without tools
-/// on the second try, that response is accepted as-is (knowledge answer).
-///
-/// This function is intentionally kept trivial: the real gate is
-/// `iteration == 1` in the process loop. We only exempt truly empty
-/// responses here (which are handled by a separate empty-response path).
-pub fn is_tool_refusal(_content: &str) -> bool {
-    // Always true — first-iteration text-only = refusal by definition.
-    // The caller already guards with `iteration == 1`.
+/// Heuristics:
+/// - Long responses (200+ chars) are likely genuine knowledge answers
+/// - Responses with code blocks, URLs, or lists are likely substantive
+/// - Short vague responses are likely refusals to act
+pub fn is_tool_refusal(content: &str) -> bool {
+    // Long responses are likely genuine knowledge answers
+    if content.chars().count() > 200 {
+        return false;
+    }
+    // Structural markers indicate substantive content, not a refusal
+    if content.contains("```") || content.contains("http://") || content.contains("https://") {
+        return false;
+    }
+    // Numbered or bulleted lists suggest a real answer
+    if content.contains("\n- ") || content.contains("\n1.") || content.contains("\n* ") {
+        return false;
+    }
+    // Otherwise, treat as a refusal — nudge the model to use tools
     true
 }
 

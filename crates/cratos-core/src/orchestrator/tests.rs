@@ -130,26 +130,38 @@ mod tests {
 
     // ── Tool refusal detection ───────────────────────────────────────
     //
-    // `is_tool_refusal` is now structural: always returns true.
-    // On the first iteration, any text-only response (no tool calls)
-    // is treated as a refusal regardless of content or language.
-    // The caller guards with `iteration == 1`.
+    // `is_tool_refusal` uses heuristics: long responses (200+ chars),
+    // responses with code/URLs/lists are considered genuine answers.
+    // Short vague text is treated as a refusal.
 
     #[test]
-    fn test_tool_refusal_always_true() {
-        // Structural detection: any text on first iteration = refusal
+    fn test_tool_refusal_short_text_is_refusal() {
         assert!(is_tool_refusal(""));
         assert!(is_tool_refusal("   "));
         assert!(is_tool_refusal("I cannot access the filesystem."));
         assert!(is_tool_refusal("할 수 없습니다."));
-        assert!(is_tool_refusal("`gcloud config set project ID`를 실행하세요."));
-        assert!(is_tool_refusal("https://cloud.google.com/docs 참고하세요."));
-        assert!(is_tool_refusal("1. 환경변수 설정\n2. 재시작"));
-        let long = "a".repeat(1000);
-        assert!(is_tool_refusal(&long));
-        // Language-independent: Korean, English, any content
-        assert!(is_tool_refusal("네이버 쇼핑에서 검색 결과를 가져왔습니다."));
-        assert!(is_tool_refusal("I'm unable to access external websites directly."));
+    }
+
+    #[test]
+    fn test_tool_refusal_long_text_not_refusal() {
+        let long = "a".repeat(201);
+        assert!(!is_tool_refusal(&long));
+    }
+
+    #[test]
+    fn test_tool_refusal_urls_not_refusal() {
+        assert!(!is_tool_refusal("https://cloud.google.com/docs 참고하세요."));
+    }
+
+    #[test]
+    fn test_tool_refusal_code_blocks_not_refusal() {
+        assert!(!is_tool_refusal("```bash\necho hello\n```"));
+    }
+
+    #[test]
+    fn test_tool_refusal_lists_not_refusal() {
+        assert!(!is_tool_refusal("Steps:\n- First\n- Second\n- Third"));
+        assert!(!is_tool_refusal("Steps:\n1. First\n2. Second"));
     }
 
     // ── Fallback eligibility ─────────────────────────────────────────

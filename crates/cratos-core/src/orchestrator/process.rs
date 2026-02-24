@@ -544,6 +544,14 @@ impl Orchestrator {
                         total_failures = total_failure_count,
                         "All tool calls failed this iteration"
                     );
+                    // Reflection: inject a nudge when tools fail consecutively
+                    if consecutive_all_fail >= 2 {
+                        messages.push(Message::system(
+                            "[reflection] The last tool calls failed consecutively. \
+                             Do NOT repeat the same approach. Try a different tool or different parameters. \
+                             If diagnosis messages suggest alternatives, use those instead."
+                        ));
+                    }
                 } else {
                     consecutive_all_fail = 0;
                 }
