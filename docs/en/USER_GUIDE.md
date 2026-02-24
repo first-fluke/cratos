@@ -31,6 +31,9 @@ Now that you've installed Cratos, let's remotely control your PC via Telegram!
 25. [Data Management](#25-data-management)
 26. [Security Audit](#26-security-audit)
 27. [ACP Bridge (IDE Integration)](#27-acp-bridge-ide-integration)
+28. [Native App Control](#28-native-app-control)
+29. [File Sending](#29-file-sending)
+30. [AI Image Generation](#30-ai-image-generation)
 
 ---
 
@@ -774,6 +777,7 @@ cratos tui --persona sindri
 | `Enter` | Send message |
 | `Ctrl+C` | Quit |
 | `F2` | Toggle mouse capture |
+| `F5` | Open/close settings modal |
 | `Up/Down` | Navigate input history |
 | `Scroll Up/Down` | Scroll conversation history |
 
@@ -1195,6 +1199,95 @@ IDE
 ```
 
 The ACP bridge communicates via stdin/stdout JSON-lines, allowing IDEs to programmatically access all Cratos tools and capabilities.
+
+---
+
+## 28. Native App Control
+
+Automate native applications on macOS/Linux. Uses AppleScript/JXA on macOS and xdotool/xclip on Linux.
+
+### Supported Actions
+
+| Action | Description |
+|--------|-------------|
+| `run_script` | Execute AppleScript/JXA script |
+| `open` | Launch app (optionally with URL) |
+| `activate` | Bring app to foreground |
+| `clipboard_get` | Read clipboard contents |
+| `clipboard_set` | Write text to clipboard |
+
+### Examples
+
+```
+You: Create a new note in Notes app titled "Meeting Notes" with content "Discuss next week's schedule"
+Bot: Created a new note in Notes.
+    - Title: Meeting Notes
+    - Content: Discuss next week's schedule
+
+You: Add "Submit report" to my Reminders
+Bot: Added a new reminder in Reminders.
+    - Task: Submit report
+
+You: Open https://example.com in Safari
+Bot: Opened https://example.com in Safari.
+
+You: What's in my clipboard?
+Bot: Current clipboard contents:
+    "Copied text..."
+```
+
+### Security
+
+`app_control` is classified as a **High Risk** tool. Scripts containing the following patterns are automatically blocked:
+- `do shell script` (shell command execution)
+- `System Preferences` / `System Settings` (system setting changes)
+- `password`, `sudo`, `admin` (privilege escalation)
+- `keystroke` (key input simulation in raw scripts)
+
+---
+
+## 29. File Sending
+
+Send files directly through the current messaging channel (Telegram, Slack, Discord, etc.).
+
+### Examples
+
+```
+You: Send me ~/report.pdf
+Bot: [File sent: report.pdf]
+
+You: Send this screenshot with caption "Bug reproduction"
+Bot: [File sent: screenshot.png - "Bug reproduction"]
+```
+
+### Limitations
+
+- **Max file size**: 50MB
+- **Executables blocked**: `.exe`, `.sh`, and other executables are blocked for security
+- **Sensitive files protected**: `.env`, credential files, etc. are automatically blocked
+
+---
+
+## 30. AI Image Generation
+
+Generate images from text descriptions using AI. Powered by Google Gemini (Imagen 3) API.
+
+### Examples
+
+```
+You: Generate an image of "a castle floating above mountains"
+Bot: [Generated image returned]
+    Image has been generated.
+
+You: Create a 16:9 image of "a cat in space"
+Bot: [Generated image returned]
+    16:9 aspect ratio image has been generated.
+```
+
+### Requirements
+
+- `GEMINI_API_KEY` environment variable must be set
+- Generated images are automatically sent through the chat channel
 
 ---
 

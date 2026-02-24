@@ -325,7 +325,7 @@ Configuration loaded
 Data directory: /Users/yourname/.cratos
 SQLite event store initialized at /Users/yourname/.cratos/cratos.db
 LLM provider initialized: anthropic
-Tool registry initialized with 20 tools
+Tool registry initialized with 23 tools
 Telegram adapter started
 HTTP server listening on http://127.0.0.1:19527
 ```

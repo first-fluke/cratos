@@ -2,20 +2,30 @@
 
 ## Test Objectives
 
-1. Verify the `init` command works correctly
-2. Verify multilingual support functions properly
-3. Validate the installation scripts
-4. Validate the release.yml workflow
+1. Verify the full automated test suite passes (1,286+ tests)
+2. Verify the `init` command works correctly
+3. Verify multilingual support functions properly
+4. Validate the installation scripts
+5. Validate the release.yml CI workflow
 
 ---
 
 ## 1. Basic Build & Test
 
 ```bash
-# Run all tests
+# Run all tests (1,286+ tests)
 cargo test --workspace
 
-# Verify build
+# Quick type check
+cargo check --all-targets
+
+# Lint
+cargo clippy --all-targets
+
+# Build (daily development)
+cargo build --profile dev-release -p cratos
+
+# Release build (deployment, ~10 min)
 cargo build --release
 
 # Check CLI help
@@ -24,8 +34,9 @@ cargo run -- init --help
 ```
 
 **Checklist:**
-- [ ] All tests pass
-- [ ] Release build succeeds
+- [ ] All tests pass (1,286+ tests, 0 failures)
+- [ ] No clippy warnings
+- [ ] Build succeeds
 - [ ] `init` command appears in help
 - [ ] `--lang` option is displayed
 
@@ -215,7 +226,99 @@ cat .env
 
 ---
 
-## 6. Integration Test
+## 6. Automated Test Structure
+
+### 6.1 Test Category Overview
+
+| Category | Location | Description |
+|----------|----------|-------------|
+| **Tool Registry** | `crates/cratos-tools/src/builtins/mod.rs` | 23 built-in tool registration and count verification |
+| **Individual Tools** | `crates/cratos-tools/src/builtins/*.rs` | Per-tool definition, input validation, security tests |
+| **Orchestrator** | `crates/cratos-core/src/orchestrator/tests.rs` | Config, input, error sanitization, tool refusal heuristics |
+| **Sanitize** | `crates/cratos-core/src/orchestrator/sanitize.rs` | `is_tool_refusal`, `is_fake_tool_use_text`, error sanitization |
+| **Integration Tests** | `tests/integration_test.rs` | Cross-crate integration (LLM, tools, replay, channels) |
+| **LLM Providers** | `crates/cratos-llm/src/` | Model tiers, routing rules, provider config |
+| **Replay** | `crates/cratos-replay/src/` | Event store, execution lifecycle |
+| **Skills** | `crates/cratos-skills/src/` | Skill generation, routing, registry |
+| **Memory** | `crates/cratos-memory/src/` | Graph RAG, conversation memory |
+| **Security** | `crates/cratos-core/src/security/` | Rate limiter, circuit breaker |
+
+### 6.2 Built-in Tools List (23 tools)
+
+The full tool list verified by integration tests (`tests/integration_test.rs`):
+
+```
+file_read, file_write, file_list, http_get, http_post, exec, bash,
+git_status, git_commit, git_branch, git_diff, git_push, git_clone, git_log,
+github_api, browser, wol, config, web_search, agent_cli,
+send_file, image_generate, app_control
+```
+
+> **Important**: When adding/removing tools, 3 locations must be kept in sync:
+> 1. `crates/cratos-tools/src/builtins/mod.rs` — registration + test count
+> 2. `tests/integration_test.rs` — `expected_tools` array and count
+> 3. Per-tool test file
+
+### 6.3 Running Specific Crate/Module Tests
+
+```bash
+# Tool registry tests only
+cargo test -p cratos-tools
+
+# Orchestrator tests only
+cargo test -p cratos-core
+
+# Integration tests only
+cargo test --test integration_test
+
+# Specific test functions
+cargo test test_tool_registry_with_builtins
+cargo test test_tool_refusal
+cargo test test_fake_tool_use_detection
+```
+
+### 6.4 Orchestrator (ReAct Loop) Tests
+
+The Workflow Engine has been removed and replaced by an autonomous ReAct loop. Related tests:
+
+| Test | Verifies |
+|------|----------|
+| `test_tool_refusal_*` | Detects when LLM returns short text without tool calls |
+| `test_fake_tool_use_detection` | Detects fake tool-use text like `[Used 1 tool: browser:OK]` |
+| `test_sanitize_error_for_user` | Masks sensitive info such as file paths |
+| `test_sanitize_for_session_memory` | Prevents prompt injection |
+| `test_orchestrator_config_failure_limits` | Consecutive/total failure limit settings |
+| `test_max_execution_secs_default` | Execution timeout default (180s) |
+
+> **Note**: The `is_tool_refusal` function lives in `sanitize.rs`, but its tests are in `orchestrator/tests.rs`.
+
+### 6.5 app_control Tool Tests
+
+`app_control` is a macOS AppleScript/JXA automation tool, classified as `RiskLevel::High`.
+
+```bash
+# app_control tests
+cargo test -p cratos-tools app_control
+```
+
+Test items:
+- Tool definition (name, description, parameter schema)
+- Security validation (`BLOCKED_PATTERNS`: blocks `do shell script`, `System Preferences`, `password`, etc.)
+
+### 6.6 Integration Test Details
+
+`tests/integration_test.rs` verifies cross-crate integration:
+
+- **LLM Router**: Provider config, routing rules, per-tier default models
+- **Tool Registry**: 23 built-in tool registration, schema validation
+- **Replay**: Execution lifecycle, event types, status transitions
+- **Orchestrator**: Input creation, session keys, configuration
+- **Channels**: Message normalization (Telegram, Slack)
+- **Security**: Rate limiter, circuit breaker, metrics
+
+---
+
+## 7. E2E Integration Test
 
 ```bash
 # 1. Start from a clean state
@@ -238,23 +341,23 @@ cargo run -- serve
 
 ---
 
-## 7. Edge Cases
+## 8. Edge Cases
 
-### 7.1 Empty Input Handling
+### 8.1 Empty Input Handling
 
 ```bash
 cargo run -- init --lang en
 # Enter empty value for API key -> should re-prompt
 ```
 
-### 7.2 Ctrl+C Handling
+### 8.2 Ctrl+C Handling
 
 ```bash
 cargo run -- init --lang en
 # Press Ctrl+C mid-way -> should exit cleanly
 ```
 
-### 7.3 Invalid Language Code
+### 8.3 Invalid Language Code
 
 ```bash
 cargo run -- init --lang fr

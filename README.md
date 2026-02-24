@@ -27,7 +27,7 @@ The installer automatically:
 - **Smart Routing**: Automatic model selection by task type reduces costs by 70%
 - **Free Model Support**: Free LLMs: Z.AI GLM-4.7-Flash (unlimited), Gemini Flash, Groq, Novita, SiliconFlow
 - **Replay Engine**: All executions stored as events, timeline view and replay
-- **Tool System**: 20 built-in tools (file, HTTP, Git, GitHub, shell exec, PTY bash, browser, web search, agent CLI, WoL, config) + MCP extensibility
+- **Tool System**: 23 built-in tools (file ops, HTTP, Git/GitHub, shell exec, PTY bash, browser, web search, agent CLI, WoL, config, image generation, file transfer, native app automation) + MCP extensibility
 - **Channel Adapters**: Telegram, Slack, Discord, Matrix, WhatsApp — with slash commands, DM policy, EventBus notifications
 - **Chrome Extension**: Browser control via Chrome extension + WebSocket gateway protocol
 - **Graph RAG Memory**: Cross-session conversation memory with entity graph + hybrid vector search
@@ -428,6 +428,9 @@ Automatically detects and blocks malicious prompts:
 | `agent_cli` | Delegate tasks to external AI agents (Claude, etc.) | Medium |
 | `wol` | Wake-on-LAN | Medium |
 | `config` | Natural language configuration | Medium |
+| `send_file` | Send file through messaging channel | Medium |
+| `image_generate` | AI image generation | Medium |
+| `app_control` | Native app automation (macOS AppleScript/JXA) | High |
 
 ### MCP Extension Tools
 

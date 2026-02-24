@@ -2,14 +2,14 @@
 
 ## Overview
 
-Live Canvas is an interactive space where AI agents visualize work results in real-time and collaborate with users.
+Live Canvas is an interactive space where AI agents visualize work results in real-time and collaborate with users. The autonomous agent's ReAct loop follows Plan-Act-Reflect principles to autonomously select from 23 built-in tools (code execution, file manipulation, `image_generate`, etc.) to generate canvas content.
 
 ### Core Features
 
 | Feature | Description |
 |---------|-------------|
 | **Real-time Streaming** | Display LLM responses chunk by chunk instantly |
-| **Multimodal Rendering** | Integrated display of code, diagrams, images, charts |
+| **Multimodal Rendering** | Integrated display of code, diagrams, images (`image_generate` tool), charts |
 | **Bidirectional Editing** | Users can directly modify canvas content |
 | **Version Control** | Track change history and revert |
 | **Collaboration Support** | Multi-cursor, simultaneous editing |

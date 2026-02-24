@@ -1,8 +1,8 @@
-# Native Apps - Tauri 기반 데스크톱 앱
+# Native Apps - Tauri 기반 데스크톱 앱 및 네이티브 앱 제어
 
 ## 개요
 
-Tauri를 사용하여 Cratos를 Windows, macOS, Linux 네이티브 데스크톱 앱으로 배포합니다.
+Tauri를 사용하여 Cratos를 Windows, macOS, Linux 네이티브 데스크톱 앱으로 배포합니다. 또한 `app_control` 내장 도구를 통해 macOS/Linux 네이티브 앱을 AI 에이전트가 직접 자동화할 수 있습니다.
 
 ### Tauri vs Electron 비교
 
@@ -24,6 +24,7 @@ Tauri를 사용하여 Cratos를 Windows, macOS, Linux 네이티브 데스크톱 
 | **자동 업데이트** | Sparkle/WinSparkle 기반 |
 | **클립보드 통합** | 복사/붙여넣기 자동 감지 |
 | **파일 시스템 접근** | 로컬 파일 직접 조작 |
+| **네이티브 앱 제어** | `app_control` 도구로 macOS AppleScript/JXA 자동화 |
 
 ## 아키텍처
 
@@ -572,6 +573,52 @@ check_interval_hours = 24
 2. **IPC 검증**: 모든 Tauri 커맨드에 입력 검증
 3. **권한 최소화**: 필요한 Tauri 기능만 활성화
 4. **서명**: 코드 서명으로 무결성 보장 (macOS notarization, Windows signing)
+
+## 네이티브 앱 제어 (app_control 도구)
+
+Cratos의 23개 내장 도구 중 하나인 `app_control`은 macOS/Linux 네이티브 앱을 AI 에이전트가 직접 제어할 수 있게 합니다. 자율 에이전트의 ReAct 루프에서 LLM이 Plan-Act-Reflect 원칙에 따라 자율적으로 이 도구를 선택하고 실행합니다.
+
+### 지원 액션
+
+| 액션 | 설명 | 플랫폼 |
+|------|------|--------|
+| `run_script` | AppleScript/JXA 스크립트 실행 | macOS |
+| `open` | 앱 실행 (선택적 URL 포함) | macOS/Linux |
+| `activate` | 앱을 포그라운드로 전환 | macOS |
+| `clipboard_get` | 클립보드 내용 읽기 | macOS/Linux |
+| `clipboard_set` | 클립보드에 내용 쓰기 | macOS/Linux |
+
+### 사용 예시
+
+```json
+// Notes 앱에 새 메모 생성
+{
+  "action": "run_script",
+  "script": "tell application \"Notes\" to make new note with properties {name:\"Meeting Notes\", body:\"Today's agenda...\"}"
+}
+
+// Safari로 URL 열기
+{
+  "action": "open",
+  "app": "Safari",
+  "url": "https://example.com"
+}
+
+// 클립보드 내용 읽기
+{
+  "action": "clipboard_get"
+}
+```
+
+### 보안
+
+`app_control`은 `RiskLevel::High`로 분류되며, 다음 패턴이 차단됩니다:
+- `do shell script` (셸 명령어 실행 차단)
+- `System Preferences` / `System Settings` (시스템 설정 접근 차단)
+- `password`, `sudo`, `admin` (권한 상승 차단)
+- `keystroke` (raw script에서 키 입력 차단)
+
+`to_llm_tools()`에서 `[risk: high]` 프리픽스가 자동 추가되어 LLM이 위험도를 인지합니다.
 
 ## 향후 계획
 

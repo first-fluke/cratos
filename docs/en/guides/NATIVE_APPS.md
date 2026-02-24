@@ -1,8 +1,8 @@
-# Native Apps - Tauri-based Desktop Application
+# Native Apps - Tauri-based Desktop Application & Native App Control
 
 ## Overview
 
-Deploy Cratos as a native desktop app for Windows, macOS, and Linux using Tauri.
+Deploy Cratos as a native desktop app for Windows, macOS, and Linux using Tauri. Additionally, the `app_control` built-in tool enables the AI agent to directly automate macOS/Linux native applications.
 
 ### Tauri vs Electron Comparison
 
@@ -24,6 +24,7 @@ Deploy Cratos as a native desktop app for Windows, macOS, and Linux using Tauri.
 | **Auto Update** | Sparkle/WinSparkle based |
 | **Clipboard Integration** | Auto-detect copy/paste |
 | **File System Access** | Direct local file manipulation |
+| **Native App Control** | `app_control` tool for macOS AppleScript/JXA automation |
 
 ## Architecture
 
@@ -572,6 +573,52 @@ check_interval_hours = 24
 2. **IPC Validation**: Input validation for all Tauri commands
 3. **Permission Minimization**: Enable only required Tauri features
 4. **Code Signing**: Integrity assurance (macOS notarization, Windows signing)
+
+## Native App Control (app_control Tool)
+
+The `app_control` tool is one of Cratos's 23 built-in tools that enables the AI agent to directly control macOS/Linux native applications. Within the autonomous agent's ReAct loop, the LLM autonomously selects and executes this tool following Plan-Act-Reflect principles.
+
+### Supported Actions
+
+| Action | Description | Platform |
+|--------|-------------|----------|
+| `run_script` | Execute AppleScript/JXA script | macOS |
+| `open` | Launch app (with optional URL) | macOS/Linux |
+| `activate` | Bring app to foreground | macOS |
+| `clipboard_get` | Read clipboard content | macOS/Linux |
+| `clipboard_set` | Write content to clipboard | macOS/Linux |
+
+### Usage Examples
+
+```json
+// Create a new note in Notes app
+{
+  "action": "run_script",
+  "script": "tell application \"Notes\" to make new note with properties {name:\"Meeting Notes\", body:\"Today's agenda...\"}"
+}
+
+// Open URL in Safari
+{
+  "action": "open",
+  "app": "Safari",
+  "url": "https://example.com"
+}
+
+// Read clipboard content
+{
+  "action": "clipboard_get"
+}
+```
+
+### Security
+
+`app_control` is classified as `RiskLevel::High`, and the following patterns are blocked:
+- `do shell script` (prevents shell command execution)
+- `System Preferences` / `System Settings` (prevents system settings access)
+- `password`, `sudo`, `admin` (prevents privilege escalation)
+- `keystroke` (prevents key input in raw scripts)
+
+The `to_llm_tools()` function automatically adds a `[risk: high]` prefix so the LLM is aware of the risk level.
 
 ## Roadmap
 

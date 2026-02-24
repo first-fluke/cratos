@@ -2,20 +2,30 @@
 
 ## 테스트 목표
 
-1. init 명령어가 정상 동작하는지 확인
-2. 다국어 지원이 제대로 되는지 확인
-3. 설치 스크립트 검증
-4. release.yml 워크플로우 검증
+1. 자동화 테스트 스위트 전체 통과 확인 (1,286+ 테스트)
+2. init 명령어가 정상 동작하는지 확인
+3. 다국어 지원이 제대로 되는지 확인
+4. 설치 스크립트 검증
+5. release.yml CI 워크플로우 검증
 
 ---
 
 ## 1. 기본 빌드 및 테스트
 
 ```bash
-# 전체 테스트
+# 전체 테스트 (1,286+ tests)
 cargo test --workspace
 
-# 빌드 확인
+# 빠른 타입 체크
+cargo check --all-targets
+
+# 린트
+cargo clippy --all-targets
+
+# 빌드 확인 (일상 개발용)
+cargo build --profile dev-release -p cratos
+
+# 릴리스 빌드 (배포용, ~10분)
 cargo build --release
 
 # CLI 도움말 확인
@@ -24,8 +34,9 @@ cargo run -- init --help
 ```
 
 **확인 항목:**
-- [ ] 테스트 전체 통과
-- [ ] 릴리스 빌드 성공
+- [ ] 테스트 전체 통과 (1,286+ tests, 0 failures)
+- [ ] clippy 경고 없음
+- [ ] 빌드 성공
 - [ ] init 명령어가 help에 표시됨
 - [ ] `--lang` 옵션이 표시됨
 
@@ -215,7 +226,99 @@ cat .env
 
 ---
 
-## 6. 통합 테스트
+## 6. 자동화 테스트 구조
+
+### 6.1 테스트 카테고리 개요
+
+| 카테고리 | 위치 | 설명 |
+|----------|------|------|
+| **도구 레지스트리** | `crates/cratos-tools/src/builtins/mod.rs` | 23개 빌트인 도구 등록 및 카운트 검증 |
+| **개별 도구** | `crates/cratos-tools/src/builtins/*.rs` | 도구별 정의, 입력 검증, 보안 테스트 |
+| **오케스트레이터** | `crates/cratos-core/src/orchestrator/tests.rs` | 설정, 입력, 에러 새니타이즈, tool refusal 휴리스틱 |
+| **새니타이즈** | `crates/cratos-core/src/orchestrator/sanitize.rs` | `is_tool_refusal`, `is_fake_tool_use_text`, 에러 새니타이즈 |
+| **통합 테스트** | `tests/integration_test.rs` | 크레이트 간 통합 (LLM, 도구, 리플레이, 채널) |
+| **LLM 프로바이더** | `crates/cratos-llm/src/` | 모델 티어, 라우팅 규칙, 프로바이더 설정 |
+| **리플레이** | `crates/cratos-replay/src/` | 이벤트 스토어, 실행 생명주기 |
+| **스킬** | `crates/cratos-skills/src/` | 스킬 생성, 라우팅, 레지스트리 |
+| **메모리** | `crates/cratos-memory/src/` | Graph RAG, 대화 메모리 |
+| **보안** | `crates/cratos-core/src/security/` | 레이트 리미터, 서킷 브레이커 |
+
+### 6.2 빌트인 도구 목록 (23개)
+
+통합 테스트(`tests/integration_test.rs`)에서 검증하는 전체 도구 목록:
+
+```
+file_read, file_write, file_list, http_get, http_post, exec, bash,
+git_status, git_commit, git_branch, git_diff, git_push, git_clone, git_log,
+github_api, browser, wol, config, web_search, agent_cli,
+send_file, image_generate, app_control
+```
+
+> **주의**: 도구 추가/제거 시 3곳 동기화 필수:
+> 1. `crates/cratos-tools/src/builtins/mod.rs` — 등록 + 테스트 카운트
+> 2. `tests/integration_test.rs` — `expected_tools` 배열 및 카운트
+> 3. 도구별 테스트 파일
+
+### 6.3 특정 크레이트/모듈 테스트
+
+```bash
+# 도구 레지스트리 테스트만
+cargo test -p cratos-tools
+
+# 오케스트레이터 테스트만
+cargo test -p cratos-core
+
+# 통합 테스트만
+cargo test --test integration_test
+
+# 특정 테스트 함수
+cargo test test_tool_registry_with_builtins
+cargo test test_tool_refusal
+cargo test test_fake_tool_use_detection
+```
+
+### 6.4 오케스트레이터 (ReAct 루프) 테스트
+
+Workflow Engine은 제거되었으며, 자율 ReAct 루프로 대체되었습니다. 관련 테스트:
+
+| 테스트 | 검증 내용 |
+|--------|----------|
+| `test_tool_refusal_*` | LLM이 도구 호출 없이 짧은 텍스트만 반환하는 경우 감지 |
+| `test_fake_tool_use_detection` | `[Used 1 tool: browser:OK]` 같은 가짜 도구 사용 텍스트 감지 |
+| `test_sanitize_error_for_user` | 경로 등 민감 정보 마스킹 |
+| `test_sanitize_for_session_memory` | 프롬프트 인젝션 방지 |
+| `test_orchestrator_config_failure_limits` | 연속/총 실패 횟수 제한 설정 |
+| `test_max_execution_secs_default` | 실행 타임아웃 기본값 (180초) |
+
+> **참고**: `is_tool_refusal` 함수는 `sanitize.rs`에 있지만 테스트는 `orchestrator/tests.rs`에 있습니다.
+
+### 6.5 app_control 도구 테스트
+
+`app_control`은 macOS AppleScript/JXA 자동화 도구로, `RiskLevel::High`로 분류됩니다.
+
+```bash
+# app_control 테스트
+cargo test -p cratos-tools app_control
+```
+
+테스트 항목:
+- 도구 정의 (이름, 설명, 파라미터 스키마)
+- 보안 검증 (`BLOCKED_PATTERNS`: `do shell script`, `System Preferences`, `password` 등 차단)
+
+### 6.6 통합 테스트 상세
+
+`tests/integration_test.rs`에서 크레이트 간 통합을 검증합니다:
+
+- **LLM 라우터**: 프로바이더 설정, 라우팅 규칙, 모델 티어별 기본 모델
+- **도구 레지스트리**: 23개 빌트인 도구 등록 확인, 스키마 검증
+- **리플레이**: 실행 생명주기, 이벤트 타입, 상태 전이
+- **오케스트레이터**: 입력 생성, 세션 키, 설정
+- **채널**: 메시지 정규화 (Telegram, Slack)
+- **보안**: 레이트 리미터, 서킷 브레이커, 메트릭
+
+---
+
+## 7. E2E 통합 테스트
 
 ```bash
 # 1. 깨끗한 상태에서 시작
@@ -238,23 +341,23 @@ cargo run -- serve
 
 ---
 
-## 7. 엣지 케이스
+## 8. 엣지 케이스
 
-### 7.1 빈 입력 처리
+### 8.1 빈 입력 처리
 
 ```bash
 cargo run -- init --lang en
 # API 키 입력에서 빈 값 입력 시 → 재입력 요청
 ```
 
-### 7.2 Ctrl+C 처리
+### 8.2 Ctrl+C 처리
 
 ```bash
 cargo run -- init --lang en
 # 중간에 Ctrl+C → 깔끔하게 종료
 ```
 
-### 7.3 잘못된 언어 코드
+### 8.3 잘못된 언어 코드
 
 ```bash
 cargo run -- init --lang fr
