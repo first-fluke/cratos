@@ -316,6 +316,10 @@ TUI에서 `F5`로 설정 모달 열기/닫기 가능.
 - **Tool Doctor `_diagnosis` 필드**: 소프트 실패 시 output JSON에 `_diagnosis` 힌트 자동 주입 → LLM이 대안 도구 인식 (`tool_execution.rs`)
 - **반성(Reflection) 프롬프트**: 연속 2회 도구 실패 시 `[reflection]` 시스템 메시지 자동 주입 (`process.rs`)
 - **app_control 보안**: `BLOCKED_PATTERNS`로 `do shell script`, `System Preferences`, `password` 등 차단. 새 패턴 추가 시 `app_control.rs` 상수 수정
+- **도구 설명에 차단+대안 명시**: LLM은 도구 설명만 보고 판단 → 차단되는 명령어 카테고리, "do NOT use X, use Y instead" 대안 안내, 올바른 파라미터 예시를 반드시 포함. 미명시 시 LLM이 차단된 명령어를 반복 시도함
+- **exec args 따옴표**: `Command::new()`는 셸 없이 실행 → LLM이 보내는 셸 스타일 따옴표(`"arg"`, `'arg'`)가 리터럴로 전달됨. `strip_shell_quotes()`가 자동 스트리핑 처리 (`exec/tool.rs`)
+- **Orchestrator 내부 메시지 영어 필수**: `process.rs`의 `Message::user()`/`Message::system()` (nudge, reflection 등)는 LLM 프로바이더에 전달되므로 반드시 영어로 작성. 사용자 응답 언어와 무관
+- **Orchestrator continuation nudge**: LLM이 다단계 작업 중 텍스트만 반환(is_final)하면 `continuation_nudged` 플래그로 1회 재촉 후 계속 진행 (`process.rs`). 기존 nudge: tool refusal(1st iteration), empty response after tools
 - **docs/ 전체 동기화**: 기능 추가/제거 시 `docs/` 하위 26개 문서(ko+en) 모두 확인 필수. SETUP_GUIDE 도구 수, USER_GUIDE 기능 섹션, TEST_GUIDE_DEV 테스트 구조, BROWSER_AUTOMATION 액션 목록, SKILL_AUTO_GENERATION 카테고리 등
 - **절대경로 커밋 금지**: `.claude/agents/`, `.cratos/skills/` 등 커밋 대상 파일에 `~/.claude/projects/-Volumes-...` 같은 사용자별 절대경로 사용 금지. 프로젝트 내 참조는 `.serena/memories/` 상대경로 사용
 - **서버 재시작 플로우**: `cargo build --profile dev-release -p cratos` → `cp target/dev-release/cratos /usr/local/bin/` → `pkill -f "cratos serve"` → `sleep 2` → `nohup cratos serve > /tmp/cratos-server.log 2>&1 &` → `sleep 5` → `curl localhost:19527/health` (5초 미만이면 exit code 7)
