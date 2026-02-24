@@ -198,7 +198,7 @@ impl Orchestrator {
         let mut consecutive_all_fail = 0_usize;
         let mut total_failure_count = 0_usize;
         let mut fallback_sticky = false; // Once fallback is used, stick with it
-        let mut continuation_nudged = false; // Nudge LLM to continue once if it stops mid-task
+        let mut continuation_nudge_count = 0_usize; // Nudge LLM to continue if it stops mid-task (max 3)
 
         // Messages accumulate tool call history across iterations
         let mut messages = messages;
@@ -447,24 +447,25 @@ impl Orchestrator {
                 }
 
                 // Nudge: LLM returned text-only mid-task (tools were used but task may be incomplete).
-                // Push it once to re-check if all steps are done before accepting the response.
-                if !continuation_nudged
+                // Push up to 3 times to re-check if all steps are done before accepting.
+                if continuation_nudge_count < 3
                     && !tool_call_records.is_empty()
                     && iteration > 1
                     && iteration < self.config.max_iterations - 1
                     && !content_text.trim().is_empty()
                 {
-                    continuation_nudged = true;
+                    continuation_nudge_count += 1;
                     warn!(
                         execution_id = %execution_id,
                         iteration = iteration,
+                        nudge = continuation_nudge_count,
                         "Model returned text-only mid-task, nudging to continue"
                     );
                     messages.push(Message::assistant(content_text));
                     messages.push(Message::user(
-                        "The task may not be fully complete. Re-read the user's original request and check \
-                         if any steps remain. If so, continue using tools to finish. \
-                         Only report the final result once every step has been completed.",
+                        "The task is NOT complete yet. You said what you would do but did NOT actually do it. \
+                         Use the browser tool RIGHT NOW to perform the action. Do NOT just describe what to do — \
+                         call the tool. Continue until the user's original request is fully done.",
                     ));
                     continue;
                 }

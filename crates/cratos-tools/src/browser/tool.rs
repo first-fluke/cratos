@@ -39,9 +39,11 @@ impl BrowserTool {
             "Control the user's real web browser. Key actions: \
              'search' -- search a known site (REQUIRES site + query, e.g. site=\"naver_shopping\" query=\"keyword\"). Sites: naver, naver_shopping, coupang, google, youtube, amazon, google_maps. \
              'navigate' -- go to a specific URL (REQUIRES url, NOT site). \
-             'click_text' -- click by visible text (no CSS selector needed). \
-             Other: get_tabs, click, type, fill, screenshot, get_text, get_html, evaluate, scroll, go_back, reload. \
-             IMPORTANT: To search a site use 'search' with site+query, NOT 'navigate'.",
+             'click_text' -- click element by visible text (REQUIRES 'text' param, e.g. text=\"장바구니\"). Do NOT use 'selector' for click_text. \
+             'click' -- click element by CSS selector (REQUIRES 'selector' param). \
+             Other: get_tabs, type, fill, screenshot, get_text, get_html, evaluate, scroll, go_back, reload. \
+             IMPORTANT: To search a site use 'search' with site+query, NOT 'navigate'. \
+             IMPORTANT: click_text needs 'text' param, click needs 'selector' param — do NOT mix them up.",
         )
         .with_category(ToolCategory::External)
         .with_risk_level(RiskLevel::Medium)
@@ -85,11 +87,11 @@ impl BrowserTool {
                 },
                 "selector": {
                     "type": "string",
-                    "description": "CSS selector for element actions (required for click, type, fill; optional for get_text — omit to read entire page)"
+                    "description": "CSS selector (for click, type, fill, hover, check). NOT for click_text — use 'text' param instead. Optional for get_text (omit to read entire page)."
                 },
                 "text": {
                     "type": "string",
-                    "description": "Text to type (for type action), or visible text to find and click (for click_text action)"
+                    "description": "For click_text: the visible text to find and click (e.g. \"장바구니\", \"구매하기\"). For type: the text to type into the element."
                 },
                 "index": {
                     "type": "integer",
@@ -419,8 +421,37 @@ impl Tool for BrowserTool {
             ));
         }
 
-        // Parse the action
-        let action = self.parse_action(&input)?;
+        // Parse the action — on failure, capture a screenshot so the LLM can
+        // visually inspect the current page state alongside the error message.
+        let action = match self.parse_action(&input) {
+            Ok(a) => a,
+            Err(e) => {
+                let mut screenshot: Option<String> = None;
+                if let Ok(ss_result) = self
+                    .dispatch(BrowserAction::Screenshot {
+                        path: None,
+                        full_page: false,
+                        selector: None,
+                    })
+                    .await
+                {
+                    if let Some(ss) = ss_result.screenshot {
+                        info!("Auto-captured screenshot for browser parse error");
+                        screenshot = Some(ss);
+                    }
+                }
+                let duration = start.elapsed().as_millis() as u64;
+                return Ok(ToolResult {
+                    success: false,
+                    output: serde_json::json!({
+                        "error": e.to_string(),
+                        "screenshot": screenshot
+                    }),
+                    error: Some(e.to_string()),
+                    duration_ms: duration,
+                });
+            }
+        };
         let is_interactive = action.is_interactive();
         debug!(action = ?action.name(), "Executing browser action");
 
