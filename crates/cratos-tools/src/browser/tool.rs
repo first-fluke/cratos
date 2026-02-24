@@ -36,7 +36,12 @@ impl BrowserTool {
     pub fn with_config(config: BrowserConfig) -> Self {
         let definition = ToolDefinition::new(
             "browser",
-            "Control the user's real web browser. Capabilities: search sites (search), click by visible text (click_text — preferred over click when you don't know CSS selectors), list open tabs (get_tabs), navigate, click by CSS selector, fill forms, take screenshots, read page text/HTML, execute JavaScript. Use click_text when you can see text on the page but don't know the CSS selector.",
+            "Control the user's real web browser. Key actions: \
+             'search' -- search a known site (REQUIRES site + query, e.g. site=\"naver_shopping\" query=\"keyword\"). Sites: naver, naver_shopping, coupang, google, youtube, amazon, google_maps. \
+             'navigate' -- go to a specific URL (REQUIRES url, NOT site). \
+             'click_text' -- click by visible text (no CSS selector needed). \
+             Other: get_tabs, click, type, fill, screenshot, get_text, get_html, evaluate, scroll, go_back, reload. \
+             IMPORTANT: To search a site use 'search' with site+query, NOT 'navigate'.",
         )
         .with_category(ToolCategory::External)
         .with_risk_level(RiskLevel::Medium)
@@ -56,7 +61,7 @@ impl BrowserTool {
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "Action to perform. Use 'search' to search on a known site. Use 'click_text' to click an element by its visible text (no CSS selector needed).",
+                    "description": "Action to perform. Use 'search' with site+query to search a known site (NOT navigate). Use 'navigate' with url for a specific URL. Use 'click_text' for visible text clicks.",
                     "enum": [
                         "search", "click_text",
                         "get_tabs", "navigate", "click", "type", "fill", "screenshot",

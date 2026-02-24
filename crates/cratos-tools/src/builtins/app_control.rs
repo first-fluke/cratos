@@ -32,13 +32,12 @@ impl AppControlTool {
     pub fn new() -> Self {
         let definition = ToolDefinition::new(
             "app_control",
-            "Control native macOS/Linux applications via system automation. \
-             macOS: Uses osascript (AppleScript/JXA). Linux: Uses xdotool/xclip. \
-             Actions: run_script (execute AppleScript), open (launch app with optional URL), \
-             activate (bring app to front), clipboard_get (read clipboard), clipboard_set (write clipboard). \
+            "Control native macOS/Linux apps via AppleScript/JXA (macOS) or xdotool (Linux). \
+             THIS is the tool for osascript/AppleScript -- do NOT use exec, osascript is blocked there. \
+             Actions: run_script (execute AppleScript), open (launch app), activate (bring to front), clipboard_get, clipboard_set. \
+             Supports: Notes, Reminders, Calendar, Safari, Finder, Music, Messages, and any scriptable macOS app. \
              Example: {\"action\": \"run_script\", \"script\": \"tell application \\\"Notes\\\" to make new note with properties {name:\\\"Title\\\", body:\\\"Content\\\"}\"} \
-             Example: {\"action\": \"open\", \"app\": \"Safari\", \"url\": \"https://example.com\"} \
-             Security: Scripts containing shell commands, password input, or system preference changes are blocked.",
+             Security: Scripts with shell commands, password, or system preference changes are blocked.",
         )
         .with_category(ToolCategory::Exec)
         .with_risk_level(RiskLevel::High)
