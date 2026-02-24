@@ -198,6 +198,7 @@ impl Orchestrator {
         let mut consecutive_all_fail = 0_usize;
         let mut total_failure_count = 0_usize;
         let mut fallback_sticky = false; // Once fallback is used, stick with it
+        let mut continuation_nudged = false; // Nudge LLM to continue once if it stops mid-task
 
         // Messages accumulate tool call history across iterations
         let mut messages = messages;
@@ -441,6 +442,29 @@ impl Orchestrator {
                         "도구 실행 결과를 바탕으로 원래 요청을 계속 수행해주세요. \
                          작업이 완료되지 않았다면 필요한 도구를 추가로 사용하고, \
                          완료했다면 결과를 사용자에게 설명해주세요.",
+                    ));
+                    continue;
+                }
+
+                // Nudge: LLM returned text-only mid-task (tools were used but task may be incomplete).
+                // Push it once to re-check if all steps are done before accepting the response.
+                if !continuation_nudged
+                    && !tool_call_records.is_empty()
+                    && iteration > 1
+                    && iteration < self.config.max_iterations - 1
+                    && !content_text.trim().is_empty()
+                {
+                    continuation_nudged = true;
+                    warn!(
+                        execution_id = %execution_id,
+                        iteration = iteration,
+                        "Model returned text-only mid-task, nudging to continue"
+                    );
+                    messages.push(Message::assistant(content_text));
+                    messages.push(Message::user(
+                        "The task may not be fully complete. Re-read the user's original request and check \
+                         if any steps remain. If so, continue using tools to finish. \
+                         Only report the final result once every step has been completed.",
                     ));
                     continue;
                 }
