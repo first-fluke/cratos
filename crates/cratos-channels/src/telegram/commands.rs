@@ -95,7 +95,20 @@ pub async fn handle_slash_command(
         }
         "/cancel" => {
             if args.is_empty() {
-                "Usage: /cancel &lt;execution_id&gt;".to_string()
+                // No argument: cancel all active executions
+                let active = orchestrator.active_executions();
+                if active.is_empty() {
+                    "No active executions to cancel.".to_string()
+                } else {
+                    let ids: Vec<uuid::Uuid> = active.iter().map(|e| *e.key()).collect();
+                    let mut cancelled = 0;
+                    for id in &ids {
+                        if orchestrator.cancel_execution(*id) {
+                            cancelled += 1;
+                        }
+                    }
+                    format!("Cancelled {} execution(s).", cancelled)
+                }
             } else if let Ok(exec_id) = args.parse::<uuid::Uuid>() {
                 if orchestrator.cancel_execution(exec_id) {
                     format!("Cancelled execution <code>{}</code>", exec_id)
