@@ -44,6 +44,7 @@ Cratos는 Telegram/Slack/Discord에서 자연어로 명령을 내리면 AI 에�
 | **브라우저 제어** | Chrome 확장 + CDP 통합, 탭/스크린샷 제어 |
 | **디바이스 페어링** | PIN 기반 E2E 암호화 디바이스 연동 |
 | **ACP/MCP 브릿지** | IDE 통합 (stdin/stdout JSON-lines) |
+| **네이티브 앱 제어** | app_control — macOS AppleScript/JXA 자동화 (Notes, Reminders 등) |
 
 ## 기술 스택
 
@@ -294,6 +295,7 @@ TUI에서 `F5`로 설정 모달 열기/닫기 가능.
 3. `tracing` 기반 구조화 로깅
 4. Conventional Commits 형식
 5. 1,000줄 초과 파일 금지 (모듈 분리)
+6. `#![warn(missing_docs)]` — 모든 pub 항목에 doc comment 필수 (cratos-core, cratos-channels)
 
 ## Gotchas
 
@@ -305,6 +307,18 @@ TUI에서 `F5`로 설정 모달 열기/닫기 가능.
 - **DuckDuckGo 웹 검색**: reqwest(rustls)는 JA3 핑거프린팅으로 차단됨. `tokio::process::Command`로 시스템 curl 사용
 - **Gemini thought_signature**: Gemini 3 모델은 FunctionCall에 `thoughtSignature` 반환 → 다음 요청에 반드시 보존
 - **config/local.toml**: `config-rs`가 `File::with_name("config/local")`로 자동감지하므로 `.json` 파일이 있으면 TOML 설정을 오염시킴
+- **도구 추가/제거 시 동기화 필수**: `builtins/mod.rs` 등록 + `builtins/mod.rs` 테스트 카운트 + `tests/integration_test.rs` expected_tools 배열 및 카운트 — 3곳 모두 업데이트
+- **cratos-tools Error 변형명**: `Execution` (not ExecutionFailed), `PermissionDenied` (not SecurityViolation), `InvalidInput` — `crates/cratos-tools/src/error.rs` 참조
+- **ToolDoctor Alternative.tool_name**: `Option<String>` 타입 — `.as_str()` 아니라 `.as_deref()` 사용
+- **is_tool_refusal 테스트 위치**: `sanitize.rs` 함수지만 테스트는 `orchestrator/tests.rs`에 있음
+- **도구 설명 품질 = 자율성**: LLM이 도구 설명만 보고 자율 판단하므로, 모든 도구 설명 150자 이상 유지. 사용 시점/제약/예시 포함 필수
+- **to_llm_tools() risk 프리픽스**: `RiskLevel::High` 도구는 자동으로 `[risk: high]` 프리픽스 추가됨 (`registry.rs`)
+- **Tool Doctor `_diagnosis` 필드**: 소프트 실패 시 output JSON에 `_diagnosis` 힌트 자동 주입 → LLM이 대안 도구 인식 (`tool_execution.rs`)
+- **반성(Reflection) 프롬프트**: 연속 2회 도구 실패 시 `[reflection]` 시스템 메시지 자동 주입 (`process.rs`)
+- **app_control 보안**: `BLOCKED_PATTERNS`로 `do shell script`, `System Preferences`, `password` 등 차단. 새 패턴 추가 시 `app_control.rs` 상수 수정
+- **docs/ 전체 동기화**: 기능 추가/제거 시 `docs/` 하위 26개 문서(ko+en) 모두 확인 필수. SETUP_GUIDE 도구 수, USER_GUIDE 기능 섹션, TEST_GUIDE_DEV 테스트 구조, BROWSER_AUTOMATION 액션 목록, SKILL_AUTO_GENERATION 카테고리 등
+- **절대경로 커밋 금지**: `.claude/agents/`, `.cratos/skills/` 등 커밋 대상 파일에 `~/.claude/projects/-Volumes-...` 같은 사용자별 절대경로 사용 금지. 프로젝트 내 참조는 `.serena/memories/` 상대경로 사용
+- **서버 재시작 플로우**: `cargo build --profile dev-release -p cratos` → `cp target/dev-release/cratos /usr/local/bin/` → `pkill -f "cratos serve"` → `sleep 2` → `nohup cratos serve > /tmp/cratos-server.log 2>&1 &` → `sleep 5` → `curl localhost:19527/health` (5초 미만이면 exit code 7)
 
 ## 참조 문서
 

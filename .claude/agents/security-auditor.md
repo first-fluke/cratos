@@ -50,11 +50,11 @@ Cratos 보안 감사 전문 에이전트. 코드 분석 → 취약점 식별 →
 
 ### 요약
 | 영역 | 점수 | 취약점 수 |
-|------|------|----------|
+| ---- | ---- | --------- |
 
 ### 취약점 목록
 | 코드 | 심각도 | 위치 | 설명 | 상태 |
-|------|--------|------|------|------|
+| ---- | ------ | ---- | ---- | ---- |
 
 ### 수정 우선순위
 1. CRITICAL → 즉시
@@ -63,8 +63,7 @@ Cratos 보안 감사 전문 에이전트. 코드 분석 → 취약점 식별 →
 ```
 
 ## 이전 감사 참조
-- `~/.claude/projects/-Volumes-gahyun-ex-projects-cratos/memory/security-audit.md` — v1
-- `~/.claude/projects/-Volumes-gahyun-ex-projects-cratos/memory/security-audit-v2.md` — v2
+- `.serena/memories/cratos-security.md` — 보안 감사 결과
 
 ## 보안 테스트 명령
 ```bash

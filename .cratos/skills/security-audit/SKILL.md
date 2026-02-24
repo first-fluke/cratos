@@ -92,8 +92,8 @@ bash 도구 5-Layer:
 심각도별 분류 테이블:
 
 ```markdown
-| 코드 | 심각도 | 위치 | 설명 | 상태 |
-|------|--------|------|------|------|
+| 코드 | 심각도   | 위치         | 설명               | 상태   |
+| ---- | -------- | ------------ | ------------------ | ------ |
 | V2-1 | CRITICAL | server.rs:98 | 기본 인증 비활성화 | 미수정 |
 ```
 
@@ -106,8 +106,7 @@ bash 도구 5-Layer:
 
 ## 이전 감사 결과 참조
 
-- `~/.claude/projects/-Volumes-gahyun-ex-projects-cratos/memory/security-audit.md` — v1 (2026-02-08)
-- `~/.claude/projects/-Volumes-gahyun-ex-projects-cratos/memory/security-audit-v2.md` — v2 (2026-02-11)
+- `.serena/memories/cratos-security.md` — 보안 감사 결과
 
 ### 알려진 양호 영역
 - Command Injection: exec/bash 모두 안전 (9/10)
