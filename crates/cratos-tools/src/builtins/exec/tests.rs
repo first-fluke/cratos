@@ -1,3 +1,4 @@
+use super::tool::strip_shell_quotes;
 use super::security;
 use super::*;
 use crate::registry::{RiskLevel, Tool, ToolCategory};
@@ -232,6 +233,33 @@ async fn test_exec_blocks_command_injection() {
         }))
         .await;
     assert!(result.is_ok());
+}
+
+#[test]
+fn test_strip_shell_quotes() {
+    // Double quotes
+    assert_eq!(strip_shell_quotes("\"hello\""), "hello");
+    assert_eq!(strip_shell_quotes("\"+%Y-%m-%d\""), "+%Y-%m-%d");
+
+    // Single quotes
+    assert_eq!(strip_shell_quotes("'+%Y'"), "+%Y");
+    assert_eq!(strip_shell_quotes("'hello world'"), "hello world");
+
+    // No quotes -- unchanged
+    assert_eq!(strip_shell_quotes("no-quotes"), "no-quotes");
+    assert_eq!(strip_shell_quotes("-la"), "-la");
+    assert_eq!(strip_shell_quotes("+%Y-%m-%d"), "+%Y-%m-%d");
+
+    // Single character -- too short to strip
+    assert_eq!(strip_shell_quotes("\""), "\"");
+    assert_eq!(strip_shell_quotes("'"), "'");
+
+    // Empty string
+    assert_eq!(strip_shell_quotes(""), "");
+
+    // Mismatched quotes -- no stripping
+    assert_eq!(strip_shell_quotes("\"hello'"), "\"hello'");
+    assert_eq!(strip_shell_quotes("'hello\""), "'hello\"");
 }
 
 #[test]

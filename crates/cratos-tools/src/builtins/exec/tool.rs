@@ -7,6 +7,28 @@ use super::config::{ExecConfig, ExecHost};
 use super::runner;
 use super::security;
 
+/// Strip surrounding shell-style quotes from an argument.
+///
+/// LLMs often wrap args in shell quotes (e.g. `"+%Y-%m-%d"`), but `Command::new()`
+/// passes args directly without a shell, so the quotes become literal characters.
+/// This strips matching outer quotes to fix that mismatch.
+///
+/// # Examples
+/// - `"hello"` → `hello`
+/// - `'+%Y'` → `+%Y`
+/// - `no-quotes` → `no-quotes`
+/// - `"` → `"` (single char, no pair to strip)
+pub(super) fn strip_shell_quotes(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    if bytes.len() >= 2 {
+        let (first, last) = (bytes[0], bytes[bytes.len() - 1]);
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            return &s[1..s.len() - 1];
+        }
+    }
+    s
+}
+
 /// Tool for executing shell commands (with safety restrictions)
 pub struct ExecTool {
     pub(crate) definition: ToolDefinition,
@@ -24,7 +46,11 @@ impl ExecTool {
     #[must_use]
     pub fn with_config(config: ExecConfig) -> Self {
         let timeout_desc = format!("Timeout in seconds (max {})", config.max_timeout_secs);
-        let definition = ToolDefinition::new("exec", "Execute a command directly on the user's local machine. No shell pipes or chaining — use separate calls for each command. Example: command=\"ps\" args=[\"aux\"] to list processes.")
+        let definition = ToolDefinition::new("exec", "Execute a command directly on the user's local machine (no shell -- args are passed directly to the process, do NOT wrap args in quotes). \
+             Blocked commands: shells (bash/sh/zsh), interpreters (python/node/ruby/perl), dangerous ops (rm/sudo/kill/chmod), network tools (curl/wget/ssh), osascript, docker. \
+             For AppleScript/macOS automation -> use app_control tool instead. \
+             For shell pipes, chaining, or complex commands -> use bash tool instead. \
+             Example: command=\"ls\" args=[\"-la\", \"/tmp\"]. Example: command=\"date\" args=[\"+%Y-%m-%d\"]")
             .with_category(ToolCategory::Exec)
             .with_risk_level(RiskLevel::High)
             .with_parameters(serde_json::json!({
@@ -129,11 +155,12 @@ impl Tool for ExecTool {
             })
             .unwrap_or_default();
 
-        // Combine prefix args (from command split) + user-provided args
+        // Combine prefix args (from command split) + user-provided args,
+        // stripping shell-style quotes that LLMs often add (Command::new has no shell).
         let args: Vec<String> = prefix_args
             .iter()
-            .map(|s| s.to_string())
-            .chain(user_args)
+            .map(|s| strip_shell_quotes(s).to_string())
+            .chain(user_args.iter().map(|s| strip_shell_quotes(s).to_string()))
             .collect();
 
         // SECURITY: Check args for dangerous patterns
