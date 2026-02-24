@@ -570,10 +570,20 @@ impl BrowserAction {
             Self::ClickText { text, index } => {
                 let txt = serde_json::to_string(text).expect("serialization failed");
                 let idx = index;
-                // Walk clickable elements, find by visible text (partial, case-insensitive)
+                // Walk clickable elements, find by visible text (partial, case-insensitive).
+                // For <a> with href: navigate same-tab to avoid target="_blank" opening new tabs.
                 format!(
                     r#"() => {{
   const query = {txt}.toLowerCase();
+  // Find closest <a> ancestor (handles <span> inside <a>)
+  function findAnchorHref(el) {{
+    let cur = el;
+    for (let i = 0; i < 5 && cur; i++) {{
+      if (cur.tagName === 'A' && cur.href) return cur.href;
+      cur = cur.parentElement;
+    }}
+    return null;
+  }}
   const clickable = document.querySelectorAll('a, button, [role="button"], [role="link"], [onclick], input[type="submit"], input[type="button"], [tabindex]');
   const matches = [];
   for (const el of clickable) {{
@@ -581,7 +591,6 @@ impl BrowserAction {
     if (t.includes(query)) matches.push(el);
   }}
   if (matches.length === 0) {{
-    // Fallback: search ALL elements (some sites use divs/spans as clickable)
     const all = document.querySelectorAll('*');
     for (const el of all) {{
       if (el.children.length > 3) continue;
@@ -592,8 +601,16 @@ impl BrowserAction {
   if (matches.length === 0) throw new Error('No element found with text: ' + {txt});
   const target = matches[Math.min({idx}, matches.length - 1)];
   target.scrollIntoView({{ block: 'center' }});
+  const label = (target.innerText || target.textContent || '').trim().substring(0, 100);
+  const matchInfo = ' (match ' + (Math.min({idx}, matches.length - 1) + 1) + '/' + matches.length + ')';
+  // For links: navigate same-tab (avoids target="_blank" opening invisible new tabs)
+  const href = findAnchorHref(target);
+  if (href && !href.startsWith('javascript:')) {{
+    window.location.href = href;
+    return 'Navigated to: ' + href + ' | ' + label + matchInfo;
+  }}
   target.click();
-  return 'Clicked: ' + (target.innerText || target.textContent || '').trim().substring(0, 100) + ' (match ' + (Math.min({idx}, matches.length - 1) + 1) + '/' + matches.length + ')';
+  return 'Clicked: ' + label + matchInfo;
 }}"#,
                     txt = txt,
                     idx = idx
