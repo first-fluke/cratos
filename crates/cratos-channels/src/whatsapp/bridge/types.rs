@@ -4,17 +4,23 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)] // All fields needed for JSON deserialization
 pub struct StatusResponse {
+    /// Bridge connection state (e.g. "open", "close").
     pub status: String,
+    /// QR code data for pairing (if waiting for scan).
     pub qr: Option<String>,
+    /// Whether the bridge is connected to WhatsApp.
     pub connected: bool,
 }
 
 /// Send message response
 #[derive(Debug, Deserialize)]
 pub struct SendResponse {
+    /// Whether the message was sent successfully.
     pub success: bool,
+    /// WhatsApp message ID if sent.
     #[serde(rename = "messageId")]
     pub message_id: Option<String>,
+    /// Error description if sending failed.
     pub error: Option<String>,
 }
 

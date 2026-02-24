@@ -73,7 +73,10 @@ pub enum TelemetryEvent {
 /// Telemetry event with metadata (internal use)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelemetryRecord {
+    /// When this event was recorded.
     pub timestamp: DateTime<Utc>,
+    /// Anonymized device identifier.
     pub anonymous_id: String,
+    /// The telemetry event payload.
     pub event: TelemetryEvent,
 }

@@ -6,8 +6,11 @@
 
 use std::sync::Arc;
 
+/// Approval manager implementation and request lifecycle.
 pub mod manager;
+/// Approval callback trait for channel-specific approval UIs.
 pub mod traits;
+/// Approval request/response types and error definitions.
 pub mod types;
 
 pub use manager::ApprovalManager;

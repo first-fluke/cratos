@@ -46,20 +46,24 @@ pub struct TelemetryConfig {
     pub flush_interval_secs: u64,
 }
 
+/// Returns whether telemetry is enabled (checks CRATOS_TELEMETRY_ENABLED env var).
 pub fn default_enabled() -> bool {
     std::env::var(ENV_TELEMETRY_ENABLED)
         .map(|v| !matches!(v.to_lowercase().as_str(), "false" | "0"))
         .unwrap_or(true)
 }
 
+/// Generates a random anonymous UUID for telemetry identification.
 pub fn generate_anonymous_id() -> String {
     Uuid::new_v4().to_string()
 }
 
+/// Returns the default batch size for telemetry event batching.
 pub fn default_batch_size() -> usize {
     DEFAULT_BATCH_SIZE
 }
 
+/// Returns the default flush interval in seconds for telemetry batches.
 pub fn default_flush_interval() -> u64 {
     DEFAULT_FLUSH_INTERVAL_SECS
 }

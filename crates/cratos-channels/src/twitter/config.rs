@@ -1,17 +1,25 @@
 use crate::error::{Error, Result};
 use serde::Deserialize;
 
+/// Twitter API v2 configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TwitterConfig {
+    /// Twitter API key (consumer key).
     pub api_key: String,
+    /// Twitter API secret (consumer secret).
     pub api_secret: String,
+    /// OAuth access token.
     pub access_token: String,
+    /// OAuth access token secret.
     pub access_token_secret: String,
+    /// Optional bearer token for app-only authentication.
     pub bearer_token: Option<String>,
+    /// Usernames allowed to interact (empty = all allowed).
     pub allowed_users: Vec<String>,
 }
 
 impl TwitterConfig {
+    /// Create a new config with required OAuth credentials.
     pub fn new(
         api_key: impl Into<String>,
         api_secret: impl Into<String>,
@@ -28,6 +36,7 @@ impl TwitterConfig {
         }
     }
 
+    /// Create config from TWITTER_* environment variables.
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("TWITTER_API_KEY")
             .map_err(|_| Error::Config("TWITTER_API_KEY not set".to_string()))?;
@@ -55,11 +64,13 @@ impl TwitterConfig {
         })
     }
 
+    /// Set the bearer token for app-only authentication.
     pub fn with_bearer_token(mut self, token: impl Into<String>) -> Self {
         self.bearer_token = Some(token.into());
         self
     }
 
+    /// Set the list of allowed usernames.
     pub fn with_allowed_users(mut self, users: Vec<String>) -> Self {
         self.allowed_users = users;
         self

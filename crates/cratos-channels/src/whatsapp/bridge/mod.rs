@@ -1,8 +1,12 @@
 //! WhatsApp - Baileys bridge adapter
 
+/// WhatsApp adapter using Baileys Node.js bridge.
 pub mod adapter;
+/// WhatsApp bridge connection configuration.
 pub mod config;
+/// Incoming message handler for WhatsApp bridge webhooks.
 pub mod handler;
+/// Bridge API request/response types.
 pub mod types;
 
 pub use adapter::WhatsAppAdapter;

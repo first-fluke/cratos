@@ -21,6 +21,7 @@ pub struct DiscordHandler {
 }
 
 impl DiscordHandler {
+    /// Create a new Discord event handler.
     pub fn new(adapter: Arc<DiscordAdapter>, orchestrator: Arc<Orchestrator>) -> Self {
         Self {
             adapter,

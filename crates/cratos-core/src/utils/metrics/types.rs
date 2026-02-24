@@ -86,8 +86,11 @@ pub struct HistogramBucket {
 /// A histogram for tracking distributions
 #[derive(Debug, Clone)]
 pub struct Histogram {
+    /// Upper-bound buckets for histogram distribution.
     pub buckets: Vec<HistogramBucket>,
+    /// Running sum of all observed values (stored as u64 bits of f64).
     pub sum: Arc<AtomicU64>,
+    /// Total number of observations.
     pub count: Arc<AtomicU64>,
 }
 

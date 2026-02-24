@@ -3,9 +3,13 @@
 //! This module provides opt-out telemetry for Cratos usage statistics.
 //! Telemetry is **enabled by default** but can be disabled in settings.
 
+/// HTTP client for sending telemetry batches.
 pub mod client;
+/// Telemetry configuration and environment overrides.
 pub mod config;
+/// Aggregated telemetry statistics.
 pub mod stats;
+/// Telemetry event and record type definitions.
 pub mod types;
 
 pub use client::Telemetry;

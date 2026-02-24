@@ -4,27 +4,39 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)] // All fields needed for JSON deserialization
 pub struct ApiResponse {
+    /// Messaging product identifier.
     pub messaging_product: Option<String>,
+    /// Contact information array.
     pub contacts: Option<Vec<Contact>>,
+    /// Sent message information array.
     pub messages: Option<Vec<MessageInfo>>,
+    /// API error details if request failed.
     pub error: Option<ApiError>,
 }
 
+/// Contact information returned after sending a message.
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)] // All fields needed for JSON deserialization
 pub struct Contact {
+    /// Phone number as provided in the request.
     pub input: String,
+    /// WhatsApp ID for the contact.
     pub wa_id: String,
 }
 
+/// Sent message information.
 #[derive(Debug, Deserialize)]
 pub struct MessageInfo {
+    /// WhatsApp message ID.
     pub id: String,
 }
 
+/// WhatsApp Business API error details.
 #[derive(Debug, Deserialize)]
 pub struct ApiError {
+    /// Human-readable error description.
     pub message: String,
+    /// API error code.
     pub code: i32,
 }
 

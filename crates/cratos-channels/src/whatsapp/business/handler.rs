@@ -14,6 +14,7 @@ pub struct WhatsAppBusinessHandler {
 }
 
 impl WhatsAppBusinessHandler {
+    /// Create a new WhatsApp Business webhook handler.
     pub fn new(adapter: Arc<WhatsAppBusinessAdapter>, orchestrator: Arc<Orchestrator>) -> Self {
         Self {
             adapter,

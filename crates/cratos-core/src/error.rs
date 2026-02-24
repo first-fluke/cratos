@@ -63,24 +63,31 @@ pub enum SchedulerStoreError {
 /// Session/Memory storage error
 #[derive(Debug, Error)]
 pub enum MemoryStoreError {
+    /// SQLite database operation failed.
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
 
+    /// JSON serialization/deserialization failed.
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
+    /// Requested memory record not found.
     #[error("memory record not found: {0}")]
     NotFound(String),
 
+    /// In-memory cache operation failed.
     #[error("cache error: {0}")]
     Cache(String),
 
+    /// Mutex lock was poisoned by a panicking thread.
     #[error("lock poisoned")]
     Poisoned,
 
+    /// Unrecoverable internal error.
     #[error("internal error: {0}")]
     Internal(String),
 
+    /// File system I/O error.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }

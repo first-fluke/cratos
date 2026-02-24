@@ -1,8 +1,12 @@
 //! Discord - serenity adapter
 
+/// Discord bot adapter using serenity.
 pub mod adapter;
+/// Slash command handlers for Discord interactions.
 pub mod commands;
+/// Discord bot configuration (token, guilds, DM policy).
 pub mod config;
+/// Serenity event handler for incoming Discord messages.
 pub mod handler;
 
 pub use adapter::DiscordAdapter;

@@ -377,7 +377,7 @@ fn set_toml_value(doc: &mut toml_edit::DocumentMut, path: &str, value: &str) -> 
             current[part] = toml_value;
         } else {
             // Intermediate: ensure table exists
-            if !current.get(part).map_or(false, |v| v.is_table()) {
+            if !current.get(part).is_some_and(|v| v.is_table()) {
                 current[part] = toml_edit::Item::Table(toml_edit::Table::new());
             }
             current = &mut current[part];
@@ -469,7 +469,7 @@ fn cmd_reset(key: &str) -> Result<()> {
     std::fs::write(local_path, doc.to_string())?;
 
     // Verify the default value
-    let _ = std::env::remove_var("_"); // Force reload (no-op, config is file-based)
+    std::env::remove_var("_"); // Force reload (no-op, config is file-based)
     let default_doc: toml_edit::DocumentMut = DEFAULT_CONFIG.parse()?;
     let default_value = resolve_toml_path(&default_doc, &toml_path);
     if let Some(val) = default_value {

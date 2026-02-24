@@ -37,10 +37,7 @@ pub struct SettingsState {
 
 impl SettingsState {
     pub fn load() -> Self {
-        let config = match crate::server::load_config() {
-            Ok(c) => c,
-            Err(_) => crate::server::config::AppConfig::default(),
-        };
+        let config = crate::server::load_config().unwrap_or_default();
         let view = crate::api::config::AppConfigView::from(config);
 
         let categories = vec![

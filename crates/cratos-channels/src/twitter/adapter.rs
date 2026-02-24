@@ -9,6 +9,7 @@ pub struct TwitterAdapter {
 }
 
 impl TwitterAdapter {
+    /// Create a new Twitter adapter with the given config.
     pub fn new(config: TwitterConfig) -> Self {
         Self {
             _config: config,
@@ -16,6 +17,7 @@ impl TwitterAdapter {
         }
     }
 
+    /// Create a Twitter adapter from environment variables.
     pub fn from_env() -> Result<Self> {
         let config = TwitterConfig::from_env()?;
         Ok(Self::new(config))

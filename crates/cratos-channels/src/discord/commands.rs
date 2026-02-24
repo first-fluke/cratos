@@ -9,6 +9,7 @@ pub struct DiscordCommands {
 }
 
 impl DiscordCommands {
+    /// Create a new command handler backed by the given orchestrator.
     pub fn new(orchestrator: Arc<Orchestrator>) -> Self {
         Self { orchestrator }
     }
@@ -25,6 +26,7 @@ impl DiscordCommands {
             .color(color)
     }
 
+    /// List active sessions count.
     pub fn handle_sessions(&self) -> String {
         let count = self.orchestrator.active_execution_count().unwrap_or(0);
         if count == 0 {
@@ -34,6 +36,7 @@ impl DiscordCommands {
         }
     }
 
+    /// List all registered tools.
     pub fn handle_tools(&self) -> String {
         let tools = self.orchestrator.list_tool_names();
         if tools.is_empty() {
@@ -47,6 +50,7 @@ impl DiscordCommands {
         }
     }
 
+    /// Cancel an active execution by ID.
     pub fn handle_cancel(&self, id: &str) -> String {
         if id.is_empty() {
             return "Please provide an execution ID.".to_string();
@@ -63,6 +67,7 @@ impl DiscordCommands {
         }
     }
 
+    /// Approve a pending approval request by ID.
     pub async fn handle_approve(&self, id: &str) -> String {
         if id.is_empty() {
             return "Please provide a request ID.".to_string();
@@ -83,6 +88,7 @@ impl DiscordCommands {
         }
     }
 
+    /// Deny a pending approval request by ID.
     pub async fn handle_deny(&self, id: &str) -> String {
         if id.is_empty() {
             return "Please provide a request ID.".to_string();

@@ -1,8 +1,12 @@
 //! WhatsApp Business API adapter
 
+/// WhatsApp Business Cloud API adapter.
 pub mod adapter;
+/// WhatsApp Business API configuration and credentials.
 pub mod config;
+/// Incoming webhook handler for WhatsApp Business API.
 pub mod handler;
+/// WhatsApp Business API request/response types.
 pub mod types;
 
 pub use adapter::WhatsAppBusinessAdapter;

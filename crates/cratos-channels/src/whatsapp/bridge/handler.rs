@@ -14,6 +14,7 @@ pub struct WhatsAppHandler {
 }
 
 impl WhatsAppHandler {
+    /// Create a new WhatsApp message handler.
     pub fn new(adapter: Arc<WhatsAppAdapter>, orchestrator: Arc<Orchestrator>) -> Self {
         Self {
             adapter,
