@@ -17,7 +17,13 @@ impl GitLogTool {
     /// Create a new git log tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("git_log", "View git commit history")
+        let definition = ToolDefinition::new(
+            "git_log",
+            "View git commit history. Returns commit hash, author, date, and message. \
+             Set limit to control number of entries (default: 10). \
+             Use format: oneline/short/full for different detail levels. Specify branch to view a specific branch's history. \
+             Example: {\"limit\": 5} or {\"branch\": \"main\", \"format\": \"oneline\", \"limit\": 20}"
+        )
             .with_category(ToolCategory::Utility)
             .with_risk_level(RiskLevel::Low)
             .with_parameters(serde_json::json!({

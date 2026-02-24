@@ -129,6 +129,7 @@ fn test_tool_registry_with_builtins() {
         "agent_cli",
         "send_file",
         "image_generate",
+        "app_control",
     ];
 
     for tool_name in expected_tools {

@@ -13,7 +13,13 @@ impl FileWriteTool {
     /// Create a new file write tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("file_write", "Write content to a file")
+        let definition = ToolDefinition::new(
+            "file_write",
+            "Write content to a file. Creates the file if it doesn't exist; parent directories are created automatically. \
+             Set append=true to add content to the end instead of overwriting. \
+             Security: blocked for sensitive system paths. \
+             Example: {\"path\": \"~/notes.txt\", \"content\": \"Hello\"} or {\"path\": \"log.txt\", \"content\": \"entry\", \"append\": true}"
+        )
             .with_category(ToolCategory::File)
             .with_risk_level(RiskLevel::Medium)
             .with_parameters(serde_json::json!({

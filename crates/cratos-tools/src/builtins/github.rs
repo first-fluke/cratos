@@ -76,7 +76,14 @@ impl GitHubApiTool {
             .build()
             .expect("Failed to create HTTP client");
 
-        let definition = ToolDefinition::new("github_api", "Interact with GitHub API")
+        let definition = ToolDefinition::new(
+            "github_api",
+            "Interact with GitHub REST API. Actions: get_repo, list_issues, get_issue, create_issue, \
+             list_prs, get_pr, create_pr. Requires GITHUB_TOKEN env var for authentication. \
+             Specify owner and repo for all actions. Returns JSON response from GitHub API. \
+             Example: {\"action\": \"list_issues\", \"owner\": \"user\", \"repo\": \"project\"} \
+             or {\"action\": \"create_issue\", \"owner\": \"user\", \"repo\": \"project\", \"title\": \"Bug report\", \"body\": \"Details...\"}"
+        )
             .with_category(ToolCategory::Http)
             .with_risk_level(RiskLevel::Medium)
             .with_parameters(build_parameters_schema());

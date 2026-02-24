@@ -465,6 +465,28 @@ async function takeScreenshot(params) {
   return { screenshot: dataUrl.replace(/^data:image\/png;base64,/, "") };
 }
 
+/** Wait for a tab to finish loading (status === 'complete'). */
+function waitForTabLoad(tabId, timeout = 15000) {
+  return new Promise((resolve) => {
+    let done = false;
+    let timer;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      chrome.tabs.onUpdated.removeListener(listener);
+      clearTimeout(timer);
+      resolve();
+    };
+    const listener = (tid, changeInfo) => {
+      if (tid === tabId && changeInfo.status === "complete") {
+        finish();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    timer = setTimeout(finish, timeout);
+  });
+}
+
 async function navigateTab(params) {
   const { url, tab_id } = params || {};
   if (!url) throw new Error("Missing url parameter");
@@ -478,6 +500,7 @@ async function navigateTab(params) {
       // Don't navigate restricted pages, create new tab instead
       if (activeUrl.startsWith("chrome://") || activeUrl.startsWith("chrome-extension://")) {
         const newTab = await chrome.tabs.create({ url, active: true });
+        await waitForTabLoad(newTab.id);
         return { ok: true, tab_id: newTab.id };
       }
       tabId = tabs[0].id;
@@ -491,8 +514,10 @@ async function navigateTab(params) {
     if (tab.windowId) {
       await chrome.windows.update(tab.windowId, { focused: true });
     }
+    await waitForTabLoad(tabId);
   } else {
     const newTab = await chrome.tabs.create({ url, active: true });
+    await waitForTabLoad(newTab.id);
     return { ok: true, tab_id: newTab.id };
   }
   return { ok: true, tab_id: tabId };

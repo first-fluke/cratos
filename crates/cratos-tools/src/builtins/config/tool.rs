@@ -25,7 +25,12 @@ impl ConfigTool {
     /// Create with custom data directory
     #[must_use]
     pub fn with_data_dir(data_dir: PathBuf) -> Self {
-        let description = "Cratos 설정 변경: LLM 모델, 언어, WoL 디바이스, 스케줄러 등";
+        let description = "Manage Cratos configuration. Actions: set (change a setting), get (read a setting), \
+             list (show all settings), delete (remove a setting). \
+             Targets: llm (model/provider), language, wol (Wake-on-LAN devices), scheduler, security. \
+             Changes are saved to config/local.toml and take effect immediately. \
+             Example: {\"action\": \"set\", \"target\": \"llm\", \"key\": \"default_provider\", \"value\": \"openai\"} \
+             or {\"action\": \"list\"}";
 
         let definition = ToolDefinition::new("config", description)
             .with_parameters(serde_json::json!({

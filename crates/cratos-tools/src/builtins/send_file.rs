@@ -35,7 +35,11 @@ impl SendFileTool {
     pub fn new() -> Self {
         let definition = ToolDefinition::new(
             "send_file",
-            "Prepare a file for sending through messaging channels. Returns file data as an artifact.",
+            "Send a file through the current messaging channel (Telegram, Slack, Discord, etc.). \
+             Reads the file, encodes it, and delivers as an attachment in the chat. \
+             Optional caption for context. Max file size: 50MB. Executables are blocked for security. \
+             The file is sent to whichever channel the user is currently chatting from. \
+             Example: {\"path\": \"~/report.pdf\", \"caption\": \"Monthly report\"}"
         )
         .with_category(ToolCategory::File)
         .with_risk_level(RiskLevel::Medium)

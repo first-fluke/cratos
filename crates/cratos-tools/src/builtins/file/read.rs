@@ -16,7 +16,14 @@ impl FileReadTool {
     /// Create a new file read tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("file_read", "Read the contents of a file")
+        let definition = ToolDefinition::new(
+            "file_read",
+            "Read the contents of a file. Use when you need to inspect file contents, check configs, \
+             or read data. Supports text (auto-detected encoding) and binary files (returned as base64). \
+             Set max_bytes to limit output size for large files. \
+             Security: blocked for sensitive paths (/etc/shadow, private keys). \
+             Example: {\"path\": \"~/Documents/notes.txt\"}"
+        )
             .with_category(ToolCategory::File)
             .with_risk_level(RiskLevel::Low)
             .with_parameters(serde_json::json!({

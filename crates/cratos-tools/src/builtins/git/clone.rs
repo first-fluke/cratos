@@ -17,7 +17,13 @@ impl GitCloneTool {
     /// Create a new git clone tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("git_clone", "Clone a git repository")
+        let definition = ToolDefinition::new(
+            "git_clone",
+            "Clone a git repository from a remote URL. Supports https://, git://, and ssh:// protocols. \
+             Set depth for shallow clone (e.g. depth=1 for latest snapshot only). \
+             Specify branch to clone a specific branch. Target path defaults to repo name in current directory. \
+             Example: {\"url\": \"https://github.com/user/repo.git\"} or {\"url\": \"...\", \"depth\": 1, \"branch\": \"dev\"}"
+        )
             .with_category(ToolCategory::Utility)
             .with_risk_level(RiskLevel::Medium)
             .with_parameters(serde_json::json!({

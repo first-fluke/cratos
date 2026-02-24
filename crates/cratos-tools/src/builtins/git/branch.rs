@@ -17,7 +17,14 @@ impl GitBranchTool {
     /// Create a new git branch tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("git_branch", "Manage git branches")
+        let definition = ToolDefinition::new(
+            "git_branch",
+            "Manage git branches. Actions: list (show all branches with current marked), \
+             create (new branch), checkout (switch branch), delete (remove branch). \
+             Current branch is marked with * in list output. \
+             Example: {\"action\": \"list\"} or {\"action\": \"create\", \"name\": \"feature-x\"} \
+             or {\"action\": \"checkout\", \"name\": \"main\"}"
+        )
             .with_category(ToolCategory::Utility)
             .with_risk_level(RiskLevel::Medium)
             .with_parameters(serde_json::json!({

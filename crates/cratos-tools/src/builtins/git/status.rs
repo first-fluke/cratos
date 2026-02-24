@@ -16,7 +16,13 @@ impl GitStatusTool {
     /// Create a new git status tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("git_status", "Get the status of a git repository")
+        let definition = ToolDefinition::new(
+            "git_status",
+            "Get the status of a git repository. Shows staged, unstaged, and untracked files. \
+             Set short=true for compact output. Returns current branch name and tracking info. \
+             Use before committing to verify what will be included. \
+             Example: {\"path\": \".\"} or {\"path\": \"/project\", \"short\": true}"
+        )
             .with_category(ToolCategory::Utility)
             .with_risk_level(RiskLevel::Low)
             .with_parameters(serde_json::json!({

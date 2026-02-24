@@ -410,12 +410,20 @@ impl ToolRegistry {
     }
 
     /// Convert definitions to LLM tool format
+    ///
+    /// Includes risk_level in the description so the LLM is aware of
+    /// which tools are high-risk and may require user approval.
     #[must_use]
     pub fn to_llm_tools(&self) -> Vec<cratos_llm::ToolDefinition> {
         self.list_enabled()
             .into_iter()
             .map(|def| {
-                cratos_llm::ToolDefinition::new(&def.name, &def.description, def.parameters.clone())
+                let desc = if def.risk_level == RiskLevel::High {
+                    format!("[risk: high] {}", def.description)
+                } else {
+                    def.description.clone()
+                };
+                cratos_llm::ToolDefinition::new(&def.name, &desc, def.parameters.clone())
             })
             .collect()
     }

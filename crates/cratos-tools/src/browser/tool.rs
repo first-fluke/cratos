@@ -131,8 +131,22 @@ impl BrowserTool {
         })
     }
 
+    /// Dispatch an action to the configured backend.
+    async fn dispatch(&self, action: BrowserAction) -> Result<BrowserActionResult> {
+        match self.config.backend {
+            BrowserBackend::Mcp => self.execute_via_mcp(action).await,
+            BrowserBackend::Extension => self.execute_via_extension(action).await,
+            BrowserBackend::Auto => self.execute_with_fallback(action).await,
+        }
+    }
+
     /// Execute a browser action using the configured backend.
     async fn execute_action(&self, action: BrowserAction) -> Result<BrowserActionResult> {
+        // ClickText: two-phase (find element → navigate or click)
+        if let BrowserAction::ClickText { ref text, index } = action {
+            return self.execute_click_text(text, index).await;
+        }
+
         // Detect search action before resolving
         let is_search = matches!(action, BrowserAction::Search { .. });
 
@@ -144,11 +158,7 @@ impl BrowserTool {
             return self.execute_get_tabs().await;
         }
 
-        let result = match self.config.backend {
-            BrowserBackend::Mcp => self.execute_via_mcp(action).await?,
-            BrowserBackend::Extension => self.execute_via_extension(action).await?,
-            BrowserBackend::Auto => self.execute_with_fallback(action).await?,
-        };
+        let result = self.dispatch(action).await?;
 
         // After a successful search navigate, auto-read page text so the LLM
         // can see the search results without a separate get_text call.
@@ -157,11 +167,7 @@ impl BrowserTool {
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
             let text_action = BrowserAction::GetText { selector: None };
-            let text_result = match self.config.backend {
-                BrowserBackend::Mcp => self.execute_via_mcp(text_action).await,
-                BrowserBackend::Extension => self.execute_via_extension(text_action).await,
-                BrowserBackend::Auto => self.execute_with_fallback(text_action).await,
-            };
+            let text_result = self.dispatch(text_action).await;
 
             if let Ok(tr) = text_result {
                 if tr.success {
@@ -175,6 +181,178 @@ impl BrowserTool {
         }
 
         Ok(result)
+    }
+
+    /// Two-phase click_text: find element via JS, then navigate or click.
+    ///
+    /// Phase 1: Evaluate JS that finds the matching element and returns structured
+    /// info: `{type: "navigate", url, label}` for links, `{type: "clicked", label}`
+    /// for buttons/non-link elements. For links, the JS does NOT navigate — it only
+    /// identifies the element. For non-links, `target.click()` is called by the JS.
+    ///
+    /// Phase 2a (link found): Send a Navigate action (which waits for page load).
+    /// Phase 2b (clicked, no link): Wait 2s, check if URL changed (JS click may
+    /// have triggered navigation). If so, auto-read the new page.
+    async fn execute_click_text(&self, text: &str, index: u32) -> Result<BrowserActionResult> {
+        // Get current URL before clicking (for navigation detection in Phase 2b)
+        let url_before = self.get_current_url().await;
+
+        // Phase 1: Find element and click/identify
+        let find_action = BrowserAction::ClickText {
+            text: text.to_string(),
+            index,
+        };
+        let result = self.dispatch(find_action).await?;
+
+        if !result.success {
+            return Ok(result);
+        }
+
+        // Parse the structured result from the JS evaluate.
+        // Extension response format: { "result": { type, url?, label, matchInfo } }
+        info!(data = %result.data, "click_text Phase 1 raw response");
+        let info = Self::extract_click_text_info(&result.data);
+
+        if let Some(info) = info {
+            let label = info
+                .get("label")
+                .and_then(|l| l.as_str())
+                .unwrap_or("");
+            let match_info = info
+                .get("matchInfo")
+                .and_then(|m| m.as_str())
+                .unwrap_or("");
+
+            if info.get("type").and_then(|t| t.as_str()) == Some("navigate") {
+                if let Some(url) = info.get("url").and_then(|u| u.as_str()) {
+                    info!(
+                        url = url,
+                        label = label,
+                        "click_text: link detected, navigating with page load wait"
+                    );
+
+                    // Phase 2a: Navigate (waits for page load in the extension)
+                    let nav_action = BrowserAction::Navigate {
+                        url: url.to_string(),
+                        wait_until_loaded: true,
+                    };
+                    let nav_result = self.dispatch(nav_action).await?;
+
+                    if nav_result.success {
+                        // Auto-read page text after navigation
+                        let page_text = self.auto_read_page_text().await;
+                        return Ok(BrowserActionResult::success(serde_json::json!({
+                            "clicked": label,
+                            "navigated_to": url,
+                            "match_info": match_info,
+                            "page_loaded": true,
+                            "page_text": page_text,
+                        })));
+                    } else {
+                        return Ok(nav_result);
+                    }
+                }
+            }
+
+            // Phase 2b: type === "clicked" — element was clicked by JS directly.
+            // The click may have triggered JS-based navigation (onclick handlers).
+            // Wait and check if the URL changed.
+            info!(label = label, "click_text: element clicked directly, checking for navigation");
+            tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+
+            let url_after = self.get_current_url().await;
+
+            let navigated = match (&url_before, &url_after) {
+                (Some(before), Some(after)) => before != after,
+                _ => false,
+            };
+
+            if navigated {
+                let new_url = url_after.as_deref().unwrap_or("unknown");
+                info!(
+                    old_url = url_before.as_deref().unwrap_or("?"),
+                    new_url = new_url,
+                    "click_text: detected navigation after click"
+                );
+                // Auto-read page text after navigation
+                let page_text = self.auto_read_page_text().await;
+                return Ok(BrowserActionResult::success(serde_json::json!({
+                    "clicked": label,
+                    "navigated_to": new_url,
+                    "match_info": match_info,
+                    "page_loaded": true,
+                    "page_text": page_text,
+                })));
+            }
+
+            return Ok(BrowserActionResult::success(serde_json::json!({
+                "clicked": label,
+                "match_info": match_info,
+            })));
+        }
+
+        // Could not parse structured info — return raw result
+        Ok(result)
+    }
+
+    /// Get the current page URL, returning None if unavailable.
+    async fn get_current_url(&self) -> Option<String> {
+        let url_action = BrowserAction::GetUrl;
+        match self.dispatch(url_action).await {
+            Ok(r) if r.success => {
+                // Extension returns {"result": "https://..."}, MCP returns direct string
+                r.data
+                    .get("result")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| r.data.as_str())
+                    .map(String::from)
+            }
+            _ => None,
+        }
+    }
+
+    /// Auto-read page text (truncated), returning the text or null.
+    async fn auto_read_page_text(&self) -> serde_json::Value {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let text_action = BrowserAction::GetText { selector: None };
+        match self.dispatch(text_action).await {
+            Ok(r) if r.success => {
+                info!("click_text auto-read: got page text");
+                r.data
+            }
+            _ => serde_json::Value::Null,
+        }
+    }
+
+    /// Extract the structured click_text info from various response formats.
+    fn extract_click_text_info(data: &serde_json::Value) -> Option<serde_json::Value> {
+        // Extension evaluate returns: { "result": <JS return value> }
+        if let Some(r) = data.get("result") {
+            if r.get("type").is_some() {
+                return Some(r.clone());
+            }
+            // result might be a JSON string
+            if let Some(s) = r.as_str() {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                    if v.get("type").is_some() {
+                        return Some(v);
+                    }
+                }
+            }
+        }
+        // data itself has "type" field (MCP might return directly)
+        if data.get("type").is_some() {
+            return Some(data.clone());
+        }
+        // data is a JSON string
+        if let Some(s) = data.as_str() {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                if v.get("type").is_some() {
+                    return Some(v);
+                }
+            }
+        }
+        None
     }
 
     /// Execute a browser action with automatic fallback (Extension -> MCP).

@@ -17,7 +17,13 @@ impl GitPushTool {
     /// Create a new git push tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("git_push", "Push commits to remote repository")
+        let definition = ToolDefinition::new(
+            "git_push",
+            "Push commits to a remote git repository. Defaults to 'origin' remote and current branch. \
+             Set set_upstream=true for new branches. Force push is not supported for safety. \
+             Specify remote and branch to push to a specific target. \
+             Example: {\"path\": \".\"} or {\"remote\": \"origin\", \"branch\": \"feature-x\", \"set_upstream\": true}"
+        )
             .with_category(ToolCategory::Utility)
             .with_risk_level(RiskLevel::High)
             .with_parameters(serde_json::json!({

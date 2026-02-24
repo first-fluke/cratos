@@ -16,7 +16,13 @@ impl FileListTool {
     /// Create a new file list tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("file_list", "List contents of a directory")
+        let definition = ToolDefinition::new(
+            "file_list",
+            "List contents of a directory. Returns file names, sizes, and types. \
+             Set recursive=true to list subdirectories. Max 1000 entries by default (adjustable via max_entries). \
+             Includes hidden files. Use to discover file paths before reading or writing. \
+             Example: {\"path\": \"~/Downloads\"} or {\"path\": \"/tmp\", \"recursive\": true}"
+        )
             .with_category(ToolCategory::File)
             .with_risk_level(RiskLevel::Low)
             .with_parameters(serde_json::json!({

@@ -571,17 +571,20 @@ impl BrowserAction {
                 let txt = serde_json::to_string(text).expect("serialization failed");
                 let idx = index;
                 // Walk clickable elements, find by visible text (partial, case-insensitive).
-                // For <a> with href: navigate same-tab to avoid target="_blank" opening new tabs.
+                // Returns structured JSON: {type: "navigate", url, label, matchInfo} for links,
+                // or {type: "clicked", label, matchInfo} for buttons.
+                // Rust code handles the actual navigation (waits for page load).
                 format!(
                     r#"() => {{
   const query = {txt}.toLowerCase();
-  // Find closest <a> ancestor (handles <span> inside <a>)
   function findAnchorHref(el) {{
     let cur = el;
-    for (let i = 0; i < 5 && cur; i++) {{
+    for (let i = 0; i < 10 && cur; i++) {{
       if (cur.tagName === 'A' && cur.href) return cur.href;
       cur = cur.parentElement;
     }}
+    const child = el.querySelector && el.querySelector('a[href]');
+    if (child && child.href) return child.href;
     return null;
   }}
   const clickable = document.querySelectorAll('a, button, [role="button"], [role="link"], [onclick], input[type="submit"], input[type="button"], [tabindex]');
@@ -602,15 +605,13 @@ impl BrowserAction {
   const target = matches[Math.min({idx}, matches.length - 1)];
   target.scrollIntoView({{ block: 'center' }});
   const label = (target.innerText || target.textContent || '').trim().substring(0, 100);
-  const matchInfo = ' (match ' + (Math.min({idx}, matches.length - 1) + 1) + '/' + matches.length + ')';
-  // For links: navigate same-tab (avoids target="_blank" opening invisible new tabs)
+  const matchInfo = '(match ' + (Math.min({idx}, matches.length - 1) + 1) + '/' + matches.length + ')';
   const href = findAnchorHref(target);
   if (href && !href.startsWith('javascript:')) {{
-    window.location.href = href;
-    return 'Navigated to: ' + href + ' | ' + label + matchInfo;
+    return {{ type: "navigate", url: href, label: label, matchInfo: matchInfo }};
   }}
   target.click();
-  return 'Clicked: ' + label + matchInfo;
+  return {{ type: "clicked", label: label, matchInfo: matchInfo }};
 }}"#,
                     txt = txt,
                     idx = idx

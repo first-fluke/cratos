@@ -11,6 +11,7 @@
 
 mod a2ui;
 mod agent_cli;
+mod app_control;
 mod bash;
 mod config;
 pub mod config_manager;
@@ -27,6 +28,7 @@ mod wol; // Added
 
 pub use a2ui::{A2uiRenderTool, A2uiWaitEventTool};
 pub use agent_cli::AgentCliTool;
+pub use app_control::AppControlTool;
 pub use bash::{BashConfig, BashSecurityMode, BashTool};
 pub use config::{ConfigAction, ConfigInput, ConfigTarget, ConfigTool};
 pub use exec::{ExecConfig, ExecMode, ExecTool};
@@ -122,6 +124,9 @@ pub fn register_builtins_with_config(registry: &mut ToolRegistry, config: &Built
     // Image generation tool
     registry.register(Arc::new(ImageGenerationTool::new()));
 
+    // App control tool (native app automation via AppleScript/JXA)
+    registry.register(Arc::new(AppControlTool::new()));
+
     // Session Send Tool (Only if sender is provided)
     if let Some(sender) = &config.session_sender {
         registry.register(Arc::new(SessionSendTool::new(
@@ -172,7 +177,8 @@ mod tests {
         assert!(registry.has("agent_cli"));
         assert!(registry.has("send_file"));
         assert!(registry.has("image_generate"));
-        // A2UI tools are NOT registered by default, so count is 22 (21 + image)
-        assert_eq!(registry.len(), 22);
+        assert!(registry.has("app_control"));
+        // A2UI tools are NOT registered by default, so count is 23 (22 + app_control)
+        assert_eq!(registry.len(), 23);
     }
 }

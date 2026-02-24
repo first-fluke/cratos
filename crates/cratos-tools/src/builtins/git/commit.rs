@@ -16,7 +16,12 @@ impl GitCommitTool {
     /// Create a new git commit tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("git_commit", "Create a git commit")
+        let definition = ToolDefinition::new(
+            "git_commit",
+            "Create a git commit. Requires a commit message. Set add_all=true to stage all changes before committing, \
+             or specify files to stage specific paths. Always check git_status first to confirm staged changes. \
+             Example: {\"message\": \"feat: add login\", \"add_all\": true} or {\"message\": \"fix typo\", \"files\": [\"README.md\"]}"
+        )
             .with_category(ToolCategory::Utility)
             .with_risk_level(RiskLevel::Medium)
             .with_parameters(serde_json::json!({

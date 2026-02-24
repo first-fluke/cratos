@@ -202,7 +202,14 @@ impl HttpGetTool {
             .build()
             .expect("Failed to create HTTP client");
 
-        let definition = ToolDefinition::new("http_get", "Make an HTTP GET request")
+        let definition = ToolDefinition::new(
+            "http_get",
+            "Make an HTTP GET request. Use for fetching API responses, downloading web pages, or checking URLs. \
+             Returns status code, headers, and body. Timeout: 30s, max response: 10MB. \
+             Use custom headers for authentication (e.g. Authorization: Bearer ...). \
+             Prefer this over browser for simple data fetching without JS rendering. \
+             Example: {\"url\": \"https://api.example.com/data\", \"headers\": {\"Accept\": \"application/json\"}}"
+        )
             .with_category(ToolCategory::Http)
             .with_risk_level(RiskLevel::Low)
             .with_parameters(serde_json::json!({
@@ -324,7 +331,13 @@ impl HttpPostTool {
             .build()
             .expect("Failed to create HTTP client");
 
-        let definition = ToolDefinition::new("http_post", "Make an HTTP POST request")
+        let definition = ToolDefinition::new(
+            "http_post",
+            "Make an HTTP POST request. Use for submitting data to APIs, webhooks, or form endpoints. \
+             Set content_type for the body format (default: application/json). \
+             Supports JSON, form-urlencoded, and raw text bodies. Timeout: 30s. \
+             Example: {\"url\": \"https://api.example.com/submit\", \"body\": \"{\\\"key\\\": \\\"value\\\"}\", \"content_type\": \"application/json\"}"
+        )
             .with_category(ToolCategory::Http)
             .with_risk_level(RiskLevel::Medium)
             .with_parameters(serde_json::json!({

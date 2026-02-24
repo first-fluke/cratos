@@ -16,7 +16,13 @@ impl GitDiffTool {
     /// Create a new git diff tool
     #[must_use]
     pub fn new() -> Self {
-        let definition = ToolDefinition::new("git_diff", "Show git diff")
+        let definition = ToolDefinition::new(
+            "git_diff",
+            "Show git diff of changes. By default shows unstaged changes. Set staged=true for staged changes. \
+             Specify file to diff a single file. Use commit to compare against a specific commit or range (e.g. HEAD~3). \
+             Set stat=true for a summary instead of full diff. \
+             Example: {\"staged\": true} or {\"file\": \"src/main.rs\"} or {\"commit\": \"HEAD~2..HEAD\"}"
+        )
             .with_category(ToolCategory::Utility)
             .with_risk_level(RiskLevel::Low)
             .with_parameters(serde_json::json!({
